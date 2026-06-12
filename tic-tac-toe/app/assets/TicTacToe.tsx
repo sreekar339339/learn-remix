@@ -1,5 +1,4 @@
 import {
-  addEventListeners,
   attrs,
   clientEntry,
   createMixin,
@@ -9,88 +8,6 @@ import {
   TypedEventTarget,
   type Handle,
 } from "remix/ui";
-
-export const TicTacToe = clientEntry(
-  import.meta.url,
-  function TicTacToe(handle: Handle) {
-    let game = new TicTacToeGame();
-    let compUpdateTask: ReturnType<Handle['update']>
-
-    addEventListeners(game, handle.signal, {
-      async change(e) {
-        switch (e.details?.kind) {
-          case "focus":
-            await compUpdateTask
-            game.cellNodes[e.details.id].focus()
-            break;
-
-          case "board":
-            compUpdateTask = handle.update();
-            if ("result" in e.details) {
-              game.resetNode?.focus()
-            }
-            break;
-        }
-      },
-    });
-
-    handle.queueTask(() => game.cellNodes[0].focus())
-
-    return () => (
-      <div
-        mix={[
-          css({
-            width: "100%",
-            maxWidth: "420px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "36px",
-          }),
-          game.rootMix(),
-        ]}
-      >
-        <div
-          mix={[
-            css({
-              width: "100%",
-              aspectRatio: "1/1",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "4px",
-            }),
-          ]}
-        >
-          {game.board.map((cell, index) => (
-            <button
-              key={index}
-              mix={[
-                css({
-                  width: "calc(100% / 3 - 4px)",
-                  aspectRatio: "1/1",
-                  "&:disabled": { backgroundColor: "darkgray" },
-                  fontSize: "36px",
-                  fontWeight: "bold",
-                }),
-                game.cellMix(index),
-              ]}
-              style={{ color: cell === "X" ? "blue" : "red" }}
-            >
-              {cell}
-            </button>
-          ))}
-        </div>
-        <button
-          mix={[
-            game.resetMix(),
-            css({ fontSize: "18px", padding: "8px 16px" }),
-          ]}
-        >
-          Reset
-        </button>
-      </div>
-    );
-  },
-);
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
@@ -120,10 +37,89 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
   isFirstMoveMade = false;
   result: Result = null;
   resetNode: HTMLElement | null = null;
-  cellNodes: Array<HTMLElement> = []
+  cellNodes: Array<HTMLElement> = [];
 
-  constructor() {
+  constructor(handle: Handle) {
     super();
+    let compUpdateTask: ReturnType<Handle["update"]>;
+
+    this.addEventListener(
+      "change",
+      async (e) => {
+        switch (e.details?.kind) {
+          case "focus":
+            await compUpdateTask;
+            this.cellNodes[e.details.id].focus();
+            break;
+
+          case "board":
+            compUpdateTask = handle.update();
+            if ("result" in e.details) {
+              this.resetNode?.focus();
+            }
+            break;
+        }
+      },
+      { signal: handle.signal },
+    );
+
+    handle.queueTask(() => this.cellNodes[0].focus());
+  }
+
+  render = () => (
+    <div
+      mix={[
+        css({
+          width: "100%",
+          maxWidth: "420px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "36px",
+        }),
+        this.rootMix(),
+      ]}
+    >
+      <div
+        mix={[
+          css({
+            width: "100%",
+            aspectRatio: "1/1",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "4px",
+          }),
+        ]}
+      >
+        {this.board.map((cell, index) => (
+          <button
+            key={index}
+            mix={[
+              css({
+                width: "calc(100% / 3 - 4px)",
+                aspectRatio: "1/1",
+                "&:disabled": { backgroundColor: "darkgray" },
+                fontSize: "36px",
+                fontWeight: "bold",
+              }),
+              this.cellMix(index),
+            ]}
+            style={{ color: cell === "X" ? "blue" : "red" }}
+          >
+            {cell}
+          </button>
+        ))}
+      </div>
+      <button
+        mix={[this.resetMix(), css({ fontSize: "18px", padding: "8px 16px" })]}
+      >
+        Reset
+      </button>
+    </div>
+  );
+
+  static TicTacToe(handle: Handle) {
+    let game = new TicTacToeGame(handle);
+    return game.render;
   }
 
   makeMove(index: number) {
@@ -270,6 +266,11 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
 
   resetMix = createMixin<HTMLElement>(() => () => [
     attrs({ disabled: !this.isFirstMoveMade, name: "reset" }),
-    ref((node) => this.resetNode = node),
+    ref((node) => (this.resetNode = node)),
   ]);
 }
+
+export const TicTacToe = clientEntry(
+  import.meta.url,
+  TicTacToeGame.TicTacToe,
+);
