@@ -14,14 +14,27 @@ export const TicTacToe = clientEntry(
   import.meta.url,
   function TicTacToe(handle: Handle) {
     let game = new TicTacToeGame();
+    let compUpdateTask: ReturnType<Handle['update']>
 
     addEventListeners(game, handle.signal, {
-      change(e) {
-        if (e.details?.kind === "board") {
-          handle.update();
+      async change(e) {
+        switch (e.details?.kind) {
+          case "focus":
+            await compUpdateTask
+            game.cellNodes[e.details.id].focus()
+            break;
+
+          case "board":
+            compUpdateTask = handle.update();
+            if ("result" in e.details) {
+              game.resetNode?.focus()
+            }
+            break;
         }
       },
     });
+
+    handle.queueTask(() => game.cellNodes[0].focus())
 
     return () => (
       <div
@@ -106,6 +119,8 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
   rootNode: HTMLElement | null = null;
   isFirstMoveMade = false;
   result: Result = null;
+  resetNode: HTMLElement | null = null;
+  cellNodes: Array<HTMLElement> = []
 
   constructor() {
     super();
@@ -196,7 +211,7 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
     this.dispatchEvent(new GameEvent("change", { kind: "focus", id: 0 }));
   }
 
-  rootMix = createMixin<HTMLElement>((handle) => () => [
+  rootMix = createMixin<HTMLElement>(() => () => [
     on("click", async (event) => {
       if (!(event.target instanceof HTMLElement)) return;
       const eventTargetName = event.target.getAttribute("name");
@@ -248,28 +263,13 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
     }),
   ]);
 
-  cellMix = createMixin<HTMLElement, [index: number]>((handle) => (index) => [
+  cellMix = createMixin<HTMLElement, [index: number]>(() => (index) => [
     attrs({ name: "move", value: index, disabled: this.board[index] !== null }),
-    ref((node) => {
-      if (index === 1) {
-        node.focus();
-      }
-      this.addEventListener("change", (e) => {
-        if (e.details?.kind === "focus" && e.details.id === index) {
-          handle.queueTask(() => node.focus())
-        }
-      });
-    }),
+    ref((node) => this.cellNodes.push(node)),
   ]);
 
   resetMix = createMixin<HTMLElement>(() => () => [
     attrs({ disabled: !this.isFirstMoveMade, name: "reset" }),
-    ref((node) => {
-      this.addEventListener("change", (e) => {
-        if (e.details?.kind === "board" && "result" in e.details) {
-          node.focus();
-        }
-      });
-    }),
+    ref((node) => this.resetNode = node),
   ]);
 }
