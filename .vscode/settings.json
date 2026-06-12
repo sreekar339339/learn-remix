@@ -1,0 +1,6 @@
+{
+    "chat.agentFilesLocations": {
+        "./tic-tac-toe/.agents": true
+    },
+    "editor.tabSize": 2
+}
