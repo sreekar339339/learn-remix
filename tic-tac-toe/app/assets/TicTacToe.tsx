@@ -1,19 +1,41 @@
 import {
+  addEventListeners,
   attrs,
   clientEntry,
   createMixin,
   css,
   on,
   ref,
+  TypedEventTarget,
   type Handle,
 } from "remix/ui";
 
 export const TicTacToe = clientEntry(
   import.meta.url,
   function TicTacToe(handle: Handle) {
-    let game = new TicTacToeGame(handle.update);
+    let game = new TicTacToeGame();
+
+    addEventListeners(game, handle.signal, {
+      change(e) {
+        if (e.details?.kind === "board") {
+          handle.update();
+        }
+      },
+    });
+
     return () => (
-      <>
+      <div
+        mix={[
+          css({
+            width: "100%",
+            maxWidth: "420px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "36px",
+          }),
+          game.rootMix(),
+        ]}
+      >
         <div
           mix={[
             css({
@@ -23,7 +45,6 @@ export const TicTacToe = clientEntry(
               flexWrap: "wrap",
               gap: "4px",
             }),
-            game.rootMix(),
           ]}
         >
           {game.board.map((cell, index) => (
@@ -53,39 +74,54 @@ export const TicTacToe = clientEntry(
         >
           Reset
         </button>
-      </>
+      </div>
     );
   },
 );
 
-class TicTacToeGame {
-  board: Array<string> = new Array(9).fill("");
-  currentPlayer: "X" | "O" = "X";
-  refreshUi: Handle["update"];
-  rootNode: HTMLElement | null = null;
-  firstMoveMade: boolean = false;
-  cellIdCurrentlyOnFocus: number = null
+type Player = "X" | "O";
+type Board = Array<Player | null>;
+type Result = Player | "Draw" | null;
 
-  constructor(update: Handle["update"]) {
-    this.refreshUi = update;
+interface GameEventMap {
+  change: GameEvent;
+}
+
+type GameEventDetails =
+  | { kind: "focus"; id: number }
+  | { kind: "board"; result: Result }
+  | { kind: "board"; nextPlayer: Player };
+
+class GameEvent extends Event {
+  details?: GameEventDetails;
+  constructor(type: keyof GameEventMap, details?: GameEventDetails) {
+    super(type);
+    this.details = details;
+  }
+}
+
+class TicTacToeGame extends TypedEventTarget<GameEventMap> {
+  board: Board = new Array(9).fill(null);
+  nextPlayer: Player = "X";
+  rootNode: HTMLElement | null = null;
+  isFirstMoveMade = false;
+  result: Result = null;
+
+  constructor() {
+    super();
   }
 
   makeMove(index: number) {
-    if (!this.firstMoveMade) {
-      this.firstMoveMade = true;
-    }
-    if (this.board[index] !== "") {
-      return;
-    }
-    this.board[index] = this.currentPlayer;
-    this.currentPlayer = this.currentPlayer === "X" ? "O" : "X";
-    let winner = this.findWinner(this.board);
-    if (winner) {
-      // Handle winner logic
+    if (this.board[index]) return;
+    this.board[index] = this.nextPlayer;
+    this.nextPlayer = this.nextPlayer === "X" ? "O" : "X";
+    this.result = this.deriveResult(this.board);
+    if (!this.isFirstMoveMade) {
+      this.isFirstMoveMade = true;
     }
   }
 
-  findWinner(board: Array<string>): string | null {
+  deriveResult(board: Board): Result {
     const winningCombos = [
       [0, 1, 2],
       [3, 4, 5],
@@ -102,88 +138,138 @@ class TicTacToeGame {
         return board[a];
       }
     }
+    if (board.every((cell) => cell !== null)) {
+      return "Draw";
+    }
     return null;
   }
 
-  shiftFocusOnMove(cellIdx: number) {
-    const nextIndex = (cellIdx + 1) % 9;
-    this.focusCell(nextIndex);
+  resetGame() {
+    this.board = new Array(9).fill(null);
+    this.nextPlayer = "X";
+    this.isFirstMoveMade = false;
+    this.result = null;
   }
 
-  focusCell(cellIdx: number) {
-    if (cellIdx < 0 || cellIdx > 8) return
-    this.rootNode?.dispatchEvent(new FocusChangeEvent(cellIdx));
-    this.cellIdCurrentlyOnFocus = cellIdx;
+  nextFreeCell(cellIdx: number) {
+    let nextFreeCellIdx = (cellIdx + 1) % 9;
+    while (this.board[nextFreeCellIdx] !== null) {
+      nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
+      if (nextFreeCellIdx === cellIdx) {
+        // We've looped through all cells and found no free cell
+        return;
+      }
+    }
+    return nextFreeCellIdx;
+  }
+
+  handleMove(cellIdx: number) {
+    this.makeMove(cellIdx);
+    if (this.result) {
+      this.dispatchEvent(
+        new GameEvent("change", { kind: "board", result: this.result }),
+      );
+    } else {
+      this.dispatchEvent(
+        new GameEvent("change", {
+          kind: "board",
+          nextPlayer: this.nextPlayer,
+        }),
+      );
+      this.dispatchEvent(
+        new GameEvent("change", {
+          kind: "focus",
+          id: this.nextFreeCell(cellIdx) || 0,
+        }),
+      );
+    }
+  }
+
+  handleReset() {
+    this.resetGame();
+    this.dispatchEvent(
+      new GameEvent("change", {
+        kind: "board",
+        nextPlayer: this.nextPlayer,
+      }),
+    );
+    this.dispatchEvent(new GameEvent("change", { kind: "focus", id: 0 }));
   }
 
   rootMix = createMixin<HTMLElement>((handle) => () => [
     on("click", async (event) => {
       if (!(event.target instanceof HTMLElement)) return;
-      const cellIdx = parseInt(event.target.dataset.cellIdx);
-      this.makeMove(cellIdx);
-      await this.refreshUi();
-      this.shiftFocusOnMove(cellIdx);
+      const eventTargetName = event.target.getAttribute("name");
+      if (eventTargetName === null) return;
+      if (eventTargetName === "move") {
+        const cellIdx = parseInt(event.target.getAttribute("value") || "");
+        this.handleMove(cellIdx);
+      } else if (eventTargetName === "reset") {
+        this.handleReset();
+      }
     }),
-    ref((node) => {
-      this.rootNode = node;
-      handle.queueTask(() => {
-        this.focusCell(0);
-        document.addEventListener('keydown', (event) => {
-          if (event.key === 'ArrowUp') {
-
-            this.focusCell(this.cellIdCurrentlyOnFocus - 3)
-          }
-          if (event.key === 'ArrowDown') {
-            this.focusCell(this.cellIdCurrentlyOnFocus + 3)
-          }
-          if (event.key === 'ArrowLeft') {
-            this.focusCell(this.cellIdCurrentlyOnFocus - 1)
-          }
-          if (event.key === 'ArrowRight') {
-            this.focusCell(this.cellIdCurrentlyOnFocus + 1)
-          }
-        })
-      });
+    on("keydown", (event) => {
+      if (!(event.target instanceof HTMLElement)) return;
+      const cellIdCurrentlyOnFocus = parseInt(
+        event.target?.getAttribute("value") || "",
+      );
+      let nextFreeCellIdx: number | null = null;
+      if (event.key === "ArrowUp") {
+        nextFreeCellIdx = cellIdCurrentlyOnFocus - 3;
+        while (nextFreeCellIdx >= 0 && this.board[nextFreeCellIdx]) {
+          nextFreeCellIdx -= 3;
+        }
+      }
+      if (event.key === "ArrowDown") {
+        nextFreeCellIdx = cellIdCurrentlyOnFocus + 3;
+        while (nextFreeCellIdx < 9 && this.board[nextFreeCellIdx]) {
+          nextFreeCellIdx += 3;
+        }
+      }
+      if (event.key === "ArrowLeft") {
+        nextFreeCellIdx = cellIdCurrentlyOnFocus - 1;
+        while (nextFreeCellIdx >= 0 && this.board[nextFreeCellIdx]) {
+          nextFreeCellIdx--;
+        }
+      }
+      if (event.key === "ArrowRight") {
+        nextFreeCellIdx = cellIdCurrentlyOnFocus + 1;
+        while (nextFreeCellIdx < 9 && this.board[nextFreeCellIdx]) {
+          nextFreeCellIdx++;
+        }
+      }
+      if (nextFreeCellIdx === null) return;
+      this.dispatchEvent(
+        new GameEvent("change", {
+          kind: "focus",
+          id: nextFreeCellIdx,
+        }),
+      );
     }),
   ]);
 
   cellMix = createMixin<HTMLElement, [index: number]>((handle) => (index) => [
-    attrs({ "data-cell-idx": index, disabled: this.board[index] !== "" }),
+    attrs({ name: "move", value: index, disabled: this.board[index] !== null }),
     ref((node) => {
-      handle.queueTask(() => {
-        this.rootNode?.addEventListener(focusChangeEventType, (e) => {
-          if (e.cellIdToFocus === index) {
-            node.focus();
-          }
-        });
+      if (index === 1) {
+        node.focus();
+      }
+      this.addEventListener("change", (e) => {
+        if (e.details?.kind === "focus" && e.details.id === index) {
+          handle.queueTask(() => node.focus())
+        }
       });
     }),
   ]);
 
   resetMix = createMixin<HTMLElement>(() => () => [
-    on("click", async () => {
-      this.board = new Array(9).fill("");
-      this.currentPlayer = "X";
-      this.firstMoveMade = false;
-      await this.refreshUi();
-      this.focusCell(0);
+    attrs({ disabled: !this.isFirstMoveMade, name: "reset" }),
+    ref((node) => {
+      this.addEventListener("change", (e) => {
+        if (e.details?.kind === "board" && "result" in e.details) {
+          node.focus();
+        }
+      });
     }),
-    attrs({ disabled: !this.firstMoveMade }),
   ]);
-}
-
-let focusChangeEventType = "focusChangeEventType" as const;
-
-declare global {
-  interface HTMLElementEventMap {
-    [focusChangeEventType]: FocusChangeEvent;
-  }
-}
-
-class FocusChangeEvent extends Event {
-  cellIdToFocus: number;
-  constructor(cellIdToFocus: number) {
-    super(focusChangeEventType);
-    this.cellIdToFocus = cellIdToFocus;
-  }
 }

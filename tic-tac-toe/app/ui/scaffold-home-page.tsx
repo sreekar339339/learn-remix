@@ -45,18 +45,7 @@ export function HomePage() {
           justifyContent: 'center',
         })}
       >
-        <div
-          mix={css({
-            width: '100%',
-            maxWidth: '420px',
-            display: 'flex',
-            flexDirection: 'column',
-            // alignItems: 'center',
-            gap: '36px',
-          })}
-        >
-          <TicTacToe />
-        </div>
+        <TicTacToe />
       </main>
     </Document>
   )
