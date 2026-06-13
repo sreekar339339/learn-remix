@@ -41,19 +41,19 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
 
   constructor(handle: Handle) {
     super();
-    let compUpdateTask: ReturnType<Handle["update"]>;
+    let pendingUpdate: ReturnType<Handle["update"]>;
 
     this.addEventListener(
       "change",
       async (e) => {
         switch (e.details?.kind) {
           case "focus":
-            await compUpdateTask;
+            await pendingUpdate;
             this.cellNodes[e.details.id].focus();
             break;
 
           case "board":
-            compUpdateTask = handle.update();
+            pendingUpdate = handle.update();
             if ("result" in e.details) {
               this.resetNode?.focus();
             }
