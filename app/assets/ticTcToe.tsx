@@ -14,12 +14,12 @@ type Player = "X" | "O";
 type Board = Array<Player | null>;
 type Result = Player | "Draw" | null;
 
-type PlayType = "navigation" | "selection";
-type GameState =
-  | { status: "ended" }
-  | { status: "notEnded"; playType: PlayType };
+type InteractionType = "navigation" | "selection";
+type GameEvent =
+  | { type: "ended" }
+  | { type: "notEnded"; interactionType: InteractionType };
 
-class TicTacToeGame {
+class TicTacToe {
   board: Board = new Array(9).fill(null);
   nextPlayer: Player = "X";
   rootNode?: HTMLElement;
@@ -27,27 +27,27 @@ class TicTacToeGame {
   result?: Result;
   resetNode?: HTMLElement;
   cellNodes: Array<HTMLElement> = [];
-  dispatchEvent: ReturnType<typeof createChangeEventListener<GameState>>;
+  dispatchGameEvent: ReturnType<typeof createChangeEventListener<GameEvent>>;
   cellIdToFocus = 0;
   pendingUpdate?: ReturnType<Handle["update"]>;
 
   constructor(handle: Handle) {
-    this.dispatchEvent = createChangeEventListener<GameState>(
+    this.dispatchGameEvent = createChangeEventListener<GameEvent>(
       async (evt) =>
-        match(evt.detail)
-          .with({ status: "notEnded", playType: "navigation" }, async () => {
+        match(evt)
+          .with({ type: "notEnded", interactionType: "navigation" }, async () => {
             this.focus("cell");
           })
           .with(
             P.union(
-              { status: "ended" },
-              { status: "notEnded", playType: "selection" },
+              { type: "ended" },
+              { type: "notEnded", interactionType: "selection" },
             ),
             (val) => {
               this.pendingUpdate = handle.update();
               match(val)
-                .with({ playType: "selection" }, () => this.focus("cell"))
-                .with({ status: "ended" }, () => this.focus("reset"));
+                .with({ interactionType: "selection" }, () => this.focus("cell"))
+                .with({ type: "ended" }, () => this.focus("reset"));
             },
           )
           .exhaustive(),
@@ -55,7 +55,7 @@ class TicTacToeGame {
     );
 
     handle.queueTask(() =>
-      this.dispatchEvent({ status: "notEnded", playType: "navigation" }),
+      this.dispatchGameEvent({ type: "notEnded", interactionType: "navigation" }),
     );
   }
 
@@ -110,8 +110,8 @@ class TicTacToeGame {
     </div>
   );
 
-  static TicTacToe(handle: Handle) {
-    let game = new TicTacToeGame(handle);
+  static Component(handle: Handle) {
+    let game = new TicTacToe(handle);
     return game.render;
   }
 
@@ -167,19 +167,19 @@ class TicTacToeGame {
   handleSelection(cellIdx: number) {
     this.makeSelection(cellIdx);
     if (this.result) {
-      this.dispatchEvent({ status: "ended" });
+      this.dispatchGameEvent({ type: "ended" });
     } else {
-      this.setNextFreeCellIdx({playType: 'selection'});
-      this.dispatchEvent({ status: "notEnded", playType: "selection" });
+      this.setNextFreeCellIdx({interactionType: 'selection'});
+      this.dispatchGameEvent({ type: "notEnded", interactionType: "selection" });
     }
   }
 
   handleReset() {
     this.resetGame();
     this.cellIdToFocus = 0;
-    this.dispatchEvent({
-      status: "notEnded",
-      playType: "selection",
+    this.dispatchGameEvent({
+      type: "notEnded",
+      interactionType: "selection",
     });
   }
 
@@ -198,10 +198,10 @@ class TicTacToeGame {
     on("keydown", (event) => {
       if (!(event.target instanceof HTMLElement)) return;
       let setNextFreeCell = (idxIncrement: number) => {
-        this.setNextFreeCellIdx({ playType: "navigation", idxIncrement });
-        this.dispatchEvent({
-          status: "notEnded",
-          playType: "navigation",
+        this.setNextFreeCellIdx({ interactionType: "navigation", idxIncrement });
+        this.dispatchGameEvent({
+          type: "notEnded",
+          interactionType: "navigation",
         });
       };
       match(event.key)
@@ -214,17 +214,17 @@ class TicTacToeGame {
 
   setNextFreeCellIdx(
     arg:
-      | { playType: "navigation"; idxIncrement: number }
-      | { playType: "selection" },
+      | { interactionType: "navigation"; idxIncrement: number }
+      | { interactionType: "selection" },
   ) {
     match(arg)
-      .with({ playType: "navigation" }, ({ idxIncrement }) => {
+      .with({ interactionType: "navigation" }, ({ idxIncrement }) => {
         let nextFreeCellIdx = this.cellIdToFocus + idxIncrement;
         let boundIdx = idxIncrement < 0 ? 0 : 8;
         if ((boundIdx === 0 && nextFreeCellIdx < boundIdx) || (boundIdx === 9 && nextFreeCellIdx > boundIdx)) return
         this.cellIdToFocus = nextFreeCellIdx;
       })
-      .with({ playType: "selection" }, () => {
+      .with({ interactionType: "selection" }, () => {
         let nextFreeCellIdx = (this.cellIdToFocus + 1) % 9;
         while (this.board[nextFreeCellIdx]) {
           nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
@@ -248,4 +248,4 @@ class TicTacToeGame {
   ]);
 }
 
-export const TicTacToe = clientEntry(import.meta.url, TicTacToeGame.TicTacToe);
+export const TicTacToeGame = clientEntry(import.meta.url, TicTacToe.Component);

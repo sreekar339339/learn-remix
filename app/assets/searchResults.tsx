@@ -18,20 +18,20 @@ export const SearchResults = clientEntry(
   function (handle: Handle<{ initialQuery?: string }>) {
     let { initialQuery } = handle.props;
 
-    type State =
-      | { status: "loading" }
-      | { status: "idle" }
-      | { status: "error"; error: Error }
-      | { status: "booksFound"; books: Array<{ title: string }> }
-      | { status: "booksNotFound" };
+    type SearchEvent =
+      | { type: "loading" }
+      | { type: "idle" }
+      | { type: "error"; error: Error }
+      | { type: "booksFound"; books: Array<{ title: string }> }
+      | { type: "booksNotFound" };
 
-    let state: State = initialQuery
-      ? { status: "loading" }
-      : { status: "idle" };
+    let searchEvent: SearchEvent = initialQuery
+      ? { type: "loading" }
+      : { type: "idle" };
 
-    let dispatchEvent = createChangeEventListener<State>(
+    let dispatchSearchEvent = createChangeEventListener<SearchEvent>(
       (evt) => {
-        state = evt.detail;
+        searchEvent = evt;
         handle.update();
       },
       { signal: handle.signal },
@@ -42,13 +42,13 @@ export const SearchResults = clientEntry(
       try {
         let books = await fetchBooks(initialQuery, signal);
         if (!books.length) {
-          return dispatchEvent({ status: "booksNotFound" });
+          return dispatchSearchEvent({ type: "booksNotFound" });
         }
-        dispatchEvent({ status: "booksFound", books });
+        dispatchSearchEvent({ type: "booksFound", books });
       } catch (error) {
         if (signal.aborted) return;
-        dispatchEvent({
-          status: "error",
+        dispatchSearchEvent({
+          type: "error",
           error: error as Error,
         });
       }
@@ -66,21 +66,21 @@ export const SearchResults = clientEntry(
                 on("input", async (evt, signal) => {
                   const query = evt.currentTarget.value.trim();
                   if (!query) {
-                    return void dispatchEvent({ status: "idle" });
+                    return void dispatchSearchEvent({ type: "idle" });
                   }
-                  dispatchEvent({ status: "loading" });
+                  dispatchSearchEvent({ type: "loading" });
                   try {
                     let books = await fetchBooks(query, signal);
                     if (!books.length) {
-                      return void dispatchEvent({
-                        status: "booksNotFound",
+                      return void dispatchSearchEvent({
+                        type: "booksNotFound",
                       });
                     }
-                    dispatchEvent({ status: "booksFound", books });
+                    dispatchSearchEvent({ type: "booksFound", books });
                   } catch (error) {
                     if (signal.aborted) return;
-                    dispatchEvent({
-                      status: "error",
+                    dispatchSearchEvent({
+                      type: "error",
                       error: error as Error,
                     });
                   }
@@ -90,20 +90,20 @@ export const SearchResults = clientEntry(
             />
           </label>
         </div>
-        {match(state)
-          .with({ status: "idle" }, () => <p>Enter the name of any book</p>)
-          .with({ status: "loading" }, () => <p>loading...</p>)
-          .with({ status: "booksFound" }, ({ books }) => (
+        {match(searchEvent)
+          .with({ type: "idle" }, () => <p>Enter the name of any book</p>)
+          .with({ type: "loading" }, () => <p>loading...</p>)
+          .with({ type: "booksFound" }, ({ books }) => (
             <ul>
               {books.map((book) => (
                 <li>{book.title}</li>
               ))}
             </ul>
           ))
-          .with({ status: "booksNotFound" }, () => (
+          .with({ type: "booksNotFound" }, () => (
             <p>Books not found for this query</p>
           ))
-          .with({ status: "error" }, ({ error }) => (
+          .with({ type: "error" }, ({ error }) => (
             <p>
               Unexpected error occured, try again! {error.message} Cause:{" "}
               {error.cause as string}

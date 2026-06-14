@@ -7,26 +7,26 @@ import { TypedEventTarget } from "remix/ui";
  * @param options Listener registration options.
  * @returns A `dispatcher` function to dispatch the "change" event.
  */
-export function createChangeEventListener<EventDetail>(
-  listenerCallback: (evt: CustomEvent<EventDetail>) => void,
+export function createChangeEventListener<SemanticEvent>(
+  listenerCallback: (evt: SemanticEvent) => void,
   options: AddEventListenerOptions
 ) {
-  const eventType = "change" as const;
+  const eventTypePrefix = "change" as const;
 
   type EventMap = {
-    [eventType]: CustomEvent<EventDetail>;
+    [eventTypePrefix]: CustomEvent<SemanticEvent>;
   }
 
   class CustomEventTarget extends TypedEventTarget<EventMap> {
     constructor() {
       super()
-      this.addEventListener(eventType, listenerCallback, options)
+      this.addEventListener(eventTypePrefix, (evt) => listenerCallback(evt.detail), options)
     }
 
     static instance = new CustomEventTarget()
 
-    static dispatchChangeEvent (eventDetail: CustomEventInit<EventDetail>['detail'] | undefined) {
-      return CustomEventTarget.instance.dispatchEvent(new CustomEvent(eventType, {detail: eventDetail}))
+    static dispatchChangeEvent (semanticEvent: CustomEventInit<SemanticEvent>['detail'] | undefined) {
+      return CustomEventTarget.instance.dispatchEvent(new CustomEvent(eventTypePrefix, {detail: semanticEvent}))
     }
   }
 
