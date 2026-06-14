@@ -8,44 +8,55 @@ import {
   type Handle,
 } from "remix/ui";
 import { createChangeEventListener } from "../utils/events.ts";
-import { match } from "ts-pattern";
+import { match, P } from "ts-pattern";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
 type Result = Player | "Draw" | null;
 
+type PlayType = "navigation" | "selection";
 type GameState =
-  | { kind: "focus"; id: number }
-  | { kind: "board"; status: "ended" | "notEnded" };
+  | { status: "ended" }
+  | { status: "notEnded"; playType: PlayType };
 
 class TicTacToeGame {
   board: Board = new Array(9).fill(null);
   nextPlayer: Player = "X";
-  rootNode: HTMLElement | null = null;
+  rootNode?: HTMLElement;
   isFirstMoveMade = false;
-  result: Result = null;
-  resetNode: HTMLElement | null = null;
+  result?: Result;
+  resetNode?: HTMLElement;
   cellNodes: Array<HTMLElement> = [];
   dispatchEvent: ReturnType<typeof createChangeEventListener<GameState>>;
+  cellIdToFocus = 0;
+  pendingUpdate?: ReturnType<Handle["update"]>;
 
   constructor(handle: Handle) {
-    let pendingUpdate: ReturnType<Handle["update"]>;
-
     this.dispatchEvent = createChangeEventListener<GameState>(
       async (evt) =>
         match(evt.detail)
-          .with({ kind: "focus" }, async ({ id }) => {
-            await pendingUpdate;
-            this.cellNodes[id].focus();
+          .with({ status: "notEnded", playType: "navigation" }, async () => {
+            this.focus("cell");
           })
-          .with({ kind: "board" }, (val) => {
-            pendingUpdate = handle.update();
-            match(val).with({ status: "ended" }, () => this.resetNode?.focus());
-          }),
+          .with(
+            P.union(
+              { status: "ended" },
+              { status: "notEnded", playType: "selection" },
+            ),
+            (val) => {
+              this.pendingUpdate = handle.update();
+              match(val)
+                .with({ playType: "selection" }, () => this.focus("cell"))
+                .with({ status: "ended" }, () => this.focus("reset"));
+            },
+          )
+          .exhaustive(),
       { signal: handle.signal },
     );
 
-    handle.queueTask(() => this.dispatchEvent({ kind: "focus", id: 0 }));
+    handle.queueTask(() =>
+      this.dispatchEvent({ status: "notEnded", playType: "navigation" }),
+    );
   }
 
   render = () => (
@@ -104,9 +115,18 @@ class TicTacToeGame {
     return game.render;
   }
 
-  makeMove(index: number) {
-    if (this.board[index]) return;
-    this.board[index] = this.nextPlayer;
+  async focus(type: "cell" | "reset") {
+    await this.pendingUpdate;
+    if (type === "cell") {
+      this.cellNodes[this.cellIdToFocus].focus();
+    } else {
+      this.resetNode?.focus();
+    }
+  }
+
+  makeSelection(cellIdx: number) {
+    if (this.board[cellIdx]) return;
+    this.board[cellIdx] = this.nextPlayer;
     this.nextPlayer = this.nextPlayer === "X" ? "O" : "X";
     this.result = this.deriveResult(this.board);
     if (!this.isFirstMoveMade) {
@@ -144,38 +164,23 @@ class TicTacToeGame {
     this.result = null;
   }
 
-  nextFreeCell(cellIdx: number) {
-    let nextFreeCellIdx = (cellIdx + 1) % 9;
-    while (this.board[nextFreeCellIdx] !== null) {
-      nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
-      if (nextFreeCellIdx === cellIdx) {
-        // We've looped through all cells and found no free cell
-        return;
-      }
-    }
-    return nextFreeCellIdx;
-  }
-
-  handleMove(cellIdx: number) {
-    this.makeMove(cellIdx);
+  handleSelection(cellIdx: number) {
+    this.makeSelection(cellIdx);
     if (this.result) {
-      this.dispatchEvent({ kind: "board", status: "ended" });
+      this.dispatchEvent({ status: "ended" });
     } else {
-      this.dispatchEvent({ kind: "board", status: "notEnded" });
-      this.dispatchEvent({
-        kind: "focus",
-        id: this.nextFreeCell(cellIdx) || 0,
-      });
+      this.setNextFreeCellIdx({playType: 'selection'});
+      this.dispatchEvent({ status: "notEnded", playType: "selection" });
     }
   }
 
   handleReset() {
     this.resetGame();
+    this.cellIdToFocus = 0;
     this.dispatchEvent({
-      kind: "board",
       status: "notEnded",
+      playType: "selection",
     });
-    this.dispatchEvent({ kind: "focus", id: 0 });
   }
 
   rootMix = createMixin<HTMLElement>(() => () => [
@@ -183,53 +188,57 @@ class TicTacToeGame {
       if (!(event.target instanceof HTMLElement)) return;
       const eventTargetName = event.target.getAttribute("name");
       if (eventTargetName === null) return;
-      if (eventTargetName === "move") {
+      if (eventTargetName === "cell") {
         const cellIdx = parseInt(event.target.getAttribute("value") || "");
-        this.handleMove(cellIdx);
+        this.handleSelection(cellIdx);
       } else if (eventTargetName === "reset") {
         this.handleReset();
       }
     }),
     on("keydown", (event) => {
       if (!(event.target instanceof HTMLElement)) return;
-      const cellIdCurrentlyOnFocus = parseInt(
-        event.target?.getAttribute("value") || "",
-      );
-      let nextFreeCellIdx: number | null = null;
-      if (event.key === "ArrowUp") {
-        nextFreeCellIdx = cellIdCurrentlyOnFocus - 3;
-        while (nextFreeCellIdx >= 0 && this.board[nextFreeCellIdx]) {
-          nextFreeCellIdx -= 3;
-        }
-      }
-      if (event.key === "ArrowDown") {
-        nextFreeCellIdx = cellIdCurrentlyOnFocus + 3;
-        while (nextFreeCellIdx < 9 && this.board[nextFreeCellIdx]) {
-          nextFreeCellIdx += 3;
-        }
-      }
-      if (event.key === "ArrowLeft") {
-        nextFreeCellIdx = cellIdCurrentlyOnFocus - 1;
-        while (nextFreeCellIdx >= 0 && this.board[nextFreeCellIdx]) {
-          nextFreeCellIdx--;
-        }
-      }
-      if (event.key === "ArrowRight") {
-        nextFreeCellIdx = cellIdCurrentlyOnFocus + 1;
-        while (nextFreeCellIdx < 9 && this.board[nextFreeCellIdx]) {
-          nextFreeCellIdx++;
-        }
-      }
-      if (nextFreeCellIdx === null) return;
-      this.dispatchEvent({
-        kind: "focus",
-        id: nextFreeCellIdx,
-      });
+      let setNextFreeCell = (idxIncrement: number) => {
+        this.setNextFreeCellIdx({ playType: "navigation", idxIncrement });
+        this.dispatchEvent({
+          status: "notEnded",
+          playType: "navigation",
+        });
+      };
+      match(event.key)
+        .with("ArrowUp", () => setNextFreeCell(-3))
+        .with("ArrowDown", () => setNextFreeCell(3))
+        .with("ArrowLeft", () => setNextFreeCell(-1))
+        .with("ArrowRight", () => setNextFreeCell(1));
     }),
   ]);
 
+  setNextFreeCellIdx(
+    arg:
+      | { playType: "navigation"; idxIncrement: number }
+      | { playType: "selection" },
+  ) {
+    match(arg)
+      .with({ playType: "navigation" }, ({ idxIncrement }) => {
+        let nextFreeCellIdx = this.cellIdToFocus + idxIncrement;
+        let boundIdx = idxIncrement < 0 ? 0 : 8;
+        if ((boundIdx === 0 && nextFreeCellIdx < boundIdx) || (boundIdx === 9 && nextFreeCellIdx > boundIdx)) return
+        this.cellIdToFocus = nextFreeCellIdx;
+      })
+      .with({ playType: "selection" }, () => {
+        let nextFreeCellIdx = (this.cellIdToFocus + 1) % 9;
+        while (this.board[nextFreeCellIdx]) {
+          nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
+          if (nextFreeCellIdx === this.cellIdToFocus) {
+            // We've looped through all cells and found no free cell
+            return;
+          }
+        }
+        this.cellIdToFocus = nextFreeCellIdx;
+      }).exhaustive();
+  }
+
   cellMix = createMixin<HTMLElement, [index: number]>(() => (index) => [
-    attrs({ name: "move", value: index, disabled: this.board[index] !== null }),
+    attrs({ name: "cell", value: index, disabled: this.board[index] !== null }),
     ref((node) => this.cellNodes.push(node)),
   ]);
 

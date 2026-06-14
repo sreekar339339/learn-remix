@@ -1,9 +1,4 @@
-import {
-  clientEntry,
-  css,
-  on,
-  type Handle,
-} from "remix/ui";
+import { clientEntry, css, on, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
 import { createChangeEventListener } from "../utils/events.ts";
@@ -24,13 +19,15 @@ export const SearchResults = clientEntry(
     let { initialQuery } = handle.props;
 
     type State =
-      | { kind: "loading" }
-      | { kind: "idle" }
-      | { kind: "error"; error: Error }
-      | { kind: "booksFound"; books: Array<{ title: string }> }
-      | { kind: "booksNotFound" };
+      | { status: "loading" }
+      | { status: "idle" }
+      | { status: "error"; error: Error }
+      | { status: "booksFound"; books: Array<{ title: string }> }
+      | { status: "booksNotFound" };
 
-    let state: State = initialQuery ? { kind: "loading" } : { kind: "idle" };
+    let state: State = initialQuery
+      ? { status: "loading" }
+      : { status: "idle" };
 
     let dispatchEvent = createChangeEventListener<State>(
       (evt) => {
@@ -45,13 +42,13 @@ export const SearchResults = clientEntry(
       try {
         let books = await fetchBooks(initialQuery, signal);
         if (!books.length) {
-          return dispatchEvent({ kind: "booksNotFound" });
+          return dispatchEvent({ status: "booksNotFound" });
         }
-        dispatchEvent({ kind: "booksFound", books });
+        dispatchEvent({ status: "booksFound", books });
       } catch (error) {
         if (signal.aborted) return;
         dispatchEvent({
-          kind: "error",
+          status: "error",
           error: error as Error,
         });
       }
@@ -69,21 +66,21 @@ export const SearchResults = clientEntry(
                 on("input", async (evt, signal) => {
                   const query = evt.currentTarget.value.trim();
                   if (!query) {
-                    return void dispatchEvent({ kind: "idle" });
+                    return void dispatchEvent({ status: "idle" });
                   }
-                  dispatchEvent({ kind: "loading" });
+                  dispatchEvent({ status: "loading" });
                   try {
                     let books = await fetchBooks(query, signal);
                     if (!books.length) {
                       return void dispatchEvent({
-                        kind: "booksNotFound",
+                        status: "booksNotFound",
                       });
                     }
-                    dispatchEvent({ kind: "booksFound", books });
+                    dispatchEvent({ status: "booksFound", books });
                   } catch (error) {
                     if (signal.aborted) return;
                     dispatchEvent({
-                      kind: "error",
+                      status: "error",
                       error: error as Error,
                     });
                   }
@@ -94,19 +91,19 @@ export const SearchResults = clientEntry(
           </label>
         </div>
         {match(state)
-          .with({ kind: "idle" }, () => <p>Enter the name of any book</p>)
-          .with({ kind: "loading" }, () => <p>loading...</p>)
-          .with({ kind: "booksFound" }, ({ books }) => (
+          .with({ status: "idle" }, () => <p>Enter the name of any book</p>)
+          .with({ status: "loading" }, () => <p>loading...</p>)
+          .with({ status: "booksFound" }, ({ books }) => (
             <ul>
               {books.map((book) => (
                 <li>{book.title}</li>
               ))}
             </ul>
           ))
-          .with({ kind: "booksNotFound" }, () => (
+          .with({ status: "booksNotFound" }, () => (
             <p>Books not found for this query</p>
           ))
-          .with({ kind: "error" }, ({ error }) => (
+          .with({ status: "error" }, ({ error }) => (
             <p>
               Unexpected error occured, try again! {error.message} Cause:{" "}
               {error.cause as string}
