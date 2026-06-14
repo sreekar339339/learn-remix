@@ -1,7 +1,7 @@
 import { clientEntry, css, on, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
-import { createChangeEventListener } from "../utils/events.ts";
+import { createSemanticEventListener } from "../utils/events.ts";
 
 async function fetchBooks(query: string, signal: AbortSignal) {
   let resp = await fetch(routes.api.books.href(undefined, { q: query }), {
@@ -29,7 +29,7 @@ export const SearchResults = clientEntry(
       ? { type: "loading" }
       : { type: "idle" };
 
-    let dispatchSearchEvent = createChangeEventListener<SearchEvent>(
+    let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
       (evt) => {
         searchEvent = evt;
         handle.update();

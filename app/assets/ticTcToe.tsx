@@ -7,7 +7,7 @@ import {
   ref,
   type Handle,
 } from "remix/ui";
-import { createChangeEventListener } from "../utils/events.ts";
+import { createSemanticEventListener } from "../utils/events.ts";
 import { match, P } from "ts-pattern";
 
 type Player = "X" | "O";
@@ -27,12 +27,12 @@ class TicTacToe {
   result?: Result;
   resetNode?: HTMLElement;
   cellNodes: Array<HTMLElement> = [];
-  dispatchGameEvent: ReturnType<typeof createChangeEventListener<GameEvent>>;
+  dispatchGameEvent: ReturnType<typeof createSemanticEventListener<GameEvent>>;
   cellIdToFocus = 0;
   pendingUpdate?: ReturnType<Handle["update"]>;
 
   constructor(handle: Handle) {
-    this.dispatchGameEvent = createChangeEventListener<GameEvent>(
+    this.dispatchGameEvent = createSemanticEventListener<GameEvent>(
       async (evt) =>
         match(evt)
           .with({ type: "notEnded", interactionType: "navigation" }, async () => {

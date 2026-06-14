@@ -1,34 +1,38 @@
 import { TypedEventTarget } from "remix/ui";
 
 /**
- * Sets up a custom EventTarget instance that listens for only a single event type called "change" and
- * returns a `dispatcher` function to dispatch the "change" event with event details as the only argument to be passed in.
- * @param listenerCallback Listener to invoke when the "change" event fires.
+ * @param listenerCallback Listener to invoke when the semantic event fires.
  * @param options Listener registration options.
- * @returns A `dispatcher` function to dispatch the "change" event.
+ * @returns A `dispatcher` function to dispatch a semantic event.
  */
-export function createChangeEventListener<SemanticEvent>(
+export function createSemanticEventListener<SemanticEvent>(
   listenerCallback: (evt: SemanticEvent) => void,
-  options: AddEventListenerOptions
+  options: AddEventListenerOptions,
 ) {
-  const eventTypePrefix = "change" as const;
+  const eventTypePrefix = "@";
 
-  type EventMap = {
+  class SemanticEventTarget extends TypedEventTarget<{
     [eventTypePrefix]: CustomEvent<SemanticEvent>;
-  }
-
-  class CustomEventTarget extends TypedEventTarget<EventMap> {
+  }> {
     constructor() {
-      super()
-      this.addEventListener(eventTypePrefix, (evt) => listenerCallback(evt.detail), options)
+      super();
+      this.addEventListener(
+        eventTypePrefix,
+        (evt) => listenerCallback(evt.detail),
+        options,
+      );
     }
 
-    static instance = new CustomEventTarget()
+    static instance = new SemanticEventTarget();
 
-    static dispatchChangeEvent (semanticEvent: CustomEventInit<SemanticEvent>['detail'] | undefined) {
-      return CustomEventTarget.instance.dispatchEvent(new CustomEvent(eventTypePrefix, {detail: semanticEvent}))
+    static dispatchSemanticEvent(
+      semanticEvent: CustomEventInit<SemanticEvent>["detail"] | undefined,
+    ) {
+      return SemanticEventTarget.instance.dispatchEvent(
+        new CustomEvent(eventTypePrefix, { detail: semanticEvent }),
+      );
     }
   }
 
-  return CustomEventTarget.dispatchChangeEvent;
+  return SemanticEventTarget.dispatchSemanticEvent;
 }
