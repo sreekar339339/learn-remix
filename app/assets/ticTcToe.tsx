@@ -5,32 +5,20 @@ import {
   css,
   on,
   ref,
-  TypedEventTarget,
   type Handle,
 } from "remix/ui";
+import { createChangeEventListener } from "../utils/events.ts";
+import { match } from "ts-pattern";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
 type Result = Player | "Draw" | null;
 
-interface GameEventMap {
-  change: GameEvent;
-}
-
-type GameEventDetails =
+type GameState =
   | { kind: "focus"; id: number }
-  | { kind: "board"; result: Result }
-  | { kind: "board"; nextPlayer: Player };
+  | { kind: "board"; status: "ended" | "notEnded" };
 
-class GameEvent extends Event {
-  details?: GameEventDetails;
-  constructor(type: keyof GameEventMap, details?: GameEventDetails) {
-    super(type);
-    this.details = details;
-  }
-}
-
-class TicTacToeGame extends TypedEventTarget<GameEventMap> {
+class TicTacToeGame {
   board: Board = new Array(9).fill(null);
   nextPlayer: Player = "X";
   rootNode: HTMLElement | null = null;
@@ -38,32 +26,26 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
   result: Result = null;
   resetNode: HTMLElement | null = null;
   cellNodes: Array<HTMLElement> = [];
+  dispatchEvent: ReturnType<typeof createChangeEventListener<GameState>>;
 
   constructor(handle: Handle) {
-    super();
     let pendingUpdate: ReturnType<Handle["update"]>;
 
-    this.addEventListener(
-      "change",
-      async (e) => {
-        switch (e.details?.kind) {
-          case "focus":
+    this.dispatchEvent = createChangeEventListener<GameState>(
+      async (evt) =>
+        match(evt.detail)
+          .with({ kind: "focus" }, async ({ id }) => {
             await pendingUpdate;
-            this.cellNodes[e.details.id].focus();
-            break;
-
-          case "board":
+            this.cellNodes[id].focus();
+          })
+          .with({ kind: "board" }, (val) => {
             pendingUpdate = handle.update();
-            if ("result" in e.details) {
-              this.resetNode?.focus();
-            }
-            break;
-        }
-      },
+            match(val).with({ status: "ended" }, () => this.resetNode?.focus());
+          }),
       { signal: handle.signal },
     );
 
-    handle.queueTask(() => this.cellNodes[0].focus());
+    handle.queueTask(() => this.dispatchEvent({ kind: "focus", id: 0 }));
   }
 
   render = () => (
@@ -177,34 +159,23 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
   handleMove(cellIdx: number) {
     this.makeMove(cellIdx);
     if (this.result) {
-      this.dispatchEvent(
-        new GameEvent("change", { kind: "board", result: this.result }),
-      );
+      this.dispatchEvent({ kind: "board", status: "ended" });
     } else {
-      this.dispatchEvent(
-        new GameEvent("change", {
-          kind: "board",
-          nextPlayer: this.nextPlayer,
-        }),
-      );
-      this.dispatchEvent(
-        new GameEvent("change", {
-          kind: "focus",
-          id: this.nextFreeCell(cellIdx) || 0,
-        }),
-      );
+      this.dispatchEvent({ kind: "board", status: "notEnded" });
+      this.dispatchEvent({
+        kind: "focus",
+        id: this.nextFreeCell(cellIdx) || 0,
+      });
     }
   }
 
   handleReset() {
     this.resetGame();
-    this.dispatchEvent(
-      new GameEvent("change", {
-        kind: "board",
-        nextPlayer: this.nextPlayer,
-      }),
-    );
-    this.dispatchEvent(new GameEvent("change", { kind: "focus", id: 0 }));
+    this.dispatchEvent({
+      kind: "board",
+      status: "notEnded",
+    });
+    this.dispatchEvent({ kind: "focus", id: 0 });
   }
 
   rootMix = createMixin<HTMLElement>(() => () => [
@@ -250,12 +221,10 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
         }
       }
       if (nextFreeCellIdx === null) return;
-      this.dispatchEvent(
-        new GameEvent("change", {
-          kind: "focus",
-          id: nextFreeCellIdx,
-        }),
-      );
+      this.dispatchEvent({
+        kind: "focus",
+        id: nextFreeCellIdx,
+      });
     }),
   ]);
 
@@ -270,7 +239,4 @@ class TicTacToeGame extends TypedEventTarget<GameEventMap> {
   ]);
 }
 
-export const TicTacToe = clientEntry(
-  import.meta.url,
-  TicTacToeGame.TicTacToe,
-);
+export const TicTacToe = clientEntry(import.meta.url, TicTacToeGame.TicTacToe);
