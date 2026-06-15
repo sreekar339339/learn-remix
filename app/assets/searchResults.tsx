@@ -92,7 +92,7 @@ export const SearchResults = clientEntry(
         </div>
         {match(searchEvent)
           .with({ type: "idle" }, () => <p>Enter the name of any book</p>)
-          .with({ type: "loading" }, () => <p>loading...</p>)
+          .with({ type: "loading" }, () => <p>fetching books...</p>)
           .with({ type: "booksFound" }, ({ books }) => (
             <ul>
               {books.map((book) => (
