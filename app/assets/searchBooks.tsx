@@ -1,7 +1,7 @@
 import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
-import { createSemanticEventListener } from "../utils/events.ts";
+import { createSemanticEventListener } from "./utils/events.ts";
 
 async function fetchBooks(
   query: string,

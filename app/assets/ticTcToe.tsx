@@ -7,7 +7,7 @@ import {
   ref,
   type Handle,
 } from "remix/ui";
-import { createSemanticEventListener } from "../utils/events.ts";
+import { createSemanticEventListener } from "./utils/events.ts";
 import { match, P } from "ts-pattern";
 
 type Player = "X" | "O";
