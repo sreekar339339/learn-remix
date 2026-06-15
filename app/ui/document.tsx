@@ -68,9 +68,7 @@ export function Document(handle: Handle<DocumentProps>) {
             alignItems: "center",
           })}
         >
-          <main mix={css({ height: "100vh" })}>
-            {children}
-          </main>
+          {children}
           <script
             type="module"
             src={routes.assets.href({ path: "app/assets/entry.ts" })}
