@@ -1,13 +1,11 @@
-import { css, on, type Handle } from "remix/ui";
-import { SearchResults } from "../assets/searchResults.tsx";
-
-
+import { css, type Handle } from "remix/ui";
+import { SearchBooks } from "../assets/searchBooks.tsx";
 
 export function AsyncActionsPage(handle: Handle<{initialQuery: string}>) {
   return () => (
     <section mix={css({display: 'flex', flexDirection: 'column', alignItems: 'center'})}>
       <h1>Make Async actions</h1>
-      <SearchResults initialQuery={handle.props.initialQuery} />
+      <SearchBooks initialQuery={handle.props.initialQuery} />
     </section>
   );
 }

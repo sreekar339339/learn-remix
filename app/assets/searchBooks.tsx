@@ -11,7 +11,7 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    let resp = await fetch(routes.api.books.href(undefined, { q: query }), {
+    let resp = await fetch(routes.asyncActions.api.books.href(undefined, { q: query }), {
       signal,
     });
     if (!resp.ok) throw new Error(resp.statusText, { cause: resp.status });
@@ -44,7 +44,7 @@ type SearchEvent =
   | { type: "booksFound"; books: Array<{ title: string }> }
   | { type: "booksNotFound", reason: 'emptyList' | {other: string} };
 
-export const SearchResults = clientEntry(
+export const SearchBooks = clientEntry(
   import.meta.url,
   function (handle: Handle<{ initialQuery?: string }>) {
     let { initialQuery } = handle.props;
@@ -64,6 +64,7 @@ export const SearchResults = clientEntry(
 
     handle.queueTask(async (signal) => {
       input.focus()
+      input.select()
       if (!initialQuery) return;
       fetchBooks(initialQuery, dispatchSearchEvent, signal)
     });
@@ -92,7 +93,7 @@ export const SearchResults = clientEntry(
           </label>
         </div>
         {match(searchEvent)
-          .with({ type: "idle" }, () => <p>Enter the title of any book</p>)
+          .with({ type: "idle" }, () => <p>Enter the title of any book.</p>)
           .with({ type: "fetching" }, () => <p>fetching books...</p>)
           .with({ type: "booksFound" }, ({ books }) => (
             <ul>
@@ -102,15 +103,15 @@ export const SearchResults = clientEntry(
             </ul>
           ))
           .with({ type: "booksNotFound", reason: 'emptyList' }, () => (
-            <p>Books not found for this title</p>
+            <p>Books not found for this title at this time.</p>
           ))
           .with({ type: "booksNotFound", reason: {other: P.select()} }, (msg) => (
-            <p>Could not fetch books, reason: {msg}</p>
+            <p>Could not fetch books. reason: {msg}.</p>
           ))
           .with({ type: "error" }, ({ error }) => (
             <p>
               Unexpected error occured, try again! {error.message} Cause:{" "}
-              {error.cause as string}
+              {error.cause as string}.
             </p>
           ))
           .exhaustive()}
