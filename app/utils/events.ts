@@ -9,30 +9,23 @@ export function createSemanticEventListener<SemanticEvent>(
   listenerCallback: (evt: SemanticEvent) => void,
   options: AddEventListenerOptions,
 ) {
-  const semanticEventTypePrefix = "@";
+  const eventTypePrefix = '@'
 
-  class SemanticEventTarget extends TypedEventTarget<{
-    [semanticEventTypePrefix]: CustomEvent<SemanticEvent>;
-  }> {
-    constructor() {
-      super();
-      this.addEventListener(
-        semanticEventTypePrefix,
-        (evt) => listenerCallback(evt.detail),
-        options,
-      );
-    }
+  const evt = new EventTarget() as TypedEventTarget<{
+    [eventTypePrefix]: CustomEvent<SemanticEvent>
+  }>
 
-    static instance = new SemanticEventTarget();
+  evt.addEventListener(
+    eventTypePrefix,
+    (evt) => listenerCallback(evt.detail),
+    options,
+  )
 
-    static dispatchSemanticEvent(
-      semanticEvent: SemanticEvent | undefined,
-    ) {
-      return SemanticEventTarget.instance.dispatchEvent(
-        new CustomEvent(semanticEventTypePrefix, { detail: semanticEvent }),
-      );
-    }
+  return function dispatchSemanticEvent(
+    semanticEvent: SemanticEvent | undefined,
+  ) {
+    return evt.dispatchEvent(
+      new CustomEvent(eventTypePrefix, { detail: semanticEvent }),
+    )
   }
-
-  return SemanticEventTarget.dispatchSemanticEvent;
 }
