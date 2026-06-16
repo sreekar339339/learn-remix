@@ -1,139 +1,137 @@
 import {
   attrs,
   clientEntry,
-  createMixin,
   css,
   on,
   ref,
+  type Dispatched,
   type Handle,
 } from "remix/ui";
 import { createSemanticEventListener } from "./utils/events.ts";
-import { match, P } from "ts-pattern";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
 type Result = Player | "Draw" | null;
 
-type InteractionType = "navigation" | "selection";
-type GameEvent =
-  | { type: "ended" }
-  | { type: "notEnded"; interactionType: InteractionType };
+const interactionType = {
+  navigation: "navigation",
+  selection: "selection",
+} as const;
+
+type InteractionType = typeof interactionType;
+
+type GameEvent = { interactionType: keyof InteractionType };
 
 export const TicTacToe = clientEntry(
   import.meta.url,
   class {
     board: Board = new Array(9).fill(null);
     nextPlayer: Player = "X";
-    rootNode?: HTMLElement;
     isFirstMoveMade = false;
     result?: Result;
-    resetNode?: HTMLElement;
-    cellNodes: Array<HTMLElement> = [];
     dispatchGameEvent: ReturnType<
       typeof createSemanticEventListener<GameEvent>
     >;
-    cellIdToFocus = 0;
-    pendingUpdate?: ReturnType<Handle["update"]>;
+    nodeIdToFocus: number | "reset" = 0;
+    nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
+      reset: HTMLElement;
+    };
 
     constructor(handle: Handle) {
       this.dispatchGameEvent = createSemanticEventListener<GameEvent>(
-        async (evt) =>
-          match(evt)
-            .with(
-              { type: "notEnded", interactionType: "navigation" },
-              async () => {
-                this.focus("cell");
-              },
-            )
-            .with(
-              P.union(
-                { type: "ended" },
-                { type: "notEnded", interactionType: "selection" },
-              ),
-              (val) => {
-                this.pendingUpdate = handle.update();
-                match(val)
-                  .with({ interactionType: "selection" }, () =>
-                    this.focus("cell"),
-                  )
-                  .with({ type: "ended" }, () => this.focus("reset"));
-              },
-            )
-            .exhaustive(),
+        async (evt) => {
+          if (evt.interactionType === "selection") {
+            await handle.update();
+          }
+          this.focusNode();
+        },
         { signal: handle.signal },
       );
 
       handle.queueTask(() =>
         this.dispatchGameEvent({
-          type: "notEnded",
           interactionType: "navigation",
         }),
       );
     }
 
-    render = () => (
-      <div
-        mix={[
-          css({
-            width: "100%",
-            maxWidth: "420px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "36px",
-          }),
-          this.rootMix(),
-        ]}
-      >
+    render() {
+      return (
         <div
           mix={[
             css({
               width: "100%",
-              aspectRatio: "1/1",
+              maxWidth: "420px",
               display: "flex",
-              flexWrap: "wrap",
-              gap: "4px",
+              flexDirection: "column",
+              gap: "36px",
             }),
           ]}
         >
-          {this.board.map((cell, index) => (
-            <button
-              key={index}
-              mix={[
-                css({
-                  width: "calc(100% / 3 - 4px)",
-                  aspectRatio: "1/1",
-                  "&:disabled": { backgroundColor: "darkgray" },
-                  fontSize: "36px",
-                  fontWeight: "bold",
-                }),
-                this.cellMix(index),
-              ]}
-              style={{ color: cell === "X" ? "blue" : "red" }}
-            >
-              {cell}
-            </button>
-          ))}
+          <div
+            mix={[
+              css({
+                width: "100%",
+                aspectRatio: "1/1",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "4px",
+              }),
+              on("click", (event) => this.handleSelection(event)),
+              on("keydown", (event) => this.handleNavigation(event)),
+            ]}
+          >
+            {this.board.map((cell, index) => (
+              <button
+                key={index}
+                mix={[
+                  css({
+                    width: "calc(100% / 3 - 4px)",
+                    aspectRatio: "1/1",
+                    "&:disabled": { backgroundColor: "darkgray" },
+                    fontSize: "36px",
+                    fontWeight: "bold",
+                  }),
+                  attrs({
+                    name: "cell",
+                    value: index,
+                    disabled: this.board[index] !== null,
+                  }),
+                  ref((node) => (this.nodeIdMap[index] = node)),
+                ]}
+                style={{ color: cell === "X" ? "blue" : "red" }}
+              >
+                {cell}
+              </button>
+            ))}
+          </div>
+          <button
+            mix={[
+              css({ fontSize: "18px", padding: "8px 16px" }),
+              attrs({ disabled: !this.isFirstMoveMade }),
+              ref((node) => (this.nodeIdMap["reset"] = node)),
+              on("click", () => this.handleReset()),
+            ]}
+          >
+            Reset
+          </button>
         </div>
-        <button
-          mix={[
-            this.resetMix(),
-            css({ fontSize: "18px", padding: "8px 16px" }),
-          ]}
-        >
-          Reset
-        </button>
-      </div>
-    );
+      );
+    }
+    static TicTacToe = (handle: Handle) => {
+      let game = new this(handle);
+      return game.render.bind(game);
+    };
 
-    static TicTacToe = (handle: Handle) => new this(handle).render;
+    getCellId(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return;
+      const eventTargetName = target.getAttribute("name");
+      if (eventTargetName !== "cell") return;
+      return parseInt(target.getAttribute("value") || "");
+    }
 
-    async focus(type: "cell" | "reset") {
-      await this.pendingUpdate;
-      if (type === "cell") {
-        this.cellNodes[this.cellIdToFocus].focus();
-      } else {
-        this.resetNode?.focus();
-      }
+    focusNode() {
+      this.nodeIdMap[this.nodeIdToFocus].focus();
     }
 
     makeSelection(cellIdx: number) {
@@ -174,16 +172,19 @@ export const TicTacToe = clientEntry(
       this.nextPlayer = "X";
       this.isFirstMoveMade = false;
       this.result = null;
+      this.nodeIdToFocus = 0;
     }
 
-    handleSelection(cellIdx: number) {
+    handleSelection(event: Dispatched<PointerEvent, HTMLDivElement>) {
+      const cellIdx = this.getCellId(event.target);
+      if (cellIdx === undefined) return;
       this.makeSelection(cellIdx);
       if (this.result) {
-        this.dispatchGameEvent({ type: "ended" });
+        this.nodeIdToFocus = "reset";
+        this.dispatchGameEvent({ interactionType: "selection" });
       } else {
-        this.setNextFreeCellIdx({ interactionType: "selection" });
+        this.setNextNodeIdToFocus({ interactionType: "selection" });
         this.dispatchGameEvent({
-          type: "notEnded",
           interactionType: "selection",
         });
       }
@@ -191,87 +192,82 @@ export const TicTacToe = clientEntry(
 
     handleReset() {
       this.resetGame();
-      this.cellIdToFocus = 0;
+      this.dispatchGameEvent({ interactionType: "selection" });
+    }
+
+    keyToIdxIncrementMap = {
+      ArrowUp: -3,
+      ArrowDown: 3,
+      ArrowLeft: -1,
+      ArrowRight: 1,
+    };
+
+    isArrowKey(
+      eventKey: unknown,
+    ): eventKey is keyof typeof this.keyToIdxIncrementMap {
+      return Object.hasOwn(this.keyToIdxIncrementMap, eventKey as string);
+    }
+
+    handleNavigation(event: Dispatched<KeyboardEvent, HTMLDivElement>) {
+      let eventKey = event.key;
+      if (!this.isArrowKey(eventKey)) return;
+      const cellIdx = this.getCellId(event.target);
+      if (cellIdx === undefined) return;
+      this.nodeIdToFocus = cellIdx; // current focus
+      this.setNextNodeIdToFocus({
+        interactionType: "navigation",
+        idxIncrement: this.keyToIdxIncrementMap[eventKey],
+      });
       this.dispatchGameEvent({
-        type: "notEnded",
-        interactionType: "selection",
+        interactionType: "navigation",
       });
     }
 
-    rootMix = createMixin<HTMLElement>(() => () => [
-      on("click", async (event) => {
-        if (!(event.target instanceof HTMLElement)) return;
-        const eventTargetName = event.target.getAttribute("name");
-        if (eventTargetName === null) return;
-        if (eventTargetName === "cell") {
-          const cellIdx = parseInt(event.target.getAttribute("value") || "");
-          this.handleSelection(cellIdx);
-        } else if (eventTargetName === "reset") {
-          this.handleReset();
-        }
-      }),
-      on("keydown", (event) => {
-        if (!(event.target instanceof HTMLElement)) return;
-        let setNextFreeCell = (idxIncrement: number) => {
-          this.setNextFreeCellIdx({
-            interactionType: "navigation",
-            idxIncrement,
-          });
-          this.dispatchGameEvent({
-            type: "notEnded",
-            interactionType: "navigation",
-          });
-        };
-        match(event.key)
-          .with("ArrowUp", () => setNextFreeCell(-3))
-          .with("ArrowDown", () => setNextFreeCell(3))
-          .with("ArrowLeft", () => setNextFreeCell(-1))
-          .with("ArrowRight", () => setNextFreeCell(1));
-      }),
-    ]);
-
-    setNextFreeCellIdx(
+    setNextNodeIdToFocus(
       arg:
-        | { interactionType: "navigation"; idxIncrement: number }
-        | { interactionType: "selection" },
-    ) {
-      match(arg)
-        .with({ interactionType: "navigation" }, ({ idxIncrement }) => {
-          let nextFreeCellIdx = this.cellIdToFocus + idxIncrement;
-          let boundIdx = idxIncrement < 0 ? 0 : 8;
-          if (
-            (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
-            (boundIdx === 9 && nextFreeCellIdx > boundIdx)
-          )
-            return;
-          this.cellIdToFocus = nextFreeCellIdx;
-        })
-        .with({ interactionType: "selection" }, () => {
-          let nextFreeCellIdx = (this.cellIdToFocus + 1) % 9;
-          while (this.board[nextFreeCellIdx]) {
-            nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
-            if (nextFreeCellIdx === this.cellIdToFocus) {
-              // We've looped through all cells and found no free cell
-              return;
-            }
+        | {
+            interactionType: InteractionType["navigation"];
+            idxIncrement: number;
           }
-          this.cellIdToFocus = nextFreeCellIdx;
-        })
-        .exhaustive();
+        | { interactionType: InteractionType["selection"] },
+    ) {
+      if (arg.interactionType === "navigation") {
+        return this.handleNextNodeInNavigation(arg.idxIncrement);
+      }
+      this.handleNextNodeInSelection();
     }
 
-    cellMix = createMixin<HTMLElement, [index: number]>(() => (index) => [
-      attrs({
-        name: "cell",
-        value: index,
-        disabled: this.board[index] !== null,
-      }),
-      ref((node) => this.cellNodes.push(node)),
-    ]);
+    handleNextNodeInNavigation(idxIncrement: number) {
+      if (this.nodeIdToFocus == "reset") return;
+      let nextFreeCellIdx = this.nodeIdToFocus + idxIncrement;
+      let boundIdx = idxIncrement < 0 ? 0 : 8;
+      if (
+        (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
+        (boundIdx === 8 && nextFreeCellIdx > boundIdx)
+      )
+        return;
+      while (this.board[nextFreeCellIdx]) {
+        nextFreeCellIdx += idxIncrement;
+        if (
+          (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
+          (boundIdx === 8 && nextFreeCellIdx > boundIdx)
+        )
+          return;
+      }
+      this.nodeIdToFocus = nextFreeCellIdx;
+    }
 
-    resetMix = createMixin<HTMLElement>(() => () => [
-      attrs({ disabled: !this.isFirstMoveMade, name: "reset" }),
-      ref((node) => (this.resetNode = node)),
-    ]);
+    handleNextNodeInSelection() {
+      if (this.nodeIdToFocus == "reset") return;
+      let nextFreeCellIdx = (this.nodeIdToFocus + 1) % 9;
+      while (this.board[nextFreeCellIdx]) {
+        nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
+        if (nextFreeCellIdx === this.nodeIdToFocus) {
+          // We've looped through all cells and found no free cell
+          return;
+        }
+      }
+      this.nodeIdToFocus = nextFreeCellIdx;
+    }
   }.TicTacToe,
 );
