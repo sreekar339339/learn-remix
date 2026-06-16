@@ -6,10 +6,11 @@ import type { RemixNode } from 'remix/ui'
 import { renderToStream } from 'remix/ui/server'
 
 import { assetServer } from '../assets.ts'
+import type { Router } from 'remix/router'
 
 export function render() {
   return renderWith(
-    ({ request }) =>
+    ({ request, router }) =>
       function render(node: RemixNode, init?: ResponseInit) {
         let stream = renderToStream(node, {
           signal: request.signal,
@@ -26,11 +27,37 @@ export function render() {
               exportName: entryId.split('#')[1] || component.name || titleCaseFileName(entryId),
             }
           },
+          resolveFrame: (src) => resolveFrame(router, request, src),
         })
 
         return createHtmlResponse(stream, init)
       },
   )
+}
+
+async function resolveFrame(router: Router, request: Request, src: string) {
+  let url = new URL(src, request.url)
+
+  let headers = new Headers()
+  headers.set('Accept', 'text/html')
+  headers.set('Accept-Encoding', 'identity')
+
+  let cookie = request.headers.get('Cookie')
+  if (cookie) headers.set('Cookie', cookie)
+
+  let res = await router.fetch(
+    new Request(url, {
+      method: 'GET',
+      headers,
+      signal: request.signal,
+    }),
+  )
+
+  if (!res.ok) {
+    return `<pre>Frame error: ${res.status} ${res.statusText}</pre>`
+  }
+
+  return res.text()
 }
 
 function titleCaseFileName(fileUrl: string): string {

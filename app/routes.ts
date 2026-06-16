@@ -9,6 +9,6 @@ export const routes = route({
     api: route('api', {
       books: get('books')
     }),
-    frame: get('bookSearchResults')
+    frame: get('books')
   })
 })
