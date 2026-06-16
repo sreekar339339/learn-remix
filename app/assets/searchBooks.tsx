@@ -38,7 +38,7 @@ async function fetchBooks(
 }
 
 type SearchEvent =
-  | { type: "fetching" }
+  | { type: "querySubmitted", query: string }
   | { type: "idle" }
   | { type: "error"; error: Error }
   | { type: "booksFound"; books: Array<{ title: string }> }
@@ -51,7 +51,7 @@ export const SearchBooks = clientEntry(
     let input: HTMLInputElement;
 
     let searchEvent: SearchEvent = initialQuery
-      ? { type: "fetching" }
+      ? { type: "querySubmitted", query: initialQuery }
       : { type: "idle" };
 
     let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
@@ -63,7 +63,6 @@ export const SearchBooks = clientEntry(
     );
 
     handle.queueTask(async (signal) => {
-      input.focus()
       input.select()
       if (!initialQuery) return;
       fetchBooks(initialQuery, dispatchSearchEvent, signal)
@@ -83,7 +82,7 @@ export const SearchBooks = clientEntry(
                   if (!query) {
                     return void dispatchSearchEvent({ type: "idle" });
                   }
-                  dispatchSearchEvent({ type: "fetching" });
+                  dispatchSearchEvent({ type: "querySubmitted", query });
                   fetchBooks(query, dispatchSearchEvent, signal)
                 }),
                 css({ padding: 4 }),
@@ -94,7 +93,7 @@ export const SearchBooks = clientEntry(
         </div>
         {match(searchEvent)
           .with({ type: "idle" }, () => <p>Enter the title of any book.</p>)
-          .with({ type: "fetching" }, () => <p>fetching books...</p>)
+          .with({ type: "querySubmitted" }, ({query}) => <p>fetching books with title containing {query}...</p>)
           .with({ type: "booksFound" }, ({ books }) => (
             <ul>
               {books.map((book) => (

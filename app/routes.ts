@@ -8,6 +8,7 @@ export const routes = route({
     index: get('/'),
     api: route('api', {
       books: get('books')
-    })
+    }),
+    frame: get('bookSearchResults')
   })
 })

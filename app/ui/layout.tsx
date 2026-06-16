@@ -6,12 +6,13 @@ import { routes } from "../routes.ts";
 export function Layout(handle: Handle<{ children: RemixNode }>) {
   return () => (
     <Document>
-      <main mix={css({ height: "100vh" })}>
+      <main mix={css({ height: "100vh", width: '100%', maxWidth: 720 })}>
         <nav
           mix={css({
             display: "flex",
             gap: 18,
             padding: 16,
+            justifyContent: 'center'
           })}
         >
           <a href={routes.index.href()}>Home</a>
