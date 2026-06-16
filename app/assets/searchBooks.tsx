@@ -39,7 +39,7 @@ async function fetchBooks(
 
 type SearchEvent =
   | { type: "querySubmitted", query: string }
-  | { type: "idle" }
+  | { type: "queryEmpty" }
   | { type: "error"; error: Error }
   | { type: "booksFound"; books: Array<{ title: string }> }
   | { type: "booksNotFound", reason: 'emptyList' | {other: string} };
@@ -52,7 +52,7 @@ export const SearchBooks = clientEntry(
 
     let searchEvent: SearchEvent = initialQuery
       ? { type: "querySubmitted", query: initialQuery }
-      : { type: "idle" };
+      : { type: "queryEmpty" };
 
     let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
       (evt) => {
@@ -80,7 +80,7 @@ export const SearchBooks = clientEntry(
                 on("input", async (evt, signal) => {
                   const query = evt.currentTarget.value.trim();
                   if (!query) {
-                    return void dispatchSearchEvent({ type: "idle" });
+                    return void dispatchSearchEvent({ type: "queryEmpty" });
                   }
                   dispatchSearchEvent({ type: "querySubmitted", query });
                   fetchBooks(query, dispatchSearchEvent, signal)
@@ -92,7 +92,7 @@ export const SearchBooks = clientEntry(
           </label>
         </div>
         {match(searchEvent)
-          .with({ type: "idle" }, () => <p>Enter the title of any book.</p>)
+          .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
           .with({ type: "querySubmitted" }, ({query}) => <p>fetching books with title containing {query}...</p>)
           .with({ type: "booksFound" }, ({ books }) => (
             <ul>

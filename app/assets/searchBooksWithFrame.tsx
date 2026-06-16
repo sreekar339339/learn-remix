@@ -3,7 +3,7 @@ import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
 import { createSemanticEventListener } from "./utils/events.ts";
 
-type SearchEvent = { type: "idle" } | { type: "querySubmitted"; query: string };
+type SearchEvent = { type: "queryEmpty" } | { type: "querySubmitted"; query: string };
 
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
@@ -13,7 +13,7 @@ export const SearchBooksWithFrame = clientEntry(
 
     let searchEvent: SearchEvent = initialQuery
       ? { type: "querySubmitted", query: initialQuery }
-      : { type: "idle" };
+      : { type: "queryEmpty" };
 
     let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
       (evt) => {
@@ -34,7 +34,7 @@ export const SearchBooksWithFrame = clientEntry(
             on("submit", async (evt) => {
               evt.preventDefault();
               let query = input.value.trim();
-              if (!query) return void dispatchSearchEvent({ type: "idle" });
+              if (!query) return void dispatchSearchEvent({ type: "queryEmpty" });
               dispatchSearchEvent({ type: "querySubmitted", query });
               input.select();
             }),
@@ -50,11 +50,11 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         {match(searchEvent)
-          .with({ type: "idle" }, () => <p>Enter the title of any book.</p>)
+          .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
           .with({ type: "querySubmitted" }, ({ query }) => (
             <Frame
               key={query}
-              fallback={<p>fetching books with title containing {query}...</p>}
+              fallback={<p>fetching books with title containing "{query}"...</p>}
               src={routes.asyncActions.frame.href(undefined, { q: query })}
             />
           ))
