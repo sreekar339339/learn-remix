@@ -37,6 +37,11 @@ export const TicTacToe = clientEntry(
       reset: HTMLElement;
     };
 
+    static TicTacToe = (handle: Handle) => {
+      let game = new this(handle);
+      return game.render.bind(game);
+    };
+
     constructor(handle: Handle) {
       this.dispatchGameEvent = createSemanticEventListener<GameEvent>(
         async (evt) => {
@@ -118,10 +123,6 @@ export const TicTacToe = clientEntry(
         </div>
       );
     }
-    static TicTacToe = (handle: Handle) => {
-      let game = new this(handle);
-      return game.render.bind(game);
-    };
 
     getCellId(target: EventTarget | null) {
       if (!(target instanceof HTMLElement)) return;
