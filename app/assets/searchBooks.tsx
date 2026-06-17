@@ -11,7 +11,7 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    let resp = await fetch(routes.asyncActions.api.books.href(undefined, { q: query }), {
+    let resp = await fetch(routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }), {
       signal,
     });
     if (!resp.ok) throw new Error(resp.statusText, { cause: resp.status });

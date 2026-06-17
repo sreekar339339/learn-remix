@@ -1,12 +1,11 @@
 import * as path from 'node:path'
-
 import { renderWith } from 'remix/middleware/render'
 import { createHtmlResponse } from 'remix/response/html'
 import type { RemixNode } from 'remix/ui'
 import { renderToStream } from 'remix/ui/server'
-
 import { assetServer } from '../assets.ts'
 import type { Router } from 'remix/router'
+import { SuperHeaders } from 'remix/headers'
 
 export function render() {
   return renderWith(
@@ -30,7 +29,10 @@ export function render() {
           resolveFrame: (src) => resolveFrame(router, request, src),
         })
 
-        return createHtmlResponse(stream, init)
+        let headers = new SuperHeaders(init?.headers)
+        headers.cacheControl = 'no-store'
+
+        return createHtmlResponse(stream, {...init, })
       },
   )
 }
@@ -38,9 +40,9 @@ export function render() {
 async function resolveFrame(router: Router, request: Request, src: string) {
   let url = new URL(src, request.url)
 
-  let headers = new Headers(request.headers)
-  headers.set('Accept', 'text/html')
-  headers.delete('Accept-Encoding')
+  let headers = new SuperHeaders(request.headers)
+  headers.accept = 'text/html'
+  headers.acceptEncoding = null
 
   let response = await router.fetch(
     new Request(url, {

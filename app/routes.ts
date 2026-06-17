@@ -1,14 +1,35 @@
-import { get, route } from 'remix/routes'
+import { form, get, resource, route, put, resources, post, del } from 'remix/routes'
 
 export const routes = route({
   assets: get('/assets/*path'),
   index: get('/'),
   ticTacToe: get('ticTacToe'),
   asyncActions: route('asyncActions', {
-    index: get('/'),
-    api: route('api', {
-      books: get('books')
+    withoutFrame: route('withoutFrame', {
+      index: get('/'),
+      api: route('api', {
+        books: get('books')
+      }),
     }),
-    frame: get('books')
+    withFrame: route('withFrame', {
+      index: get('/'),
+      frame: get('books')
+    })
+  }),
+  todolist: route('todolist', {
+    index: get('/'),
+    // frame: get('todos'),
+    // action: form('action', {
+    //   formMethod: 'POST',
+    //   names: {
+    //     action: 'add'
+    //   },
+    // })
+    // todos: {
+    //   update: route('update', {
+    //     text: put('text')
+    //   })
+    // }
+    todos: form('todos')
   })
 })

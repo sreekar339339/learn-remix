@@ -1,7 +1,10 @@
-export function Index() {
+import type { Handle } from "remix/ui";
+import { Layout } from "../ui/layout.tsx";
+
+export function Index(handle: Handle<{url?: URL}>) {
   return () => (
-    <section>
-      Pick apps from above links
-    </section>
+    <Layout url={handle.props.url}>
+      <section>Pick apps from above links</section>
+    </Layout>
   );
 }

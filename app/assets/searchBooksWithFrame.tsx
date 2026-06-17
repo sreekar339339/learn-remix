@@ -55,7 +55,7 @@ export const SearchBooksWithFrame = clientEntry(
             <Frame
               key={query}
               fallback={<p>fetching books with title containing "{query}"...</p>}
-              src={routes.asyncActions.frame.href(undefined, { q: query })}
+              src={routes.asyncActions.withFrame.frame.href(undefined, { q: query })}
             />
           ))
           .exhaustive()}

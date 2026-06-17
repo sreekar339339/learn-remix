@@ -63,9 +63,6 @@ export function Document(handle: Handle<DocumentProps>) {
             lineHeight: 1.5,
             WebkitFontSmoothing: "antialiased",
             MozOsxFontSmoothing: "grayscale",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
           })}
         >
           {children}
