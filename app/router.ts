@@ -3,7 +3,6 @@ import { staticFiles } from 'remix/middleware/static'
 import { asyncActionsApiController, asyncActionsController, rootController } from './actions/controller.tsx'
 import { render } from './middleware/render.tsx'
 import { routes } from './routes.ts'
-import { compression } from 'remix/compression-middleware'
 
 type AppContext = MiddlewareContext<[ReturnType<typeof render>]>
 
@@ -14,7 +13,7 @@ declare module 'remix/router' {
 }
 
 export const router = createRouter<AppContext>({
-  middleware: [staticFiles('./public', { index: false }), compression(), render()],
+  middleware: [staticFiles('./public', { index: false }), render()]
 })
 
 router.map(routes, rootController)

@@ -38,14 +38,11 @@ export function render() {
 async function resolveFrame(router: Router, request: Request, src: string) {
   let url = new URL(src, request.url)
 
-  let headers = new Headers()
+  let headers = new Headers(request.headers)
   headers.set('Accept', 'text/html')
-  headers.set('Accept-Encoding', 'identity')
+  headers.delete('Accept-Encoding')
 
-  let cookie = request.headers.get('Cookie')
-  if (cookie) headers.set('Cookie', cookie)
-
-  let res = await router.fetch(
+  let response = await router.fetch(
     new Request(url, {
       method: 'GET',
       headers,
@@ -53,11 +50,11 @@ async function resolveFrame(router: Router, request: Request, src: string) {
     }),
   )
 
-  if (!res.ok) {
-    return `<pre>Frame error: ${res.status} ${res.statusText}</pre>`
+  if (!response.ok) {
+    return `<pre>Frame error: ${response.status} ${response.statusText}</pre>`
   }
 
-  return res.text()
+  return response.body ?? response.text()
 }
 
 function titleCaseFileName(fileUrl: string): string {
