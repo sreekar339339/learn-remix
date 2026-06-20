@@ -7,7 +7,7 @@ import {
   type Dispatched,
   type Handle,
 } from "remix/ui";
-import { createSemanticEventListener } from "./utils/events.ts";
+import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
@@ -20,7 +20,7 @@ const interactionType = {
 
 type InteractionType = typeof interactionType;
 
-type GameEvent = { interactionType: keyof InteractionType };
+type GameEvent = { type: keyof InteractionType };
 
 export const TicTacToe = clientEntry(
   import.meta.url,
@@ -29,9 +29,7 @@ export const TicTacToe = clientEntry(
     nextPlayer: Player = "X";
     isFirstMoveMade = false;
     result?: Result;
-    dispatchGameEvent: ReturnType<
-      typeof createSemanticEventListener<GameEvent>
-    >;
+    gameEvtTarget: SemanticEventTarget<GameEvent>;
     nodeIdToFocus: number | "reset" = 0;
     nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
       reset: HTMLElement;
@@ -43,9 +41,9 @@ export const TicTacToe = clientEntry(
     };
 
     constructor(handle: Handle) {
-      this.dispatchGameEvent = createSemanticEventListener<GameEvent>(
+      this.gameEvtTarget = new SemanticEventTarget<GameEvent>(
         async (evt) => {
-          if (evt.interactionType === "selection") {
+          if (evt.type === "selection") {
             await handle.update();
           }
           this.focusNode();
@@ -54,8 +52,8 @@ export const TicTacToe = clientEntry(
       );
 
       handle.queueTask(() =>
-        this.dispatchGameEvent({
-          interactionType: "navigation",
+        this.gameEvtTarget.dispatchEvent({
+          type: "navigation",
         }),
       );
     }
@@ -182,18 +180,18 @@ export const TicTacToe = clientEntry(
       this.makeSelection(cellIdx);
       if (this.result) {
         this.nodeIdToFocus = "reset";
-        this.dispatchGameEvent({ interactionType: "selection" });
+        this.gameEvtTarget.dispatchEvent({ type: "selection" });
       } else {
-        this.setNextNodeIdToFocus({ interactionType: "selection" });
-        this.dispatchGameEvent({
-          interactionType: "selection",
+        this.setNextNodeIdToFocus({ type: "selection" });
+        this.gameEvtTarget.dispatchEvent({
+          type: "selection",
         });
       }
     }
 
     handleReset() {
       this.resetGame();
-      this.dispatchGameEvent({ interactionType: "selection" });
+      this.gameEvtTarget.dispatchEvent({ type: "selection" });
     }
 
     keyToIdxIncrementMap = {
@@ -216,23 +214,23 @@ export const TicTacToe = clientEntry(
       if (cellIdx === undefined) return;
       this.nodeIdToFocus = cellIdx; // current focus
       this.setNextNodeIdToFocus({
-        interactionType: "navigation",
+        type: "navigation",
         idxIncrement: this.keyToIdxIncrementMap[eventKey],
       });
-      this.dispatchGameEvent({
-        interactionType: "navigation",
+      this.gameEvtTarget.dispatchEvent({
+        type: "navigation",
       });
     }
 
     setNextNodeIdToFocus(
       arg:
         | {
-            interactionType: InteractionType["navigation"];
+            type: InteractionType["navigation"];
             idxIncrement: number;
           }
-        | { interactionType: InteractionType["selection"] },
+        | { type: InteractionType["selection"] },
     ) {
-      if (arg.interactionType === "navigation") {
+      if (arg.type === "navigation") {
         return this.handleNextNodeInNavigation(arg.idxIncrement);
       }
       this.handleNextNodeInSelection();

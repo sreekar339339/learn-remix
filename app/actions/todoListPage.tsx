@@ -1,15 +1,12 @@
-import { Frame } from "remix/ui";
-import { AddTodo } from "../assets/todolist/addTodo.tsx";
 import { Layout } from "../ui/layout.tsx";
-import { routes } from "../routes.ts";
+import { TodoList } from "../assets/todolist/todoList.tsx";
 
 export function TodoListPage() {
   return () => (
     <Layout>
       <section>
         <h1>Todo-list</h1>
-        <AddTodo />
-        <Frame name="todoItems" src={routes.todolist.todos.index.href()} />
+        <TodoList />
       </section>
     </Layout>
   )

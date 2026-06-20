@@ -16,11 +16,10 @@ import {
   deleteTodos,
   todos,
   updateTodos,
-  type Todo,
 } from "../data/todolist.ts";
 import { redirect } from "remix/response/redirect";
 import * as f from "remix/data-schema/form-data";
-import { minLength } from "remix/data-schema/checks";
+import { maxLength, minLength } from "remix/data-schema/checks";
 import { TodoItems } from "../assets/todolist/todoItems.tsx";
 import * as coerce from "remix/data-schema/coerce";
 
@@ -185,29 +184,51 @@ export const todolistController = createController(routes.todolist, {
   },
 });
 
-const textField = f.field(s.defaulted(s.string().pipe(minLength(3)), ""));
+const intent = {
+  create: "create",
+  delete: "delete",
+  update: "update",
+  none: "none",
+} as const;
 
-const createTodoSchema = f.object({
-  text: textField,
-});
-
-const searchParamsSchema = s.union([
-  f.object({
-    intent: f.field(s.enum_(["update"])),
-    field: f.field(s.enum_(["text", "completed"])),
-    redirectTo: f.field(s.optional(s.enum_(["none"]))),
-  }),
-  f.object({
-    intent: f.field(s.enum_(["delete", "create"])),
-    redirectTo: f.field(s.optional(s.enum_(["none"]))),
-  }),
-]);
+const inputFields = {
+  redirectTo: f.field(s.optional(s.literal(intent.none))),
+  intent<T>(val: T) { return f.field(s.literal(val)) },
+  textField: f.field(s.defaulted(s.string().pipe(minLength(3), maxLength(100)), ""))
+}
 
 const todoSchema = f.object({
-  id: f.field(s.string().pipe(minLength(5))),
-  text: textField,
+  id: f.field(s.string().pipe()),
+  text: inputFields.textField,
   completed: f.field(coerce.boolean()),
 });
+
+const todoActionInputSchema = s.union([
+  s.object({
+    searchParams: f.object({
+      intent: inputFields.intent(intent.create),
+      redirectTo: inputFields.redirectTo,
+    }),
+    formData: f.object({
+      text: inputFields.textField,
+    }),
+  }),
+  s.object({
+    searchParams: f.object({
+      intent: inputFields.intent(intent.delete),
+      redirectTo: inputFields.redirectTo,
+    }),
+    formData: todoSchema,
+  }),
+  s.object({
+    searchParams: f.object({
+      intent: inputFields.intent(intent.update),
+      field: f.field(s.enum_(["text", "completed"])),
+      redirectTo: inputFields.redirectTo,
+    }),
+    formData: todoSchema,
+  }),
+]);
 
 export const todosCrudController = createController(routes.todolist.todos, {
   actions: {
@@ -215,31 +236,59 @@ export const todosCrudController = createController(routes.todolist.todos, {
       // await delay();
       return render(<TodoItems todos={todos} />);
     },
-    action({ formData, url }) {
-      let action = s.parse(searchParamsSchema, url.searchParams);
-      match(action)
-        .with({ intent: "delete" }, () => {
-          let todo = s.parse(todoSchema, formData);
-          deleteTodos(todo);
-        })
-        .with({ intent: "update", field: "completed" }, () => {
-          let todo = s.parse(todoSchema, formData);
-          todo.completed = !todo.completed;
-          updateTodos(todo);
-        })
-        .with({ intent: "update", field: "text" }, () => {
-          let todo = s.parse(todoSchema, formData);
-          updateTodos(todo);
-        })
-        .with({ intent: "create" }, () => {
-          let { text } = s.parse(createTodoSchema, formData);
-          addTodos(text);
-        })
-        .exhaustive();
-      if (action.redirectTo === "none") {
-        return new Response(null, { status: 204 });
+    action({ formData, url: { searchParams } }) {
+      try {
+        let input = s.parse(todoActionInputSchema, { searchParams, formData });
+        match(input)
+          .with(
+            {
+              searchParams: { intent: "create" },
+              formData: { text: P.select() },
+            },
+            addTodos,
+          )
+          .with(
+            { searchParams: { intent: "delete" }, formData: P.select() },
+            deleteTodos,
+          )
+          .with(
+            { searchParams: { field: "completed" }, formData: P.select() },
+            (todo) => {
+              todo.completed = !todo.completed;
+              updateTodos(todo);
+            },
+          )
+          .with(
+            { searchParams: { field: "text" }, formData: P.select() },
+            updateTodos,
+          )
+          .exhaustive();
+        if (input.searchParams.redirectTo === "none") {
+          return new Response(null, { status: 204 });
+        }
+        return redirect(routes.todolist.index.href());
+      } catch (e) {
+        return match(e)
+          .with(
+            P.instanceOf(s.ValidationError),
+            (error) =>
+              new Response(error.issues[0].message, {
+                status: 400,
+                statusText: error.name,
+              }),
+          )
+          .with(
+            P.instanceOf(Error),
+            (err) =>
+              new Response(err.message + err.cause, {
+                status: 500,
+                statusText: err.name,
+              }),
+          )
+          .otherwise(
+            () => new Response("Unexpected server error", { status: 500 }),
+          );
       }
-      return redirect(routes.todolist.index.href());
     },
   },
 });

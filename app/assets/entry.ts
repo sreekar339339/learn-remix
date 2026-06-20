@@ -5,12 +5,13 @@ run({
     let mod = await import(moduleUrl)
     return mod[exportName]
   },
-  async resolveFrame(src, signal) {
-    let response = await fetch(src, { headers: { Accept: 'text/html' }, signal })
+  async resolveFrame(src, signal, target) {
+    let headers = new Headers({ accept: 'text/html' })
+    if (target) headers.set('x-remix-target', target)
+    let response = await fetch(src, { headers, signal })
     if (!response.ok) {
       return `<pre>Frame error: ${response.status} ${response.statusText}</pre>`
     }
-    if (response.body) return response.body
-    return response.text()
+    return response.body ?? await response.text()
   },
 })

@@ -1,13 +1,11 @@
 import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
-import { createSemanticEventListener } from "./utils/events.ts";
+import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
 async function fetchBooks(
   query: string,
-  dispatchSearchEvent: ReturnType<
-    typeof createSemanticEventListener<SearchEvent>
-  >,
+  searchEventTarget: SemanticEventTarget<SearchEvent>,
   signal: AbortSignal,
 ) {
   try {
@@ -18,19 +16,19 @@ async function fetchBooks(
     let json = await resp.json();
     if (signal.aborted) throw new DOMException(signal.reason, "AbortError");
     if (!("docs" in json)) {
-      return void dispatchSearchEvent({type: 'booksNotFound', reason: {other: json.detail[0].msg}})
+      return void searchEventTarget.dispatchEvent({type: 'booksNotFound', reason: {other: json.detail[0].msg}})
     }
     let books = json.docs;
     if (!books.length) {
-      return void dispatchSearchEvent({
+      return void searchEventTarget.dispatchEvent({
         type: "booksNotFound",
         reason: 'emptyList'
       });
     }
-    dispatchSearchEvent({ type: "booksFound", books });
+    searchEventTarget.dispatchEvent({ type: "booksFound", books });
   } catch (error) {
     if (signal.aborted) return;
-    dispatchSearchEvent({
+    searchEventTarget.dispatchEvent({
       type: "error",
       error: error as Error,
     });
@@ -54,7 +52,7 @@ export const SearchBooks = clientEntry(
       ? { type: "querySubmitted", query: initialQuery }
       : { type: "queryEmpty" };
 
-    let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
+    let searchEvtTarget = new SemanticEventTarget<SearchEvent>(
       (evt) => {
         searchEvent = evt;
         handle.update();
@@ -65,7 +63,7 @@ export const SearchBooks = clientEntry(
     handle.queueTask(async (signal) => {
       input.select()
       if (!initialQuery) return;
-      fetchBooks(initialQuery, dispatchSearchEvent, signal)
+      fetchBooks(initialQuery, searchEvtTarget, signal)
     });
 
     return () => (
@@ -80,10 +78,10 @@ export const SearchBooks = clientEntry(
                 on("input", async (evt, signal) => {
                   const query = evt.currentTarget.value.trim();
                   if (!query) {
-                    return void dispatchSearchEvent({ type: "queryEmpty" });
+                    return void searchEvtTarget.dispatchEvent({ type: "queryEmpty" });
                   }
-                  dispatchSearchEvent({ type: "querySubmitted", query });
-                  fetchBooks(query, dispatchSearchEvent, signal)
+                  searchEvtTarget.dispatchEvent({ type: "querySubmitted", query });
+                  fetchBooks(query, searchEvtTarget, signal)
                 }),
                 css({ padding: 4 }),
                 ref(node => input = node)

@@ -17,19 +17,7 @@ export const routes = route({
     })
   }),
   todolist: route('todolist', {
-    index: get('/'),
-    // frame: get('todos'),
-    // action: form('action', {
-    //   formMethod: 'POST',
-    //   names: {
-    //     action: 'add'
-    //   },
-    // })
-    // todos: {
-    //   update: route('update', {
-    //     text: put('text')
-    //   })
-    // }
+    index: get(''),
     todos: form('todos')
   })
 })

@@ -1,7 +1,8 @@
 import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { match, P } from "ts-pattern";
-import { createSemanticEventListener } from "./utils/events.ts";
+import { match } from "ts-pattern";
+import {  } from "./utils/events.ts";
+import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
 type SearchEvent = { type: "queryEmpty" } | { type: "querySubmitted"; query: string };
 
@@ -15,7 +16,7 @@ export const SearchBooksWithFrame = clientEntry(
       ? { type: "querySubmitted", query: initialQuery }
       : { type: "queryEmpty" };
 
-    let dispatchSearchEvent = createSemanticEventListener<SearchEvent>(
+    let searchEvtTarget = new SemanticEventTarget<SearchEvent>(
       (evt) => {
         searchEvent = evt;
         handle.update();
@@ -34,8 +35,8 @@ export const SearchBooksWithFrame = clientEntry(
             on("submit", async (evt) => {
               evt.preventDefault();
               let query = input.value.trim();
-              if (!query) return void dispatchSearchEvent({ type: "queryEmpty" });
-              dispatchSearchEvent({ type: "querySubmitted", query });
+              if (!query) return void searchEvtTarget.dispatchEvent({ type: "queryEmpty" });
+              searchEvtTarget.dispatchEvent({ type: "querySubmitted", query });
               input.select();
             }),
           ]}
