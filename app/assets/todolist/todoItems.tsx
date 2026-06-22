@@ -1,22 +1,19 @@
-import { addEventListeners, clientEntry, css, on, type Dispatched, type Handle } from "remix/ui";
+import {
+  addEventListeners,
+  clientEntry,
+  css,
+  on,
+  type Dispatched,
+  type Handle,
+} from "remix/ui";
 import { routes } from "../../routes.ts";
-import { TodoList } from "./todoList.tsx";
-
-type Todo = {
-  id: string;
-  text: string;
-  completed: boolean;
-};
+import type { Todo } from "../../data/todolist.ts";
+import { RequestEventTarget } from "../utils/RequestEventTarget.js";
 
 export const TodoItems = clientEntry(
   import.meta.url,
   function TodoItems(handle: Handle<{ todos: Todo[] }>) {
-    let actionEventTarget = handle.context.get(TodoList)
-    console.log({actionEventTarget}, actionEventTarget)
-    handle.queueTask(() => {
-      actionEventTarget = handle.context.get(TodoList)
-      console.log({actionEventTarget}, actionEventTarget)
-    })
+    let actionEventTarget = new RequestEventTarget();
 
     let submit = async (
       evt: Dispatched<SubmitEvent, HTMLFormElement>,
@@ -27,7 +24,7 @@ export const TodoItems = clientEntry(
         (evt.submitter as HTMLButtonElement).formAction,
       );
       formAction.searchParams.set("redirectTo", "none");
-      actionEventTarget.dispatchEvent({ type: "initiated", context: 'todoItems' });
+      actionEventTarget.dispatchEvent("requestSubmitted");
       try {
         let resp = await fetch(formAction, {
           method: "POST",
@@ -36,11 +33,13 @@ export const TodoItems = clientEntry(
         });
         if (!resp.ok) new Error(resp.statusText, { cause: resp.status });
         if (signal.aborted) return;
-        await handle.frame.reload();
-        actionEventTarget.dispatchEvent({ type: "succeeded", context: 'todoItems' });
+        handle.frame.reload()
+        actionEventTarget.dispatchEvent("requestSucceeded", {});
       } catch (error) {
         if (signal.aborted) return;
-        actionEventTarget.dispatchEvent({ type: "errored", error: error as Error, context: 'todoItems' });
+        actionEventTarget.dispatchEvent("requestErrored", {
+          error: error as Error,
+        });
       }
     };
 

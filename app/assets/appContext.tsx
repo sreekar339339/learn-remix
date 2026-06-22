@@ -3,21 +3,22 @@ import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
 type User = {name: string, age: number} | null
 type Settings = {theme: 'dark' | 'light' | 'system', layout: 'zen' | 'normal'}
+type AppContext = {user: User, settings: Settings}
 
-class AppContext extends SemanticEventTarget<{
-  user: User,
-  settings: Settings
-}> {
-  #user: User = null
-  #settings: Settings = {theme: 'system', layout: 'normal'}
+// class AppContext extends SemanticEventTarget<{
+//   user: User,
+//   settings: Settings
+// }> {
+//   #user: User = null
+//   #settings: Settings = {theme: 'system', layout: 'normal'}
 
-  get user() {
-    return this.#user
-  }
+//   get user() {
+//     return this.#user
+//   }
 
-  get settings() {
-    return this.#settings
-  }
+//   get settings() {
+//     return this.#settings
+//   }
 
   // setUser(user: User | null) {
   //   this.#user = user
@@ -28,10 +29,12 @@ class AppContext extends SemanticEventTarget<{
   //   this.#settings = settings
   //   this.dispatchEvent(new Event('settingsChange'))
   // }
-}
+// }
 
-function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
-  let appContext = new AppContext()
+function AppProvider(handle: Handle<{ children?: RemixNode }, SemanticEventTarget<AppContext>>) {
+  let appContext = new SemanticEventTarget<AppContext>({
+    state: {settings: {theme: 'dark', layout: 'normal'}, user: {age: 24, name: 'faggot'}}
+  })
   handle.context.set(appContext)
 
   return () => handle.props.children
@@ -42,27 +45,31 @@ function UserDisplay(handle: Handle) {
   let context = handle.context.get(AppProvider)
 
   addEventListeners(context, handle.signal, {
-    user() {
+    userChange() {
       handle.update()
     },
   })
 
-  return () => <div>{context.user?.name ?? 'Not logged in'}</div>
+  return () => <div>{context.state.user?.name ?? 'Not logged in'}</div>
 }
 
-type ThemeValue = 'light' | 'dark'
-
-class Theme extends SemanticEventTarget<{value: ThemeValue}> {
-  #value: 'light' | 'dark' = 'light'
-
-  get value() {
-    return this.#value
-  }
+type Theme = {
+  value: 'light' | 'dark'
 }
 
-function ThemeProvider(handle: Handle<{ children?: RemixNode }, Theme>) {
-  let theme = new Theme()
-  handle.context.set(theme)
+// class Theme extends SemanticEventTarget<{value: ThemeValue}> {
+//   #value: 'light' | 'dark' = 'light'
+
+//   get value() {
+//     return this.#value
+//   }
+// }
+
+function ThemeProvider(handle: Handle<{ children?: RemixNode }, SemanticEventTarget<Theme>>) {
+  let themeEvtTarget = new SemanticEventTarget<Theme>({
+    state: {value: 'dark'}
+  })
+  handle.context.set(themeEvtTarget)
 
   return () => (
     <div>
@@ -70,7 +77,7 @@ function ThemeProvider(handle: Handle<{ children?: RemixNode }, Theme>) {
         mix={[
           on('click', () => {
             // No update needed - consumers subscribe to changes
-            theme.dispatchEvent({type: 'value', value: theme.value === 'light' ? 'dark' : 'light'})
+            themeEvtTarget.dispatchEvent('valueChange', themeEvtTarget.state.value === 'light' ? 'dark' : 'light')
           }),
         ]}
       >
@@ -92,8 +99,8 @@ function ThemedContent(handle: Handle) {
   })
 
   return () => (
-    <div mix={[css({ backgroundColor: theme.value === 'dark' ? '#000' : '#fff' })]}>
-      Current theme: {theme.value}
+    <div mix={[css({ backgroundColor: theme.state.value === 'dark' ? '#000' : '#fff' })]}>
+      Current theme: {theme.state.value}
     </div>
   )
 }

@@ -9,38 +9,41 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    let resp = await fetch(routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }), {
-      signal,
-    });
+    let resp = await fetch(
+      routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
+      {
+        signal,
+      },
+    );
     if (!resp.ok) throw new Error(resp.statusText, { cause: resp.status });
     let json = await resp.json();
     if (signal.aborted) throw new DOMException(signal.reason, "AbortError");
     if (!("docs" in json)) {
-      return void searchEventTarget.dispatchEvent({type: 'booksNotFound', reason: {other: json.detail[0].msg}})
+      return void searchEventTarget.dispatchEvent("booksNotFound", {
+        reason: { other: json.detail[0].msg },
+      });
     }
     let books = json.docs;
     if (!books.length) {
-      return void searchEventTarget.dispatchEvent({
-        type: "booksNotFound",
-        reason: 'emptyList'
+      return void searchEventTarget.dispatchEvent("booksNotFound", {
+        reason: "emptyList",
       });
     }
-    searchEventTarget.dispatchEvent({ type: "booksFound", books });
+    searchEventTarget.dispatchEvent("booksFound", { books });
   } catch (error) {
     if (signal.aborted) return;
-    searchEventTarget.dispatchEvent({
-      type: "error",
+    searchEventTarget.dispatchEvent("error", {
       error: error as Error,
     });
   }
 }
 
 type SearchEvent =
-  | { type: "querySubmitted", query: string }
+  | { type: "querySubmitted"; query: string }
   | { type: "queryEmpty" }
   | { type: "error"; error: Error }
   | { type: "booksFound"; books: Array<{ title: string }> }
-  | { type: "booksNotFound", reason: 'emptyList' | {other: string} };
+  | { type: "booksNotFound"; reason: "emptyList" | { other: string } };
 
 export const SearchBooks = clientEntry(
   import.meta.url,
@@ -48,22 +51,20 @@ export const SearchBooks = clientEntry(
     let { initialQuery } = handle.props;
     let input: HTMLInputElement;
 
-    let searchEvent: SearchEvent = initialQuery
+    let initialEvent: SearchEvent = initialQuery
       ? { type: "querySubmitted", query: initialQuery }
       : { type: "queryEmpty" };
 
-    let searchEvtTarget = new SemanticEventTarget<SearchEvent>(
-      (evt) => {
-        searchEvent = evt;
-        handle.update();
-      },
-      { signal: handle.signal },
-    );
+    let searchEvtTarget = new SemanticEventTarget<SearchEvent>({
+      event: initialEvent,
+      onChange: () => void handle.update(),
+      options: { signal: handle.signal },
+    });
 
     handle.queueTask(async (signal) => {
-      input.select()
+      input.select();
       if (!initialQuery) return;
-      fetchBooks(initialQuery, searchEvtTarget, signal)
+      fetchBooks(initialQuery, searchEvtTarget, signal);
     });
 
     return () => (
@@ -78,20 +79,24 @@ export const SearchBooks = clientEntry(
                 on("input", async (evt, signal) => {
                   const query = evt.currentTarget.value.trim();
                   if (!query) {
-                    return void searchEvtTarget.dispatchEvent({ type: "queryEmpty" });
+                    return void searchEvtTarget.dispatchEvent("queryEmpty");
                   }
-                  searchEvtTarget.dispatchEvent({ type: "querySubmitted", query });
-                  fetchBooks(query, searchEvtTarget, signal)
+                  searchEvtTarget.dispatchEvent("querySubmitted", { query });
+                  fetchBooks(query, searchEvtTarget, signal);
                 }),
                 css({ padding: 4 }),
-                ref(node => input = node)
+                ref((node) => (input = node)),
               ]}
             />
           </label>
         </div>
-        {match(searchEvent)
-          .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
-          .with({ type: "querySubmitted" }, ({query}) => <p>fetching books with title containing {query}...</p>)
+        {match(searchEvtTarget.event)
+          .with({ type: "queryEmpty" }, () => (
+            <p>Enter the title of any book.</p>
+          ))
+          .with({ type: "querySubmitted" }, ({ query }) => (
+            <p>fetching books with title containing {query}...</p>
+          ))
           .with({ type: "booksFound" }, ({ books }) => (
             <ul>
               {books.map((book) => (
@@ -99,12 +104,13 @@ export const SearchBooks = clientEntry(
               ))}
             </ul>
           ))
-          .with({ type: "booksNotFound", reason: 'emptyList' }, () => (
+          .with({ type: "booksNotFound", reason: "emptyList" }, () => (
             <p>Books not found for this title at this time.</p>
           ))
-          .with({ type: "booksNotFound", reason: {other: P.select()} }, (msg) => (
-            <p>Could not fetch books. reason: {msg}.</p>
-          ))
+          .with(
+            { type: "booksNotFound", reason: { other: P.select() } },
+            (msg) => <p>Could not fetch books. reason: {msg}.</p>,
+          )
           .with({ type: "error" }, ({ error }) => (
             <p>
               Unexpected error occured, try again! {error.message} Cause:{" "}

@@ -26,11 +26,18 @@ export function render() {
               exportName: entryId.split('#')[1] || component.name || titleCaseFileName(entryId),
             }
           },
-          resolveFrame: (src) => resolveFrame(router, request, src),
+          topFrameSrc: request.url,
+          frameSrc: request.url,
+          async resolveFrame(src, target, context) {
+            let headers = new SuperHeaders(request.headers)
+            headers.accept = 'text/html'
+            headers.acceptEncoding = null
+            if (target) headers.set('X-Remix-Target', target)
+            return await router.fetch(new URL(src, context?.currentFrameSrc ?? request.url), { headers }).then((res) =>
+              res.text(),
+            )
+          },
         })
-
-        let headers = new SuperHeaders(init?.headers)
-        headers.cacheControl = 'no-store'
 
         return createHtmlResponse(stream, {...init, })
       },

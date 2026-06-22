@@ -1,10 +1,12 @@
 import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match } from "ts-pattern";
-import {  } from "./utils/events.ts";
+import {} from "./utils/events.ts";
 import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
-type SearchEvent = { type: "queryEmpty" } | { type: "querySubmitted"; query: string };
+type SearchEvent =
+  | { type: "queryEmpty" }
+  | { type: "querySubmitted"; query: string };
 
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
@@ -12,17 +14,15 @@ export const SearchBooksWithFrame = clientEntry(
     let initialQuery = handle.props.initialQuery?.trim() || "";
     let input: HTMLInputElement;
 
-    let searchEvent: SearchEvent = initialQuery
+    let initialEvent: SearchEvent = initialQuery
       ? { type: "querySubmitted", query: initialQuery }
       : { type: "queryEmpty" };
 
-    let searchEvtTarget = new SemanticEventTarget<SearchEvent>(
-      (evt) => {
-        searchEvent = evt;
-        handle.update();
-      },
-      { signal: handle.signal },
-    );
+    let searchEvtTarget = new SemanticEventTarget<SearchEvent>({
+      event: initialEvent,
+      onChange: () => void handle.update(),
+      options: { signal: handle.signal },
+    });
 
     handle.queueTask(() => {
       input.select();
@@ -35,8 +35,9 @@ export const SearchBooksWithFrame = clientEntry(
             on("submit", async (evt) => {
               evt.preventDefault();
               let query = input.value.trim();
-              if (!query) return void searchEvtTarget.dispatchEvent({ type: "queryEmpty" });
-              searchEvtTarget.dispatchEvent({ type: "querySubmitted", query });
+              if (!query)
+                return void searchEvtTarget.dispatchEvent("queryEmpty");
+              searchEvtTarget.dispatchEvent("querySubmitted", { query });
               input.select();
             }),
           ]}
@@ -50,13 +51,19 @@ export const SearchBooksWithFrame = clientEntry(
             />
           </label>
         </form>
-        {match(searchEvent)
-          .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
+        {match(searchEvtTarget.event)
+          .with({ type: "queryEmpty" }, () => (
+            <p>Enter the title of any book.</p>
+          ))
           .with({ type: "querySubmitted" }, ({ query }) => (
             <Frame
               key={query}
-              fallback={<p>fetching books with title containing "{query}"...</p>}
-              src={routes.asyncActions.withFrame.frame.href(undefined, { q: query })}
+              fallback={
+                <p>fetching books with title containing "{query}"...</p>
+              }
+              src={routes.asyncActions.withFrame.frame.href(undefined, {
+                q: query,
+              })}
             />
           ))
           .exhaustive()}

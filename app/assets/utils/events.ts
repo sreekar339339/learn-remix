@@ -1,104 +1,126 @@
 // import { addEventListeners } from "remix/ui";
 // import { match, P } from "ts-pattern";
-// import { SemanticEventTarget } from './SemanticEventTarget.js'
+// import { SemanticEventTarget } from "./SemanticEventTarget.js";
+
+import { SemanticEventTarget, type EventShapeInit } from "./SemanticEventTarget.js";
 
 // type SearchEvent =
-//   | { type: "querySubmitted", query: string }
+//   | { type: "querySubmitted"; query: string }
 //   | { type: "queryEmpty" }
 //   | { type: "error"; error: Error }
 //   | { type: "booksFound"; books: Array<{ title: string }> }
-//   | { type: "booksNotFound", reason: 'emptyList' | {other: string} };
+//   | { type: "booksNotFound"; reason: "emptyList" | { other: string } };
 
-// type f = keyof SearchEvent
+// let initialEvent: SearchEvent = { type: "queryEmpty" };
 
-// let searchEvent: SearchEvent = { type: "queryEmpty" };
+// let searchEvtTarget = new SemanticEventTarget<SearchEvent>({
+//   event: initialEvent,
+//   onChange(event) {
+//     // Object.assign(searchEvent, evt)
+//     match(event)
+//       .with(
+//         { type: "booksNotFound", reason: "emptyList" },
+//         () => "boons not found",
+//       )
+//       .with(
+//         { type: "booksNotFound", reason: { other: P.select() } },
+//         (val) => val.charCodeAt,
+//       )
+//       .with({ type: "booksFound", books: P.select() }, (val) => val.map) // val is { title: string; }[] | undefined
+//       .with({ type: "error", error: P.select() }, (val) => val.name.charAt) // val is Error | undefined
+//       .with({ type: "queryEmpty" }, () => void 1)
+//       .with({ type: "querySubmitted", query: P.select() }, (val) => val.charAt)
+//       .exhaustive();
+//   },
+// });
 
-// let f = new SemanticEventTarget<SearchEvent>((evt) => {
-//   searchEvent = evt
-//   // Object.assign(searchEvent, evt)
-//   match(evt)
-//     .with({type: 'booksNotFound', reason: 'emptyList'}, () => 'boons not found')
-//     .with({type: 'booksNotFound', reason: {other: P.select()}}, (val) => val.charCodeAt)
-//     .with({type: 'booksFound', books: P.select()}, (val) => val.map) // val is { title: string; }[] | undefined
-//     .with({type: 'error', error: P.select()}, (val) => val.name.charAt) // val is Error | undefined
-//     .with({type: 'queryEmpty'}, () => void 1)
-//     .with({type: 'querySubmitted', query: P.select()}, (val) => val.charAt)
-//     .exhaustive()
-// })
+// searchEvtTarget.addEventListener("booksFound", val => {
+//   val.books;
+// });
 
-// f.dispatchEvent({type: 'error', error: new Error()})
-// f.dispatchEvent({type:'booksFound'})
+// searchEvtTarget.addEventListener("change", val => {
+//   val.type;
+// });
 
-// type L = keyof NonNullable<typeof f.__eventMap>
+// await searchEvtTarget.dispatchEvent("booksFound", {
+//   books: [{ title: "Dune" }],
+// });
 
-// addEventListeners(f, new AbortSignal(), {
-//   error(val) {
-//     val.error
+// searchEvtTarget.dispatchEvent("error", { error: new Error() });
+// searchEvtTarget.dispatchEvent("booksFound", { books: [] });
+
+// searchEvtTarget.event
+// searchEvtTarget.state
+
+// const signal = {} as AbortSignal
+
+// addEventListeners(searchEvtTarget, signal, {
+//   error({ error }) {
+//     error.name.charAt;
 //   },
 //   booksFound(val) {
-//     val.books
+//     val.books.map;
 //   },
-//   change(val) {
-//     searchEvent = val
-//   }
-// })
+//   queryEmpty() {},
+//   booksNotFound({ reason }) {
+//     reason;
+//   },
+// });
 
+// // POJO usage
 
-
-
-// type User = {name: string}
-// type Settings = {theme: 'dark' | 'light'}
+// type User = { name: string };
+// type Settings = { theme: "dark" | "light" };
 // type AppContext = {
-//   user: User,
-//   settings: Settings
-// }
+//   user: User;
+//   settings: Settings;
+// };
 
-// let context: AppContext = {
-//   user: {name: 'jack'},
-//   settings: {theme: 'dark'}
-// }
+// let initialContext: AppContext = {
+//   user: { name: "jack" },
+//   settings: { theme: "dark" },
+// };
 
-// let g = new SemanticEventTarget<AppContext>((evt) => {
-//   context = evt
-//   // evt.settings
-//   evt.type
-//   Object.assign(context, evt)
+// let appContextEvtTarget = new SemanticEventTarget<AppContext>({
+//   state: initialContext
+// });
+
+// appContextEvtTarget.dispatchEvent("settingsChange", { theme: "dark" });
+// await appContextEvtTarget.dispatchEvent("userChange", { name: "bob" });
+// appContextEvtTarget.addEventListener("settingsChange", (evt) => {
+//   evt.theme.charAt;
+// });
+
+// appContextEvtTarget.addEventListener("change", (evt) => {
 //   match(evt)
-//     .with({type: 'settings', settings: P.select()}, (val) => val.theme.charAt)
-//     .with({type: 'user', user: P.select()}, (val) => val.name.charAt)
-//     .exhaustive()
-// })
+//     .with({ settings: P.select() }, (val) => val?.theme.charAt)
+//     .with({ user: P.select() }, (val) => val.name.charAt)
+//     .exhaustive();
+// });
 
-// g.dispatchEvent({type: 'settings', settings: {theme: 'dark'}})
-// g.dispatchEvent({type: 'user', user: {name: 'bob'}})
-// g.dispatchEvent({type: 'settings', user: {name: 'bob'}})
-// g.addEventListener('settings', (evt) => {
-//   evt.theme.charAt
-// })
-
-// g.addEventListener('change', (evt) => {
-//   Object.assign(context, evt)
-//   match(evt)
-//     .with({settings: P.select()}, (val) => val?.theme.charAt)
-//     .with({user: P.select()}, (val) => val.name.charAt)
-//     .exhaustive()
-// })
-
-// addEventListeners(g, new AbortSignal(), {
-//   settings(val) {
-//     val.theme.charAt
+// addEventListeners(appContextEvtTarget, signal, {
+//   settingsChange({ theme }) {
+//     theme.charAt;
 //   },
-//   user(val) {
-//     val.name.charAt
+//   userChange({ name }) {
+//     name.charAt;
 //   },
 //   change(val) {
-//     searchEvent = val
-//   }
-// })
+//     if (val.type === "userChange") {
+//       val.user.name.charAt;
+//     } else {
+//       val.settings.theme.charAt;
+//     }
+//   },
+// });
+
+// appContextEvtTarget.event;
+// // { type: "userChange", user: { name: "Mary" } }
+
+// appContextEvtTarget.state;
+// // {
+// //   user: { name: "Mary" },
+// //   settings: { theme: "dark" }
+// // }
 
 
-
-
-// // f.addEventListener('type', (evt) => {
-// //   match(evt)
-// // }, {signal: new AbortSignal()})

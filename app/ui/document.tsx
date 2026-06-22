@@ -68,7 +68,7 @@ export function Document(handle: Handle<DocumentProps>) {
             MozOsxFontSmoothing: "grayscale",
           })}
         >
-          <RMX_01_GLYPHS />
+          {/* <RMX_01_GLYPHS /> */}
           {children}
           <script
             type="module"
