@@ -1,7 +1,6 @@
 import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match } from "ts-pattern";
-import {} from "./utils/events.ts";
 import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
 
 type SearchEvent =

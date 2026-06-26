@@ -2,7 +2,11 @@
 // import { match, P } from "ts-pattern";
 // import { SemanticEventTarget } from "./SemanticEventTarget.js";
 
-import { SemanticEventTarget, type EventShapeInit } from "./SemanticEventTarget.js";
+import { createMixin, on } from "remix/ui";
+import {
+  SemanticEventTarget,
+  type EventShapeInit,
+} from "./SemanticEventTarget.js";
 
 // type SearchEvent =
 //   | { type: "querySubmitted"; query: string }
@@ -122,5 +126,118 @@ import { SemanticEventTarget, type EventShapeInit } from "./SemanticEventTarget.
 // //   user: { name: "Mary" },
 // //   settings: { theme: "dark" }
 // // }
+// type EventMapFromConstructors<
+//   T extends Record<PropertyKey, abstract new (...args: any) => Event>
+// > = {
+//   [K in keyof T]: InstanceType<T[K]>;
+// };
 
+// export let dragReleaseType = "myapp:drag-release" as const;
+
+// type Velocity = {
+//   velocityX: number;
+//   velocityY: number;
+// }
+
+// class DragReleaseEvent extends CustomEvent<Velocity> {
+//   constructor(init: Velocity) {
+//     super(dragReleaseType, {detail: init, bubbles: true, cancelable: true})
+//   }
+// }
+
+// const eventMap = {
+//   [dragReleaseType]: DragReleaseEvent
+// } as const
+
+// type DragEventMap = EventMapFromConstructors<typeof eventMap>
+
+// declare global {
+//   interface HTMLElementEventMap extends DragEventMap {
+//   }
+// }
+
+// type EventPayload<E extends { type: PropertyKey }> =
+//   Omit<E, "type">;
+
+// type EventPayloadByType<
+//   E extends { type: PropertyKey },
+//   T extends E["type"]
+// > =
+//   EventPayload<Extract<E, { type: T }>>;
+
+// type EventDetailByType<
+//   E extends { type: PropertyKey },
+//   T extends E["type"]
+// > =
+//   keyof EventPayloadByType<E, T> extends never
+//     ? undefined
+//     : EventPayloadByType<E, T>;
+
+// type SearchEventConstructorArgs<
+//   T extends SearchEventU["type"]
+// > =
+//   EventDetailByType<SearchEventU, T> extends undefined
+//     ? [type: T, detail?: undefined]
+//     : [type: T, detail: EventDetailByType<SearchEventU, T>];
+
+// type SearchEventU =
+//   | { type: "querySubmitted"; query: string }
+//   | { type: "queryEmpty" }
+//   | { type: "error"; error: Error }
+//   | { type: "booksFound"; books: Array<{ title: string }> }
+//   | { type: "booksNotFound"; reason: "emptyList" | { other: string } };
+
+// type SearchEventType = SearchEventU['type']
+
+
+// class SearchEvent<Detail> extends CustomEvent<Detail> {
+//   constructor(type: keyof SearchEventMap, detail: Detail) {
+//     super(type, {detail, bubbles: true, cancelable: true})
+//   }
+// }
+
+// type SearchEventMap = {
+//   booksFound: SearchEvent<{books: Array<{ title: string }>}>,
+//   booksNotFound: SearchEvent<{reason: "emptyList" | { other: string }}>,
+//   error: SearchEvent<{error: Error}>,
+//   queryEmpty: SearchEvent<undefined>,
+//   querySubmitted: SearchEvent<{query: string}>
+// }
+
+// type SearchEventDetail<T extends keyof SearchEventMap> =
+//   SearchEventMap[T] extends SearchEvent<infer Detail>
+//     ? Detail
+//     : never;
+
+// const event = <T extends keyof SearchEventMap>(type: T, detail: SearchEventDetail<T>) => {
+//   return new SearchEvent<typeof detail>(type, detail)
+// }
+
+// dispatchEvent(event('booksFound', {books: []}))
+// dispatchEvent(new SearchEvent('booksFound', {hj: []}))
+
+
+// declare global {
+//   interface HTMLElementEventMap extends SearchEventMap {}
+// }
+
+// dispatchEvent(event('booksFound', {books: []}))
+// dispatchEvent(event('queryEmpty', undefined))
+// dispatchEvent(event('booksNotFound', {reason: 'hjhjh'}))
+
+// const eventMap = eventTypes.reduce((acc, evtType) => {
+//   acc[evtType] = SearchEvent<typeof evtType>
+// }, {} as {[key in SearchEventType]: SearchEvent<key>})
+
+
+// type Velocity = {
+//   velocityX: number;
+//   velocityY: number;
+// }
+
+// class DragReleaseEvent extends CustomEvent<Velocity> {
+//   constructor(init: Velocity) {
+//     super(dragReleaseType, {detail: init, bubbles: true, cancelable: true})
+//   }
+// }
 

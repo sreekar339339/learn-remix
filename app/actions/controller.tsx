@@ -20,7 +20,7 @@ import {
 import { redirect } from "remix/response/redirect";
 import * as f from "remix/data-schema/form-data";
 import { maxLength, minLength } from "remix/data-schema/checks";
-import { TodoItems } from "../assets/todolist/todoItems.tsx";
+import { TodoItemsClientEntryMarked } from "../assets/todolist/todoItems.tsx";
 import * as coerce from "remix/data-schema/coerce";
 
 export const rootController = createController(routes, {
@@ -69,6 +69,7 @@ export const asyncActionsWithFrameController = createController(
         );
       },
       async frame({ render, url }) {
+        const openLibraryUrl = new URL("https://openlibrary.org/search.json");
         openLibraryUrl.searchParams.set(
           "q",
           (url.searchParams.get("q") || "").trim(),
@@ -138,13 +139,12 @@ export const asyncActionsWithFrameController = createController(
   },
 );
 
-const openLibraryUrl = new URL("https://openlibrary.org/search.json");
-
 export const asyncActionsWithoutFrameApiController = createController(
   routes.asyncActions.withoutFrame.api,
   {
     actions: {
       async books({ url }) {
+        const openLibraryUrl = new URL("https://openlibrary.org/search.json");
         openLibraryUrl.searchParams.set(
           "q",
           (url.searchParams.get("q") || "").trim(),
@@ -174,7 +174,7 @@ export const asyncActionsWithoutFrameController = createController(
   },
 );
 
-let delay = (ms = 2000) => new Promise((res) => setTimeout(res, ms));
+let delay = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
 
 export const todolistController = createController(routes.todolist, {
   actions: {
@@ -191,79 +191,67 @@ const intent = {
   none: "none",
 } as const;
 
-const inputFields = {
+const fields = {
   redirectTo: f.field(s.optional(s.literal(intent.none))),
-  intent<T>(val: T) { return f.field(s.literal(val)) },
-  textField: f.field(s.defaulted(s.string().pipe(minLength(3), maxLength(100)), ""))
+  intent<T extends keyof typeof intent>(val: T) { return f.field(s.literal(val)) },
+  text: f.field(s.string().pipe(minLength(3), maxLength(100))),
+  completed: f.field(coerce.boolean()),
+  id: f.field(s.string())
 }
 
-const todoSchema = f.object({
-  id: f.field(s.string().pipe()),
-  text: inputFields.textField,
-  completed: f.field(coerce.boolean()),
-});
-
-const todoActionInputSchema = s.union([
-  s.object({
-    searchParams: f.object({
-      intent: inputFields.intent(intent.create),
-      redirectTo: inputFields.redirectTo,
-    }),
-    formData: f.object({
-      text: inputFields.textField,
-    }),
+const todoActionFormData = s.union([
+  f.object({
+    intent: fields.intent('create'),
+    text: fields.text,
+    redirectTo: fields.redirectTo
   }),
-  s.object({
-    searchParams: f.object({
-      intent: inputFields.intent(intent.delete),
-      redirectTo: inputFields.redirectTo,
-    }),
-    formData: todoSchema,
+  f.object({
+    intent: fields.intent('delete'),
+    id: fields.id,
+    redirectTo: fields.redirectTo
   }),
-  s.object({
-    searchParams: f.object({
-      intent: inputFields.intent(intent.update),
-      field: f.field(s.enum_(["text", "completed"])),
-      redirectTo: inputFields.redirectTo,
-    }),
-    formData: todoSchema,
+  f.object({
+    intent: fields.intent('update'),
+    text: fields.text,
+    id: fields.id,
+    redirectTo: fields.redirectTo
   }),
+  f.object({
+    intent: fields.intent('update'),
+    completed: fields.completed,
+    id: fields.id,
+    redirectTo: fields.redirectTo
+  })
 ]);
 
 export const todosCrudController = createController(routes.todolist.todos, {
   actions: {
     async index({ render }) {
-      // await delay();
-      return render(<TodoItems todos={todos} />);
+      await delay(200);
+      return render(<TodoItemsClientEntryMarked todos={todos} />);
     },
-    action({ formData, url: { searchParams } }) {
+    action({ formData }) {
       try {
-        let input = s.parse(todoActionInputSchema, { searchParams, formData });
+        let input = s.parse(todoActionFormData, formData);
         match(input)
           .with(
             {
-              searchParams: { intent: "create" },
-              formData: { text: P.select() },
+              intent: 'create', text: P.select()
             },
             addTodos,
           )
           .with(
-            { searchParams: { intent: "delete" }, formData: P.select() },
+            { intent: "delete", id: P.select() },
             deleteTodos,
           )
           .with(
-            { searchParams: { field: "completed" }, formData: P.select() },
-            (todo) => {
-              todo.completed = !todo.completed;
-              updateTodos(todo);
+            { intent: 'update' },
+            ({intent, id, ...rest}) => {
+              updateTodos(id, rest);
             },
           )
-          .with(
-            { searchParams: { field: "text" }, formData: P.select() },
-            updateTodos,
-          )
           .exhaustive();
-        if (input.searchParams.redirectTo === "none") {
+        if (input.redirectTo === "none") {
           return new Response(null, { status: 204 });
         }
         return redirect(routes.todolist.index.href());

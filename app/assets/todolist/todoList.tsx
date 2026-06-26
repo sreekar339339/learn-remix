@@ -1,54 +1,100 @@
-import { addEventListeners, clientEntry, Frame, type Handle } from "remix/ui";
+import {
+  addEventListeners,
+  attrs,
+  clientEntry,
+  css,
+  Frame,
+  on,
+  ref,
+  type ElementProps,
+  type Handle,
+  type MixinDescriptor,
+  type Props,
+} from "remix/ui";
 import { AddTodo } from "./addTodo.tsx";
-import { routes } from "../../routes.ts";
-import { SemanticEventTarget } from "../utils/SemanticEventTarget.js";
 import { Glyph } from "remix/ui/glyph";
 import { TodoItems } from "./todoItems.tsx";
 import type { Todo } from "../../data/todolist.ts";
-import { RequestEventTarget } from "../utils/RequestEventTarget.js";
+import type { CustomEventMap } from "../utils/customEventMixin.ts";
+import { routes } from "../../routes.ts";
 
+export type TodoActionEventMap = CustomEventMap<
+  {
+    actionSubmitted: { form: HTMLFormElement };
+    actionSucceeded: { form: HTMLFormElement };
+    actionErrored: { error: Error; form?: HTMLFormElement };
+    idle: null;
+  },
+  "todo"
+>;
+
+declare global {
+  interface HTMLElementEventMap extends TodoActionEventMap {}
+  interface SVGElementEventMap extends TodoActionEventMap {}
+}
 
 export const TodoList = clientEntry(
   import.meta.url,
-  function TodoList(
-    handle: Handle<{todos: Todo[]}, RequestEventTarget<unknown>>,
-  ) {
-    handle.context.set(new RequestEventTarget())
-    return () => (
-      <>
-        <AddTodo />
-        <Spinner />
-        {/* <Frame name="todoItems" src={routes.todolist.todos.index.href()} /> */}
-        <TodoItems todos={handle.props.todos} />
-      </>
-    );
+  function TodoList(handle: Handle<{ todos: Todo[] }>) {
+    return () => <_TodoList todos={handle.props.todos} />;
   },
 );
 
-function Spinner(handle: Handle) {
-  let actionEventTarget = handle.context.get(TodoList);
+export function _TodoList(handle: Handle<{ todos: Todo[] }, HTMLDivElement>) {
+  return () => (
+    <div mix={[ref((node) => handle.context.set(node))]}>
+      <AddTodo />
+      <ActionStatus />
+      <Frame
+        name="TodoItems"
+        src={routes.todolist.todos.index.href()}
+        fallback={
+          <div mix={css({display: 'flex', alignItems: 'center'})}>
+            <ActionStatus pending={true} />&nbsp;Loading todos...
+          </div>
+        }
+      />
+      {/* <TodoItems todos={handle.props.todos} /> */}
+    </div>
+  );
+}
+
+function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
   let spinnerRevealTimeoutId: any;
-  addEventListeners(actionEventTarget, handle.signal, {
-    async change(evt) {
-      if (evt.type === "requestSubmitted") {
-        spinnerRevealTimeoutId = setTimeout(() => handle.update(), 900);
-      } else {
+  let eventName: keyof HTMLElementEventMap = handle.props.pending
+    ? "myapp:todo:actionSubmitted"
+    : "myapp:todo:idle";
+  let error: Error;
+  handle.queueTask(() => {
+    addEventListeners(handle.context.get(_TodoList), handle.signal, {
+      "myapp:todo:change"(evt) {
+        eventName = evt.detail.type;
+        if (eventName === "myapp:todo:actionSubmitted") {
+          spinnerRevealTimeoutId = setTimeout(() => handle.update(), 300);
+          return;
+        }
+        if (evt.detail.type === "myapp:todo:actionErrored") {
+          error = evt.detail.error;
+        }
         clearTimeout(spinnerRevealTimeoutId);
         handle.update();
-      }
-    },
+      },
+    });
   });
-
   return () => (
-    <Glyph
-      visibility={
-        actionEventTarget.event.type === "requestSubmitted"
-          ? "visible"
-          : "hidden"
-      }
-      name="spinner"
-      height={24}
-      width={24}
-    />
+    <p
+      mix={[
+        css({
+          height: 24,
+          display: 'inline-block'
+        }),
+      ]}
+    >
+      {eventName === "myapp:todo:actionSubmitted" ? (
+        <Glyph name="spinner" height={24} width={24} />
+      ) : eventName === "myapp:todo:actionErrored" ? (
+        <>Oops! Please try again!</>
+      ) : null}
+    </p>
   );
 }

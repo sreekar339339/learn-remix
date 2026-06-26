@@ -4,7 +4,7 @@ import { Layout } from "../ui/layout.tsx";
 export function Index(handle: Handle<{url?: URL}>) {
   return () => (
     <Layout url={handle.props.url}>
-      <section>Pick apps from above links</section>
+      <p>Pick apps from above links</p>
     </Layout>
   );
 }

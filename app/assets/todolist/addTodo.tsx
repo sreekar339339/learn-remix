@@ -1,71 +1,80 @@
-import {
-  addEventListeners,
-  clientEntry,
-  css,
-  on,
-  ref,
-  type Dispatched,
-  type Handle,
-} from "remix/ui";
+import { addEventListeners, css, type Handle, type Props } from "remix/ui";
 import { routes } from "../../routes.ts";
-import { RequestEventTarget } from "../utils/RequestEventTarget.js";
+import { customEvents } from "../utils/customEventMixin.ts";
+import type { TodoActionEventMap } from "./todoList.tsx";
+import { getInput } from "../utils/dom.ts";
 
-export const AddTodo = clientEntry(
-  import.meta.url,
-  function AddTodo(handle: Handle) {
-    let input: HTMLInputElement;
-    let form: HTMLFormElement;
+export function AddTodo(handle: Handle<Props<"form">>) {
+  const eventsMix = customEvents<TodoActionEventMap, HTMLFormElement>(
+    ({ target, dispatchCustomEvent }) => {
+      addEventListeners(target, handle.signal, {
+        async "myapp:todo:actionSucceeded"({ detail }) {
+          detail.form.reset();
+        },
+        "myapp:todo:actionSubmitted"({ detail }) {
+          getInput(detail.form)?.select();
+        },
+        async submit(evt, signal) {
+          evt.preventDefault();
+          let form = evt.currentTarget;
+          let input = getInput(form);
+          if (!input?.value)
+            return void dispatchCustomEvent("myapp:todo:idle", signal);
+          const formAction = new URL(form.action);
+          let formData = new FormData(form, evt.submitter);
+          formData.set("redirectTo", "none");
+          try {
+            dispatchCustomEvent(
+              "myapp:todo:actionSubmitted",
+              { form },
+              signal,
+            );
+            // await new Promise((res) => setTimeout(res, 2000));
+            let resp = await fetch(formAction, {
+              method: "POST",
+              body: formData,
+              signal,
+            });
+            if (!resp.ok) {
+              throw new Error(`${resp.status} ${resp.statusText}`, {
+                cause: await resp.text(),
+              });
+            }
+            // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
+            // await handle.frame.reload();
+            await handle.frames.get("TodoItems")?.reload();
+            dispatchCustomEvent(
+              "myapp:todo:actionSucceeded",
+              { form },
+              signal,
+            );
+          } catch (error) {
+            dispatchCustomEvent(
+              "myapp:todo:actionErrored",
+              { error: error as Error },
+              signal,
+            );
+          }
+        },
+      });
+    },
+  );
 
-    let actionEventTarget = new RequestEventTarget();
-
-    let submit = async (
-      evt: Dispatched<SubmitEvent, HTMLFormElement>,
-      signal: AbortSignal,
-    ) => {
-      evt.preventDefault();
-      form = evt.currentTarget;
-      if (!input.value) return void actionEventTarget.dispatchEvent("idle");
-      const formAction = new URL(form.action);
-      formAction.searchParams.set("redirectTo", "none");
-      actionEventTarget.dispatchEvent("requestSubmitted");
-      try {
-        let resp = await fetch(formAction, {
-          method: "POST",
-          body: new FormData(form),
-          signal,
-        });
-        if (!resp.ok) new Error(resp.statusText, { cause: resp.status });
-        if (signal.aborted) return;
-        await handle.frames.top.reload()
-        actionEventTarget.dispatchEvent("requestSucceeded", {});
-      } catch (error) {
-        console.log({error})
-        if (signal.aborted) return;
-        actionEventTarget.dispatchEvent("requestErrored", {
-          error: error as Error,
-        });
-      }
-    };
-
-    return () => (
-      <>
-        <form
-          method="POST"
-          action={routes.todolist.todos.action.href(undefined, {
-            intent: "create",
-          })}
-          mix={[on("submit", submit)]}
-        >
-          <label mix={css({ display: "flex", alignItems: "center", gap: 8 })}>
-            Enter a todo{" "}
-            <input
-              mix={[css({ padding: 4 }), ref((node) => (input = node))]}
-              name="text"
-              autofocus
-            />
-          </label>
-        </form>
-      </>
-    );
-  },
-);
+  return () => (
+    <form
+      method="POST"
+      action={routes.todolist.todos.action.href()}
+      mix={[eventsMix]}
+    >
+      <button hidden name="intent" value="create"></button>
+      <label mix={css({ display: "flex", alignItems: "center", gap: 8 })}>
+        Enter a todo{" "}
+        <input
+          mix={[css({ padding: 4, font: "inherit", color: "inherit" })]}
+          name="text"
+          autofocus
+        />
+      </label>
+    </form>
+  );
+}

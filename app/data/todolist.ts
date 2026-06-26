@@ -13,18 +13,18 @@ export function addTodos(text: string) {
   todos.push({id: Date.now().toString(), text, completed: false})
 }
 
-export function updateTodos(todo: Todo) {
+export function updateTodos(id: string, field: {text: string} | { completed: boolean}) {
   for (let _todo of todos) {
-    if (_todo.id === todo.id) {
-      return Object.assign(_todo, todo)
+    if (_todo.id === id) {
+      return Object.assign(_todo, field)
     }
   }
   throw new Error('given id is not found in db')
 }
 
-export function deleteTodos(todo: Todo) {
+export function deleteTodos(id: string) {
   for (let [idx, _todo] of todos.entries()) {
-    if (_todo.id === todo.id) {
+    if (_todo.id === id) {
       return todos.splice(idx, 1)
     }
   }

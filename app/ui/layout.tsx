@@ -37,7 +37,9 @@ export function Layout(
           </a>
           <a href={routes.todolist.index.href()}>Todo list</a>
         </nav>
-        {handle.props.children}
+        <section mix={css({maxWidth: '70%'})}>
+          {handle.props.children}
+        </section>
       </main>
     </Document>
   );

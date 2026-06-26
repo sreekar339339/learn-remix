@@ -5,10 +5,8 @@ import { Layout } from "../ui/layout.tsx";
 export function TicTacToePage(handle: Handle) {
   return () => (
     <Layout>
-      <section>
-        <h1>Play Tic Tac Toe!</h1>
-        <TicTacToe />
-      </section>
+      <h1>Play Tic Tac Toe!</h1>
+      <TicTacToe />
     </Layout>
   );
 }

@@ -15,7 +15,10 @@ async function fetchBooks(
         signal,
       },
     );
-    if (!resp.ok) throw new Error(resp.statusText, { cause: resp.status });
+    if (!resp.ok)
+      throw new Error(`${resp.status} ${resp.statusText}`, {
+        cause: await resp.text(),
+      });
     let json = await resp.json();
     if (signal.aborted) throw new DOMException(signal.reason, "AbortError");
     if (!("docs" in json)) {
@@ -68,57 +71,60 @@ export const SearchBooks = clientEntry(
     });
 
     return () => (
-      <>
-        <div>
-          <label>
-            Search{" "}
-            <input
-              type="text"
-              defaultValue={initialQuery}
-              mix={[
-                on("input", async (evt, signal) => {
-                  const query = evt.currentTarget.value.trim();
-                  if (!query) {
-                    return void searchEvtTarget.dispatchEvent("queryEmpty");
-                  }
-                  searchEvtTarget.dispatchEvent("querySubmitted", { query });
-                  fetchBooks(query, searchEvtTarget, signal);
-                }),
-                css({ padding: 4 }),
-                ref((node) => (input = node)),
-              ]}
-            />
-          </label>
-        </div>
-        {match(searchEvtTarget.event)
-          .with({ type: "queryEmpty" }, () => (
-            <p>Enter the title of any book.</p>
-          ))
-          .with({ type: "querySubmitted" }, ({ query }) => (
-            <p>fetching books with title containing {query}...</p>
-          ))
-          .with({ type: "booksFound" }, ({ books }) => (
-            <ul>
-              {books.map((book) => (
-                <li>{book.title}</li>
-              ))}
-            </ul>
-          ))
-          .with({ type: "booksNotFound", reason: "emptyList" }, () => (
-            <p>Books not found for this title at this time.</p>
-          ))
-          .with(
-            { type: "booksNotFound", reason: { other: P.select() } },
-            (msg) => <p>Could not fetch books. reason: {msg}.</p>,
-          )
-          .with({ type: "error" }, ({ error }) => (
-            <p>
-              Unexpected error occured, try again! {error.message} Cause:{" "}
-              {error.cause as string}.
-            </p>
-          ))
-          .exhaustive()}
-      </>
+      console.log(searchEvtTarget.event),
+      (
+        <>
+          <div>
+            <label>
+              Search{" "}
+              <input
+                type="text"
+                defaultValue={initialQuery}
+                mix={[
+                  on("input", async (evt, signal) => {
+                    const query = evt.currentTarget.value.trim();
+                    if (!query) {
+                      return void searchEvtTarget.dispatchEvent("queryEmpty");
+                    }
+                    searchEvtTarget.dispatchEvent("querySubmitted", { query });
+                    fetchBooks(query, searchEvtTarget, signal);
+                  }),
+                  css({ padding: 4 }),
+                  ref((node) => (input = node)),
+                ]}
+              />
+            </label>
+          </div>
+          {match(searchEvtTarget.event)
+            .with({ type: "queryEmpty" }, () => (
+              <p>Enter the title of any book.</p>
+            ))
+            .with({ type: "querySubmitted" }, ({ query }) => (
+              <p>fetching books with title containing {query}...</p>
+            ))
+            .with({ type: "booksFound" }, ({ books }) => (
+              <ul>
+                {books.map((book) => (
+                  <li>{book.title}</li>
+                ))}
+              </ul>
+            ))
+            .with({ type: "booksNotFound", reason: "emptyList" }, () => (
+              <p>Books not found for this title at this time.</p>
+            ))
+            .with(
+              { type: "booksNotFound", reason: { other: P.select() } },
+              (msg) => <p>Could not fetch books. reason: {msg}.</p>,
+            )
+            .with({ type: "error" }, ({ error }) => (
+              <p>
+                Unexpected error occured, try again! {error.message} Cause:{" "}
+                {error.cause as string}.
+              </p>
+            ))
+            .exhaustive()}
+        </>
+      )
     );
   },
 );

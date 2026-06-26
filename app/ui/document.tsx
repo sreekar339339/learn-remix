@@ -1,6 +1,5 @@
 import type { Handle, RemixNode } from "remix/ui";
 import { css } from "remix/ui";
-import { Glyph } from 'remix/ui/glyph'
 import { RMX_01, RMX_01_GLYPHS } from 'remix/ui/theme'
 
 import { routes } from "../routes.ts";
@@ -68,7 +67,7 @@ export function Document(handle: Handle<DocumentProps>) {
             MozOsxFontSmoothing: "grayscale",
           })}
         >
-          {/* <RMX_01_GLYPHS /> */}
+          <RMX_01_GLYPHS />
           {children}
           <script
             type="module"
