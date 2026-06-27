@@ -21,8 +21,8 @@ export function AsyncActionsPageWithoutFrame(
   return () => (
     <Layout>
       <h1>Make Async actions without frame</h1>
-      <SearchBooks initialQuery={handle.props.initialQuery} />
-      {/* <SearchBooksNewEventHandlerParent initialQuery={handle.props.initialQuery}/> */}
+      {/* <SearchBooks initialQuery={handle.props.initialQuery} /> */}
+      <SearchBooksNewEventHandlerParent initialQuery={handle.props.initialQuery}/>
     </Layout>
   );
 }

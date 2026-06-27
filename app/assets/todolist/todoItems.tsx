@@ -18,7 +18,7 @@ interface TodoItemsProps extends Props<"ul"> {
 export function TodoItems(handle: Handle<TodoItemsProps>) {
   let eventsMix = customEvents<TodoActionEventMap, HTMLUListElement>(
     ({ target, dispatchCustomEvent }) => {
-      let lastEvent: TodoActionEventMap["myapp:todo:change"] | undefined;
+      let lastEvent: TodoActionEventMap["myapp:todo:change"]['detail'] | undefined;
       addEventListeners(target, handle.signal, {
         "myapp:todo:actionSubmitted"({ detail }) {
           getInput(detail.form)?.select();
@@ -30,16 +30,16 @@ export function TodoItems(handle: Handle<TodoItemsProps>) {
           input.setSelectionRange(end, end);
         },
         "myapp:todo:change"(evt) {
-          lastEvent = evt;
+          lastEvent = evt.detail;
         },
         focusout(evt) {
           if (!lastEvent) return;
           if (
-            lastEvent.detail.type !== "myapp:todo:actionErrored" ||
-            lastEvent.detail.form === undefined
+            lastEvent.type !== "myapp:todo:actionErrored" ||
+            lastEvent.form === undefined
           )
             return;
-          let inputInErrorEvt = getInput(lastEvent.detail.form);
+          let inputInErrorEvt = getInput(lastEvent.form);
           dispatchCustomEvent("myapp:todo:idle", handle.signal);
           if (!(evt.target instanceof HTMLInputElement)) return;
           if (inputInErrorEvt !== evt.target) return;

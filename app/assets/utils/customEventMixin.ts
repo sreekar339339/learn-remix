@@ -1,8 +1,7 @@
 import {
-  createMixin,
+  ref,
   type ElementProps,
   type MixinDescriptor,
-  type MixinType,
 } from "remix/ui";
 
 type SafeEventName<
@@ -21,17 +20,33 @@ type EventUnionFromMap<EventMap extends EventMapBase, Domain extends string> = {
 type CustomEventDetail<E> =
   E extends CustomEvent<infer Detail> ? Detail : never;
 
+type NoDetailArgs = [signal: AbortSignal, evtInit?: EventInit];
+
+type WithDetailArgs<Detail> = [
+  detail: Detail,
+  signal: AbortSignal,
+  evtInit?: EventInit,
+];
+
+type DetailFor<
+  EventMap extends CustomEventMap<EventMapBase, string>,
+  T extends keyof EventMap & string,
+> = CustomEventDetail<EventMap[T]>;
+
+type DispatchArgsRuntimeFor<
+  EventMap extends CustomEventMap<EventMapBase, string>,
+  T extends keyof EventMap & string,
+> =
+  | NoDetailArgs
+  | WithDetailArgs<DetailFor<EventMap, T>>;
+
 type DispatchCustomEventArgs<
   EventMap extends CustomEventMap<EventMapBase, string>,
   T extends keyof EventMap & string,
 > =
-  CustomEventDetail<EventMap[T]> extends null | undefined
-    ? [signal: AbortSignal, evtInit?: EventInit]
-    : [
-        detail: CustomEventDetail<EventMap[T]>,
-        signal: AbortSignal,
-        evtInit?: EventInit,
-      ];
+  DetailFor<EventMap, T> extends null | undefined
+    ? NoDetailArgs
+    : WithDetailArgs<DetailFor<EventMap, T>>;
 
 export type DispatchCustomEvent<
   EventMap extends CustomEventMap<EventMapBase, string>,
@@ -46,6 +61,7 @@ type Callback<
 > = (arg: {
   target: Target;
   dispatchCustomEvent: DispatchCustomEvent<EventMap>;
+  signal: AbortSignal
 }) => void;
 
 export type CustomEventMap<
@@ -61,29 +77,20 @@ export type CustomEventMap<
   >;
 };
 
-type EventDetail = EventMapBase[string];
-
-type NormalizedDispatchArgs = {
-  detail?: EventDetail;
-  signal: AbortSignal;
-  evtInit?: EventInit;
-  hasExplicitDetail: boolean;
-};
-
-function hasNoDetail(
-  args:
-    | [signal: AbortSignal, evtInit?: EventInit]
-    | [detail: unknown, signal: AbortSignal, evtInit?: EventInit],
-): args is [signal: AbortSignal, evtInit?: EventInit] {
+function isNoDetailArgs<
+  EventMap extends CustomEventMap<EventMapBase, string>,
+  T extends keyof EventMap & string,
+>(
+  args: DispatchArgsRuntimeFor<EventMap, T>,
+): args is NoDetailArgs {
   return args[0] instanceof AbortSignal;
 }
 
-function normalizeDispatchArgs(
-  args:
-    | [signal: AbortSignal, evtInit?: EventInit]
-    | [detail: EventDetail, signal: AbortSignal, evtInit?: EventInit],
-): NormalizedDispatchArgs {
-  if (hasNoDetail(args)) {
+function normalizeDispatchArgs<
+  EventMap extends CustomEventMap<EventMapBase, string>,
+  T extends keyof EventMap & string,
+>(args: DispatchArgsRuntimeFor<EventMap, T>) {
+  if (isNoDetailArgs(args)) {
     const [signal, evtInit] = args;
 
     return {
@@ -103,83 +110,71 @@ function normalizeDispatchArgs(
   };
 }
 
-const mixinType: MixinType<
-  Element,
-  [Callback<CustomEventMap<EventMapBase, string>, Element>],
-  ElementProps
-> = (handle) => {
-  let _callback: Callback<CustomEventMap<EventMapBase, string>, Element>;
-  handle.addEventListener(
-    "insert",
-    ({ node }) => {
-      _callback({
-        target: node,
-        dispatchCustomEvent: (name, ...args) => {
-          const { detail, signal, evtInit, hasExplicitDetail } =
-            normalizeDispatchArgs(args);
+const invokeCallback = <
+  Target extends Element,
+  EventMap extends CustomEventMap<EventMapBase, string>,
+>(
+  node: Target,
+  callback: Callback<EventMap, Target>,
+  signal: AbortSignal
+) => {
+  callback({
+    target: node,
+    dispatchCustomEvent: (name, ...args) => {
+      const { detail, signal, evtInit, hasExplicitDetail } =
+        normalizeDispatchArgs(args);
 
-          if (signal.aborted) return;
+      if (signal.aborted) return;
 
-          const eventNameParts = name.split(":");
-          const isChangeEvent = eventNameParts.at(-1) === "change";
+      const eventNameParts = name.split(":");
+      const isChangeEvent = eventNameParts.at(-1) === "change";
 
-          const detailWithType =
-            detail == null || typeof detail !== "object"
-              ? { type: name }
-              : { type: name, ...detail };
+      const detailWithType =
+        detail == null || typeof detail !== "object"
+          ? { type: name }
+          : { type: name, ...detail };
 
-          const init: EventInit = {
-            bubbles: true,
-            cancelable: true,
-            ...evtInit,
-          };
+      const init: EventInit = {
+        bubbles: true,
+        cancelable: true,
+        ...evtInit,
+      };
 
-          if (isChangeEvent) {
-            return node.dispatchEvent(
-              new CustomEvent(name, {
-                detail: detailWithType,
-                ...init,
-              }),
-            );
-          }
+      if (isChangeEvent) {
+        return node.dispatchEvent(
+          new CustomEvent(name, {
+            detail: detailWithType,
+            ...init,
+          }),
+        );
+      }
 
-          node.dispatchEvent(
-            new CustomEvent(name, {
-              ...(hasExplicitDetail ? { detail } : {}),
-              ...init,
-            }),
-          );
+      node.dispatchEvent(
+        new CustomEvent(name, {
+          ...(hasExplicitDetail ? { detail } : {}),
+          ...init,
+        }),
+      );
 
-          const changeEventName = eventNameParts
-            .slice(0, -1)
-            .concat("change")
-            .join(":");
+      const changeEventName = eventNameParts
+        .slice(0, -1)
+        .concat("change")
+        .join(":");
 
-          node.dispatchEvent(
-            new CustomEvent(changeEventName, {
-              detail: detailWithType,
-              ...init,
-            }),
-          );
-        },
-      });
+      node.dispatchEvent(
+        new CustomEvent(changeEventName, {
+          detail: detailWithType,
+          ...init,
+        }),
+      );
     },
-    // { signal: handle.signal },
-  );
-
-  return (callback) => {
-    _callback = callback;
-    return handle.element;
-  };
+    signal
+  });
 };
-
-const mixin = createMixin(mixinType);
 
 export function customEvents<
   EventMap extends CustomEventMap<EventMapBase, string>,
-  Target extends Element = Element,
+  Target extends Element = HTMLElement
 >(callback: Callback<EventMap, Target>) {
-  return mixin(
-    callback as Callback<CustomEventMap<EventMapBase, string>, Element>,
-  ) as MixinDescriptor<Target, [Callback<EventMap, Target>], ElementProps>;
+  return ref<Target>((node, signal) => invokeCallback(node, callback, signal));
 }

@@ -124,7 +124,7 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
                 node.select();
                 requestAnimationFrame(() => {
                   node.dispatchEvent(new Event("input", { bubbles: true }));
-                })
+                });
               }),
             ]}
           />
@@ -171,7 +171,9 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
 
 export const SearchBooksNewEventHandlerParent = clientEntry(
   import.meta.url,
-  function SearchBooksNewEventHandlerParent(handle: Handle<{initialQuery: string}>) {
+  function SearchBooksNewEventHandlerParent(
+    handle: Handle<{ initialQuery: string }>,
+  ) {
     return () => (
       <div
         mix={[
