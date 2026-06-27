@@ -1,8 +1,4 @@
-import {
-  ref,
-  type ElementProps,
-  type MixinDescriptor,
-} from "remix/ui";
+import { ref } from "remix/ui";
 
 type SafeEventName<
   EventName extends string,
@@ -17,9 +13,6 @@ type EventUnionFromMap<EventMap extends EventMapBase, Domain extends string> = {
     : { type: SafeEventName<K, Domain> } & EventMap[K];
 }[keyof EventMap & string];
 
-type CustomEventDetail<E> =
-  E extends CustomEvent<infer Detail> ? Detail : never;
-
 type NoDetailArgs = [signal: AbortSignal, evtInit?: EventInit];
 
 type WithDetailArgs<Detail> = [
@@ -31,14 +24,12 @@ type WithDetailArgs<Detail> = [
 type DetailFor<
   EventMap extends CustomEventMap<EventMapBase, string>,
   T extends keyof EventMap & string,
-> = CustomEventDetail<EventMap[T]>;
+> = EventMap[T] extends CustomEvent<infer Detail> ? Detail : never;
 
 type DispatchArgsRuntimeFor<
   EventMap extends CustomEventMap<EventMapBase, string>,
   T extends keyof EventMap & string,
-> =
-  | NoDetailArgs
-  | WithDetailArgs<DetailFor<EventMap, T>>;
+> = NoDetailArgs | WithDetailArgs<DetailFor<EventMap, T>>;
 
 type DispatchCustomEventArgs<
   EventMap extends CustomEventMap<EventMapBase, string>,
@@ -61,7 +52,7 @@ type Callback<
 > = (arg: {
   target: Target;
   dispatchCustomEvent: DispatchCustomEvent<EventMap>;
-  signal: AbortSignal
+  signal: AbortSignal;
 }) => void;
 
 export type CustomEventMap<
@@ -80,9 +71,7 @@ export type CustomEventMap<
 function isNoDetailArgs<
   EventMap extends CustomEventMap<EventMapBase, string>,
   T extends keyof EventMap & string,
->(
-  args: DispatchArgsRuntimeFor<EventMap, T>,
-): args is NoDetailArgs {
+>(args: DispatchArgsRuntimeFor<EventMap, T>): args is NoDetailArgs {
   return args[0] instanceof AbortSignal;
 }
 
@@ -116,7 +105,7 @@ const invokeCallback = <
 >(
   node: Target,
   callback: Callback<EventMap, Target>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ) => {
   callback({
     target: node,
@@ -129,10 +118,9 @@ const invokeCallback = <
       const eventNameParts = name.split(":");
       const isChangeEvent = eventNameParts.at(-1) === "change";
 
-      const detailWithType =
-        detail == null || typeof detail !== "object"
-          ? { type: name }
-          : { type: name, ...detail };
+      const detailWithType = detail
+        ? { type: name, ...detail }
+        : { type: name };
 
       const init: EventInit = {
         bubbles: true,
@@ -161,20 +149,20 @@ const invokeCallback = <
         .concat("change")
         .join(":");
 
-      node.dispatchEvent(
+      return node.dispatchEvent(
         new CustomEvent(changeEventName, {
           detail: detailWithType,
           ...init,
         }),
       );
     },
-    signal
+    signal,
   });
 };
 
 export function customEvents<
   EventMap extends CustomEventMap<EventMapBase, string>,
-  Target extends Element = HTMLElement
+  Target extends Element = HTMLElement,
 >(callback: Callback<EventMap, Target>) {
   return ref<Target>((node, signal) => invokeCallback(node, callback, signal));
 }

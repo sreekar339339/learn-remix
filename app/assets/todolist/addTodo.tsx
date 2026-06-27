@@ -5,7 +5,7 @@ import type { TodoActionEventMap } from "./todoList.tsx";
 import { getInput } from "../utils/dom.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  const eventsMix = customEvents<TodoActionEventMap, HTMLFormElement>(
+  const events = customEvents<TodoActionEventMap, HTMLFormElement>(
     ({ target, dispatchCustomEvent }) => {
       addEventListeners(target, handle.signal, {
         async "myapp:todo:actionSucceeded"({ detail }) {
@@ -64,7 +64,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     <form
       method="POST"
       action={routes.todolist.todos.action.href()}
-      mix={[eventsMix]}
+      mix={[events]}
     >
       <button hidden name="intent" value="create"></button>
       <label mix={css({ display: "flex", alignItems: "center", gap: 8 })}>

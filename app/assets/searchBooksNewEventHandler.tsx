@@ -90,7 +90,7 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
   let searchEvent: SearchEventMap["myapp:search:change"]["detail"] | undefined =
     undefined;
 
-  let semanticEventsMix = customEvents<SearchEventMap, HTMLDivElement>(
+  let events = customEvents<SearchEventMap, HTMLDivElement>(
     ({ target, dispatchCustomEvent }) => {
       addEventListeners(target, handle.signal, {
         "myapp:search:change"({ detail }) {
@@ -111,7 +111,7 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
   );
 
   return () => (
-    <div mix={[semanticEventsMix, ...(handle.props.mix ?? [])]}>
+    <div mix={[events]}>
       <div>
         <label>
           Search{" "}
@@ -122,9 +122,9 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
               css({ padding: 4 }),
               ref((node) => {
                 node.select();
-                requestAnimationFrame(() => {
+                // requestAnimationFrame(() => {
                   node.dispatchEvent(new Event("input", { bubbles: true }));
-                });
+                // });
               }),
             ]}
           />

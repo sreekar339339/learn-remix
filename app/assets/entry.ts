@@ -6,7 +6,6 @@ run({
     return mod[exportName]
   },
   async resolveFrame(src, signal, target) {
-    console.log({src, signal, target})
     let headers = new Headers({ Accept: 'text/html' })
     if (target) headers.set('X-Remix-Target', target)
     let response = await fetch(src, { headers, signal })

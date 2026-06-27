@@ -128,8 +128,7 @@ export const asyncActionsWithFrameController = createController(
             )
             .with({ type: "error" }, ({ error }) => (
               <p>
-                Unexpected error occured, try again! {error.message} Cause:{" "}
-                {error.cause as string}.
+                Unexpected error occured, try again! {error.name} {error.message} {error.cause as string}
               </p>
             ))
             .exhaustive(),
