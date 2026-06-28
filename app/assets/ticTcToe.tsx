@@ -1,4 +1,5 @@
 import {
+  addEventListeners,
   attrs,
   clientEntry,
   css,
@@ -8,6 +9,7 @@ import {
   type Handle,
 } from "remix/ui";
 import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
+import { customEvents, type CustomEventMap } from "./utils/customEventMixin.ts";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
@@ -52,9 +54,7 @@ export const TicTacToe = clientEntry(
         options: { signal: handle.signal },
       });
 
-      handle.queueTask(() =>
-        this.gameEvtTarget.dispatchEvent("navigation"),
-      );
+      handle.queueTask(() => this.gameEvtTarget.dispatchEvent("navigation"));
     }
 
     render() {
@@ -265,3 +265,101 @@ export const TicTacToe = clientEntry(
     }
   }.TicTacToe,
 );
+
+type Position = Record<number, Player>;
+
+type TTTEvents = CustomEventMap<
+  {
+    nextState: { position: Position; winner: Result };
+    nextFocus: { nodeId: number | "reset" };
+  },
+  "ttt"
+>;
+
+// declare global {
+//   interface HTMLElementEventMap extends TTTEvents {}
+// }
+
+function TTT(handle: Handle) {
+  let state: TTTEvents["myapp:ttt:nextState"]["detail"] = {
+    position: {},
+    winner: null,
+  };
+  let events = customEvents<TTTEvents, HTMLDivElement>(
+    ({ target, dispatchCustomEvent }) => {
+      let pendingUpdate: Promise<AbortSignal>;
+      addEventListeners(target, handle.signal, {
+        click() {},
+        async "myapp:ttt:change"({ detail }) {
+          if (detail.type === "myapp:ttt:nextState") {
+            state = detail;
+            pendingUpdate = handle.update();
+          } else {
+            await pendingUpdate;
+            nodeIdMap[detail.nodeId].focus();
+          }
+        },
+      });
+    },
+  );
+  let nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
+    reset: HTMLElement;
+  };
+
+  return () => (
+    <div
+      mix={[
+        events,
+        css({
+          width: "100%",
+          maxWidth: "420px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "36px",
+        }),
+      ]}
+    >
+      <div
+        mix={[
+          css({
+            width: "100%",
+            aspectRatio: "1/1",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "4px",
+          }),
+        ]}
+      >
+        {Array.from({ length: 8 }, (_, index) => (
+          <button
+            key={index}
+            disabled={!!state.position[index]}
+            name="cell"
+            value={index}
+            mix={[
+              css({
+                width: "calc(100% / 3 - 4px)",
+                aspectRatio: "1/1",
+                "&:disabled": { backgroundColor: "darkgray" },
+                fontSize: "36px",
+                fontWeight: "bold",
+              }),
+              ref((node) => (nodeIdMap[index] = node)),
+            ]}
+            style={{ color: state.position[index] === "X" ? "blue" : "red" }}
+          >
+            {state.position[index]}
+          </button>
+        ))}
+      </div>
+      <button
+        mix={[
+          css({ fontSize: "18px", padding: "8px 16px" }),
+          ref((node) => (nodeIdMap["reset"] = node)),
+        ]}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}

@@ -1,13 +1,15 @@
 import { ref } from "remix/ui";
+import type {EventMap as RemixEventMap} from "remix/ui"
+
 
 type SafeEventName<
   EventName extends string,
   Domain extends string,
 > = `${AppName}:${Domain}:${EventName}`;
 
-type EventMapBase = Record<string, Record<string, unknown> | null>;
+type CustomEventMapBase = Record<string, Record<string, unknown> | null>;
 
-type EventUnionFromMap<EventMap extends EventMapBase, Domain extends string> = {
+type EventUnionFromMap<EventMap extends CustomEventMapBase, Domain extends string> = {
   [K in keyof EventMap & string]: EventMap[K] extends undefined | null
     ? { type: SafeEventName<K, Domain> }
     : { type: SafeEventName<K, Domain> } & EventMap[K];
@@ -22,41 +24,48 @@ type WithDetailArgs<Detail> = [
 ];
 
 type DetailFor<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   T extends keyof EventMap & string,
 > = EventMap[T] extends CustomEvent<infer Detail> ? Detail : never;
 
 type DispatchArgsRuntimeFor<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   T extends keyof EventMap & string,
 > = NoDetailArgs | WithDetailArgs<DetailFor<EventMap, T>>;
 
 type DispatchCustomEventArgs<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   T extends keyof EventMap & string,
 > =
   DetailFor<EventMap, T> extends null | undefined
     ? NoDetailArgs
     : WithDetailArgs<DetailFor<EventMap, T>>;
 
+export type CustomEventTarget<
+  CustomEvents extends CustomEventMap<CustomEventMapBase, string>,
+  Target extends EventTarget,
+> = Target & {
+  __eventMap?: RemixEventMap<Target> & CustomEvents;
+};
+
 export type DispatchCustomEvent<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
 > = <T extends keyof EventMap & string>(
   name: T,
   ...args: DispatchCustomEventArgs<EventMap, T>
 ) => void;
 
 type Callback<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   Target extends Element,
 > = (arg: {
-  target: Target;
+  target: CustomEventTarget<EventMap, Target>
   dispatchCustomEvent: DispatchCustomEvent<EventMap>;
   signal: AbortSignal;
 }) => void;
 
 export type CustomEventMap<
-  EventMap extends EventMapBase,
+  EventMap extends CustomEventMapBase,
   Domain extends string,
 > = {
   [K in "change" as SafeEventName<K, Domain>]: CustomEvent<
@@ -69,14 +78,14 @@ export type CustomEventMap<
 };
 
 function isNoDetailArgs<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   T extends keyof EventMap & string,
 >(args: DispatchArgsRuntimeFor<EventMap, T>): args is NoDetailArgs {
   return args[0] instanceof AbortSignal;
 }
 
 function normalizeDispatchArgs<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   T extends keyof EventMap & string,
 >(args: DispatchArgsRuntimeFor<EventMap, T>) {
   if (isNoDetailArgs(args)) {
@@ -101,26 +110,27 @@ function normalizeDispatchArgs<
 
 const invokeCallback = <
   Target extends Element,
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
 >(
   node: Target,
   callback: Callback<EventMap, Target>,
   signal: AbortSignal,
 ) => {
   callback({
-    target: node,
+    target: node as CustomEventTarget<EventMap, Target>,
     dispatchCustomEvent: (name, ...args) => {
-      const { detail, signal, evtInit, hasExplicitDetail } =
+      const { detail, signal: eventSignal, evtInit, hasExplicitDetail } =
         normalizeDispatchArgs(args);
 
-      if (signal.aborted) return;
+      if (eventSignal.aborted) return true;
 
       const eventNameParts = name.split(":");
       const isChangeEvent = eventNameParts.at(-1) === "change";
 
-      const detailWithType = detail
-        ? { type: name, ...detail }
-        : { type: name };
+      const detailWithType = 
+        detail != null && typeof detail === "object"
+          ? { type: name, ...detail }
+          : { type: name };
 
       const init: EventInit = {
         bubbles: true,
@@ -137,7 +147,7 @@ const invokeCallback = <
         );
       }
 
-      node.dispatchEvent(
+      let retVal = node.dispatchEvent(
         new CustomEvent(name, {
           ...(hasExplicitDetail ? { detail } : {}),
           ...init,
@@ -149,19 +159,21 @@ const invokeCallback = <
         .concat("change")
         .join(":");
 
-      return node.dispatchEvent(
+      node.dispatchEvent(
         new CustomEvent(changeEventName, {
           detail: detailWithType,
           ...init,
         }),
       );
+
+      return retVal
     },
     signal,
   });
 };
 
 export function customEvents<
-  EventMap extends CustomEventMap<EventMapBase, string>,
+  EventMap extends CustomEventMap<CustomEventMapBase, string>,
   Target extends Element = HTMLElement,
 >(callback: Callback<EventMap, Target>) {
   return ref<Target>((node, signal) => invokeCallback(node, callback, signal));
