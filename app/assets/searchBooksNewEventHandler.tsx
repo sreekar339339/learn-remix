@@ -20,7 +20,7 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    dispatch('search:querySubmitted', { query }, signal);
+    dispatch('search:querySubmitted', { query });
     let resp = await fetch(
       routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
       {
@@ -39,7 +39,6 @@ async function fetchBooks(
         {
           reason: { other: json.detail[0].msg },
         },
-        signal,
       );
     }
     let books = json.docs;
@@ -49,12 +48,11 @@ async function fetchBooks(
         {
           reason: "emptyList",
         },
-        signal,
       );
     }
-    dispatch("search:booksFound", books, signal);
+    dispatch("search:booksFound", books);
   } catch (error) {
-    dispatch("search:errorOccurred", error as Error, signal);
+    dispatch("search:errorOccurred", error as Error);
   }
 }
 
@@ -79,19 +77,18 @@ interface SearchBooksProps extends Props<"div"> {
 function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
   let { initialQuery } = handle.props;
   let searchEventTargetRef = (target: SearchEventMap["target"]["div"]) => {
-    let dispatch = dispatchCustomEvent(target);
-    
     addEventListeners(target, handle.signal, {
       "search:change"({ detail }) {
         searchEvent = detail;
         handle.update();
       },
       input(evt, signal) {
+        let dispatch = dispatchCustomEvent(target, signal);
         let input = evt.target as HTMLInputElement | null;
         if (!input) return;
         const query = input.value.trim();
         if (!query) {
-          return void dispatch('search:queryEmpty', signal);
+          return void dispatch('search:queryEmpty');
         }
         fetchBooks(query, dispatch, signal);
       },

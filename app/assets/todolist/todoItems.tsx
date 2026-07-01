@@ -21,12 +21,11 @@ export function TodoItems(handle: Handle<TodoItemsProps>) {
     let lastEvent:
       | TodoActionEventMap["types"]["todo:change"]["detail"]
       | undefined;
-    let dispatch = dispatchCustomEvent(target);
     addEventListeners(target, handle.signal, {
       "todo:actionSubmitted"({ detail }) {
         getInput(detail.form)?.select();
       },
-      async "todo:actionSucceeded"({ detail }) {
+      "todo:actionSucceeded"({ detail }) {
         let input = getInput(detail.form);
         if (!input) return;
         const end = input.value.length;
@@ -43,19 +42,20 @@ export function TodoItems(handle: Handle<TodoItemsProps>) {
         )
           return;
         let { form } = lastEvent.detail;
-        dispatch("todo:idle", handle.signal);
+        dispatchCustomEvent(target, handle.signal, "todo:idle");
         let inputInErrorEvt = getInput(form);
         if (!(evt.target instanceof HTMLInputElement)) return;
         if (inputInErrorEvt !== evt.target) return;
         inputInErrorEvt.value = inputInErrorEvt.defaultValue;
       },
       async submit(evt, signal) {
+        let dispatch = dispatchCustomEvent(target, signal);
         evt.preventDefault();
         let form = evt.target as HTMLFormElement;
         let formData = new FormData(form, evt.submitter);
         formData.set("redirectTo", "none");
         try {
-          dispatch("todo:actionSubmitted", { form }, signal);
+          dispatch("todo:actionSubmitted", { form });
           // await new Promise((res) => setTimeout(res, 1000));
           let resp = await fetch(form.action, {
             method: "POST",
@@ -69,12 +69,11 @@ export function TodoItems(handle: Handle<TodoItemsProps>) {
           }
           // await new Promise((res, rej) => setTimeout(rej, 0, new Error('laude lag gaye')));
           await handle.frame.reload();
-          dispatch("todo:actionSucceeded", { form }, signal);
+          dispatch("todo:actionSucceeded", { form });
         } catch (error) {
           dispatch(
             "todo:actionErrored",
             { error: error as Error, form },
-            signal,
           );
         }
       },

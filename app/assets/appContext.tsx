@@ -135,7 +135,7 @@ function ThemeProvider(
   //   state: {value: 'dark'}
   // })
   let theme: Theme = { value: "dark" };
-  let dispatch: ThemeEventMap["dispatcher"];
+  let dispatch: ThemeEventMap["dispatcherWithoutSignal"];
   let themeEventTargetRef: RefCallback<ThemeEventMap["target"]["div"]> = (
     target,
     signal,
@@ -157,9 +157,9 @@ function ThemeProvider(
           on("click", (_, signal) => {
             // No update needed - consumers subscribe to changes
             dispatch(
+              signal,
               "theme:value",
               theme.value === "light" ? "dark" : "light",
-              signal,
             );
           }),
         ]}

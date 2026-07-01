@@ -25,14 +25,14 @@ export const SearchBooksWithFrame = clientEntry(
     let initialQuery = handle.props.initialQuery?.trim() || "";
 
     let searchEventTargetRef = (target: SearchEventMap["target"]["div"]) => {
-      let dispatch = dispatchCustomEvent(target);
       addEventListeners(target, handle.signal, {
         submit(evt, signal) {
+          let dispatch = dispatchCustomEvent(target, signal);
           let form = evt.target as HTMLFormElement;
           evt.preventDefault();
           let query = (new FormData(form).get("q") as string).trim();
-          if (!query) return void dispatch("search:queryEmpty", signal);
-          dispatch("search:querySubmitted", { query }, signal);
+          if (!query) return void dispatch("search:queryEmpty");
+          dispatch("search:querySubmitted", { query });
           getInput(form)?.select();
         },
         "search:change"(evt) {

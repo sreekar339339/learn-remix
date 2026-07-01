@@ -27,13 +27,9 @@ type ChangeEventDetailFromMap<
       };
 }[keyof EventMap & string];
 
-type NoDetailArgs = [signal: AbortSignal, evtInit?: EventInit];
+type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
-type WithDetailArgs<Detail> = [
-  detail: Detail,
-  signal: AbortSignal,
-  evtInit?: EventInit,
-];
+type WithDetailArgs<Detail> = [detail: Detail, evtInit?: EventInit];
 
 type DetailFor<EventTypes extends object, T extends keyof EventTypes & string> =
   EventTypes[T] extends CustomEvent<infer Detail> ? Detail : never;
@@ -80,6 +76,7 @@ type CustomEventNameCollisionError<Collisions> = {
   readonly collidingEventNames: Collisions;
   readonly types?: never;
   readonly dispatcher?: never;
+  readonly dispatcherWithoutSignal?: never;
   readonly target?: never;
 };
 
@@ -114,6 +111,15 @@ type DispatchCustomEvent<EventTypes extends object> = <
   ...args: DispatchCustomEventArgs<EventTypes, T>
 ) => boolean;
 
+type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
+  (signal: AbortSignal): DispatchCustomEvent<EventTypes>;
+  <T extends keyof EventTypes & string>(
+    signal: AbortSignal,
+    name: T,
+    ...args: DispatchCustomEventArgs<EventTypes, T>
+  ): boolean;
+};
+
 type CustomEventTypes<
   EventMap extends CustomEventMapBase,
   domain extends Domain,
@@ -140,9 +146,14 @@ type CustomEventMapDescriptor<EventTypes extends object> = {
   types: EventTypes;
 
   /**
-   * Dispatcher function type.
+   * Dispatcher type after target and signal have both been applied.
    */
   dispatcher: DispatchCustomEvent<EventTypes>;
+
+  /**
+   * Dispatcher type after only target has been applied.
+   */
+  dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<EventTypes>;
 
   /**
    * DOM target helpers.
@@ -163,7 +174,7 @@ function isNoDetailArgs<
   EventTypes extends object,
   T extends keyof EventTypes & string,
 >(args: DispatchArgsRuntimeFor<EventTypes, T>): args is NoDetailArgs {
-  return args[0] instanceof AbortSignal;
+  return args.length === 0 || args[0] == null;
 }
 
 function normalizeDispatchArgs<
@@ -171,20 +182,18 @@ function normalizeDispatchArgs<
   T extends keyof EventTypes & string,
 >(args: DispatchArgsRuntimeFor<EventTypes, T>) {
   if (isNoDetailArgs(args)) {
-    const [signal, evtInit] = args;
+    const [, evtInit] = args;
 
     return {
-      signal,
       evtInit,
       hasExplicitDetail: false,
     };
   }
 
-  const [detail, signal, evtInit] = args;
+  const [detail, evtInit] = args;
 
   return {
     detail,
-    signal,
     evtInit,
     hasExplicitDetail: true,
   };
@@ -232,15 +241,11 @@ type CustomEventTargetLike = Element & {
 
 function dispatchCustomEventImpl(
   target: CustomEventTargetLike,
+  eventSignal: AbortSignal,
   name: string,
   args: RuntimeDispatchArgs,
 ): boolean {
-  const {
-    detail,
-    signal: eventSignal,
-    evtInit,
-    hasExplicitDetail,
-  } = normalizeDispatchArgs(args);
+  const { detail, evtInit, hasExplicitDetail } = normalizeDispatchArgs(args);
 
   if (eventSignal.aborted) return true;
 
@@ -298,8 +303,22 @@ function dispatchCustomEventImpl(
   return eventResult && changeResult && changeManyResult;
 }
 
+function createDispatcher(
+  target: CustomEventTargetLike,
+  signal: AbortSignal,
+): DispatchCustomEvent<object> {
+  return (eventName: string, ...eventArgs: RuntimeDispatchArgs) => {
+    return dispatchCustomEventImpl(target, signal, eventName, eventArgs);
+  };
+}
+
 export function dispatchCustomEvent<Target extends CustomEventTargetLike>(
   target: Target,
+): DispatchCustomEventWithoutSignal<CustomEventsOfTarget<Target>>;
+
+export function dispatchCustomEvent<Target extends CustomEventTargetLike>(
+  target: Target,
+  signal: AbortSignal,
 ): DispatchCustomEvent<CustomEventsOfTarget<Target>>;
 
 export function dispatchCustomEvent<
@@ -307,21 +326,35 @@ export function dispatchCustomEvent<
   T extends keyof CustomEventsOfTarget<Target> & string,
 >(
   target: Target,
+  signal: AbortSignal,
   name: T,
   ...args: DispatchCustomEventArgs<CustomEventsOfTarget<Target>, T>
 ): boolean;
 
 export function dispatchCustomEvent(
   target: CustomEventTargetLike,
+  signal?: AbortSignal,
   ...args: [] | [name: string, ...args: RuntimeDispatchArgs]
 ): unknown {
-  if (args.length === 0) {
-    return (eventName: string, ...eventArgs: RuntimeDispatchArgs) => {
-      dispatchCustomEventImpl(target, eventName, eventArgs);
+  if (!signal) {
+    return (
+      nextSignal: AbortSignal,
+      eventName?: string,
+      ...eventArgs: RuntimeDispatchArgs
+    ) => {
+      if (!eventName) {
+        return createDispatcher(target, nextSignal);
+      }
+
+      return dispatchCustomEventImpl(target, nextSignal, eventName, eventArgs);
     };
+  }
+
+  if (args.length === 0) {
+    return createDispatcher(target, signal);
   }
 
   const [name, ...eventArgs] = args;
 
-  return dispatchCustomEventImpl(target, name, eventArgs);
+  return dispatchCustomEventImpl(target, signal, name, eventArgs);
 }
