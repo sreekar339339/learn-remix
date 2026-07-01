@@ -1,4 +1,4 @@
 declare global {
-  type AppName = "myapp";
+  // type AppName = "myapp";
 }
 export {}

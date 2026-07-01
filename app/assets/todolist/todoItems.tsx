@@ -2,86 +2,89 @@ import {
   addEventListeners,
   clientEntry,
   css,
+  ref,
   type Handle,
   type Props,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
-import { customEvents } from "../utils/customEventMixin.ts";
 import { _TodoList, type TodoActionEventMap } from "./todoList.tsx";
 import { getInput } from "../utils/dom.ts";
+import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 interface TodoItemsProps extends Props<"ul"> {
   todos: Todo[];
 }
 
 export function TodoItems(handle: Handle<TodoItemsProps>) {
-  let events = customEvents<TodoActionEventMap, HTMLUListElement>(
-    ({ target, dispatchCustomEvent }) => {
-      let lastEvent: TodoActionEventMap["myapp:todo:change"]['detail'] | undefined;
-      addEventListeners(target, handle.signal, {
-        "myapp:todo:actionSubmitted"({ detail }) {
-          getInput(detail.form)?.select();
-        },
-        async "myapp:todo:actionSucceeded"({ detail }) {
-          let input = getInput(detail.form);
-          if (!input) return;
-          const end = input.value.length;
-          input.setSelectionRange(end, end);
-        },
-        "myapp:todo:change"(evt) {
-          lastEvent = evt.detail;
-        },
-        focusout(evt) {
-          if (!lastEvent) return;
-          if (
-            lastEvent.type !== "myapp:todo:actionErrored" ||
-            lastEvent.form === undefined
-          )
-            return;
-          dispatchCustomEvent("myapp:todo:idle", handle.signal);
-          let inputInErrorEvt = getInput(lastEvent.form);
-          if (!(evt.target instanceof HTMLInputElement)) return;
-          if (inputInErrorEvt !== evt.target) return;
-          inputInErrorEvt.value = inputInErrorEvt.defaultValue;
-        },
-        async submit(evt, signal) {
-          evt.preventDefault();
-          let form = evt.target as HTMLFormElement;
-          let formData = new FormData(form, evt.submitter);
-          formData.set("redirectTo", "none");
-          try {
-            dispatchCustomEvent("myapp:todo:actionSubmitted", { form }, signal);
-            // await new Promise((res) => setTimeout(res, 1000));
-            let resp = await fetch(form.action, {
-              method: "POST",
-              body: formData,
-              signal,
+  let actionEventTargetRef = (target: TodoActionEventMap["target"]["ul"]) => {
+    let lastEvent:
+      | TodoActionEventMap["types"]["todo:change"]["detail"]
+      | undefined;
+    let dispatch = dispatchCustomEvent(target);
+    addEventListeners(target, handle.signal, {
+      "todo:actionSubmitted"({ detail }) {
+        getInput(detail.form)?.select();
+      },
+      async "todo:actionSucceeded"({ detail }) {
+        let input = getInput(detail.form);
+        if (!input) return;
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+      },
+      "todo:change"(evt) {
+        lastEvent = evt.detail;
+      },
+      focusout(evt) {
+        if (!lastEvent) return;
+        if (
+          !(lastEvent.event === 'todo:actionErrored') ||
+          !lastEvent.detail.form
+        )
+          return;
+        let { form } = lastEvent.detail;
+        dispatch("todo:idle", handle.signal);
+        let inputInErrorEvt = getInput(form);
+        if (!(evt.target instanceof HTMLInputElement)) return;
+        if (inputInErrorEvt !== evt.target) return;
+        inputInErrorEvt.value = inputInErrorEvt.defaultValue;
+      },
+      async submit(evt, signal) {
+        evt.preventDefault();
+        let form = evt.target as HTMLFormElement;
+        let formData = new FormData(form, evt.submitter);
+        formData.set("redirectTo", "none");
+        try {
+          dispatch("todo:actionSubmitted", { form }, signal);
+          // await new Promise((res) => setTimeout(res, 1000));
+          let resp = await fetch(form.action, {
+            method: "POST",
+            body: formData,
+            signal,
+          });
+          if (!resp.ok) {
+            throw new Error(`${resp.status} ${resp.statusText}`, {
+              cause: await resp.text(),
             });
-            if (!resp.ok) {
-              throw new Error(`${resp.status} ${resp.statusText}`, {
-                cause: await resp.text(),
-              });
-            }
-            // await new Promise((res, rej) => setTimeout(rej, 0, new Error('laude lag gaye')));
-            await handle.frame.reload();
-            dispatchCustomEvent("myapp:todo:actionSucceeded", { form }, signal);
-          } catch (error) {
-            dispatchCustomEvent(
-              "myapp:todo:actionErrored",
-              { error: error as Error, form },
-              signal,
-            );
           }
-        },
-      });
-    },
-  );
+          // await new Promise((res, rej) => setTimeout(rej, 0, new Error('laude lag gaye')));
+          await handle.frame.reload();
+          dispatch("todo:actionSucceeded", { form }, signal);
+        } catch (error) {
+          dispatch(
+            "todo:actionErrored",
+            { error: error as Error, form },
+            signal,
+          );
+        }
+      },
+    });
+  };
 
   return () => (
     <ul
       mix={[
-        events,
+        ref(actionEventTargetRef),
         css({
           listStyleType: "none",
           padding: 0,

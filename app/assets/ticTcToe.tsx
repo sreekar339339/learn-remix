@@ -9,7 +9,7 @@ import {
   type Handle,
 } from "remix/ui";
 import { SemanticEventTarget } from "./utils/SemanticEventTarget.js";
-import { customEvents, type CustomEventMap } from "./utils/customEventMixin.ts";
+import type { CustomEventMap } from "./utils/customEvent.ts";
 
 type Player = "X" | "O";
 type Board = Array<Player | null>;
@@ -268,40 +268,42 @@ export const TicTacToe = clientEntry(
 
 type Position = Record<number, Player>;
 
-type TTTEvents = CustomEventMap<
+type TTTEventMap = CustomEventMap<
   {
-    nextState: { position: Position; winner: Result };
+    nextPosition: { position: Position; winner: Result };
     nextFocus: { nodeId: number | "reset" };
   },
   "ttt"
 >;
 
-// declare global {
-//   interface HTMLElementEventMap extends TTTEvents {}
-// }
+type TTTEventTypes = TTTEventMap["types"];
+
+declare global {
+  interface HTMLElementEventMap extends TTTEventTypes {}
+}
 
 function TTT(handle: Handle) {
-  let state: TTTEvents["myapp:ttt:nextState"]["detail"] = {
+  let nextPosition: TTTEventTypes["ttt:nextPosition"]["detail"] = {
     position: {},
     winner: null,
   };
-  let events = customEvents<TTTEvents, HTMLDivElement>(
-    ({ target, dispatchCustomEvent }) => {
-      let pendingUpdate: Promise<AbortSignal>;
-      addEventListeners(target, handle.signal, {
-        click() {},
-        async "myapp:ttt:change"({ detail }) {
-          if (detail.type === "myapp:ttt:nextState") {
-            state = detail;
-            pendingUpdate = handle.update();
-          } else {
-            await pendingUpdate;
-            nodeIdMap[detail.nodeId].focus();
-          }
-        },
-      });
-    },
-  );
+
+  let tttEventTargetRef = (target: TTTEventMap["target"]["div"]) => {
+    let pendingUpdate: Promise<AbortSignal>;
+    addEventListeners(target, handle.signal, {
+      click() {},
+      async "ttt:change"({ detail }) {
+        if (detail.event === 'ttt:nextPosition') {
+          nextPosition = detail.detail;
+          pendingUpdate = handle.update();
+        } else {
+          await pendingUpdate;
+          nodeIdMap[detail.detail.nodeId].focus();
+        }
+      },
+    });
+  };
+
   let nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
     reset: HTMLElement;
   };
@@ -309,7 +311,6 @@ function TTT(handle: Handle) {
   return () => (
     <div
       mix={[
-        events,
         css({
           width: "100%",
           maxWidth: "420px",
@@ -317,6 +318,7 @@ function TTT(handle: Handle) {
           flexDirection: "column",
           gap: "36px",
         }),
+        ref(tttEventTargetRef),
       ]}
     >
       <div
@@ -333,7 +335,7 @@ function TTT(handle: Handle) {
         {Array.from({ length: 8 }, (_, index) => (
           <button
             key={index}
-            disabled={!!state.position[index]}
+            disabled={!!nextPosition.position[index]}
             name="cell"
             value={index}
             mix={[
@@ -346,9 +348,9 @@ function TTT(handle: Handle) {
               }),
               ref((node) => (nodeIdMap[index] = node)),
             ]}
-            style={{ color: state.position[index] === "X" ? "blue" : "red" }}
+            style={{ color: nextPosition.position[index] === "X" ? "blue" : "red" }}
           >
-            {state.position[index]}
+            {nextPosition.position[index]}
           </button>
         ))}
       </div>

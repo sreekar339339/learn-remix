@@ -79,8 +79,11 @@ export const asyncActionsWithFrameController = createController(
 
         try {
           let resp = await fetch(openLibraryUrl);
-          if (!resp.ok)
-            throw new Error(resp.statusText, { cause: resp.status });
+          if (!resp.ok) {
+            throw new Error(`${resp.status} ${resp.statusText}`, {
+              cause: await resp.text(),
+            })
+          }
           let json = await resp.json();
           searchEvent = match(s.parseSafe(openLibrarySchema, json))
             .returnType<SearchEvent>()
@@ -128,7 +131,7 @@ export const asyncActionsWithFrameController = createController(
             )
             .with({ type: "error" }, ({ error }) => (
               <p>
-                Unexpected error occured, try again! {error.name} {error.message} {error.cause as string}
+                Unexpected error occured, try again! {error.message} {error.cause as string}
               </p>
             ))
             .exhaustive(),

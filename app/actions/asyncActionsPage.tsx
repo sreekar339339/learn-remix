@@ -9,7 +9,7 @@ export function AsyncActionsPageWithFrame(
 ) {
   return () => (
     <Layout>
-      <h1>Make Async actions</h1>
+      <h1>Make Async actions with frame</h1>
       <SearchBooksWithFrame initialQuery={handle.props.initialQuery} />
     </Layout>
   );
