@@ -19,6 +19,12 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }, 'search'>;
 
+// type SeachEventTypes = SearchEventMap["types"];
+
+// declare global {
+//   interface HTMLElementEventMap extends SeachEventTypes {}
+// }
+
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {

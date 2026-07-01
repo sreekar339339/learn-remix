@@ -64,11 +64,11 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }, 'search'>;
 
-type SeachEventTypes = SearchEventMap["types"];
+// type SeachEventTypes = SearchEventMap["types"];
 
-declare global {
-  interface HTMLElementEventMap extends SeachEventTypes {}
-}
+// declare global {
+//   interface HTMLElementEventMap extends SeachEventTypes {}
+// }
 
 interface SearchBooksProps extends Props<"div"> {
   initialQuery: string;

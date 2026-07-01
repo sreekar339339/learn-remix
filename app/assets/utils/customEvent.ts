@@ -80,11 +80,31 @@ type CustomEventNameCollisionError<Collisions> = {
   readonly target?: never;
 };
 
-type HTMLElementToCustomEventTargetMap<EventTypes extends object> = {
+type GenericCustomEventTargetMap<EventTypes extends object> = {
+  element: CustomEventTarget<EventTypes, Element>;
+  htmlElement: CustomEventTarget<EventTypes, HTMLElement>;
+  mathElement: CustomEventTarget<EventTypes, MathMLElement>;
+  svgElement: CustomEventTarget<EventTypes, SVGElement>;
+  math: {
+    [TagName in keyof MathMLElementTagNameMap]: CustomEventTarget<
+      EventTypes,
+      MathMLElementTagNameMap[TagName]
+    >;
+  };
+  svg: {
+    [TagName in keyof SVGElementTagNameMap]: CustomEventTarget<
+      EventTypes,
+      SVGElementTagNameMap[TagName]
+    >;
+  };
+};
+
+type HTMLElementToCustomEventTargetMap<EventTypes extends object> =
+  GenericCustomEventTargetMap<EventTypes> & {
   [TagName in keyof HTMLElementTagNameMap]: CustomEventTarget<
     EventTypes,
     HTMLElementTagNameMap[TagName]
-  >;
+  > 
 };
 
 type CustomEventTarget<

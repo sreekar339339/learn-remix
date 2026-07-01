@@ -21,6 +21,13 @@ type TodoEventMap = CustomEventMap<
   "todo"
 >;
 
+type DragReleaseEventMap = CustomEventMap<
+  {
+    release: { velocityX: number; velocityY: number };
+  },
+  "drag"
+>;
+
 type ObservedEvent = {
   type: string;
   detail: unknown;
@@ -59,6 +66,63 @@ describe("dispatchCustomEvent", () => {
     assert.equal(typeof dispatch, "function");
     assert.equal(typeof dispatchFromTargetAndSignal, "function");
     assert.equal(typeof dispatchFromCurriedSignal, "function");
+  });
+
+  it("exposes generic, HTML, SVG, and MathML targets", () => {
+    let genericElement = createTypedTarget<DragReleaseEventMap["target"]["element"]>();
+    let htmlElement = createTypedTarget<DragReleaseEventMap["target"]["htmlElement"]>();
+    let divElement = createTypedTarget<DragReleaseEventMap["target"]["div"]>();
+    let svgElement = createTypedTarget<DragReleaseEventMap["target"]["svgElement"]>();
+    let svgCircleElement = createTypedTarget<DragReleaseEventMap["target"]["svg"]["circle"]>();
+    let mathElement = createTypedTarget<DragReleaseEventMap["target"]["mathElement"]>();
+    let mathIdentifierElement = createTypedTarget<DragReleaseEventMap["target"]["math"]["mi"]>();
+    let signal = new AbortController().signal;
+
+    let dispatchFromElement = dispatchCustomEvent(genericElement, signal);
+    let dispatchFromHTMLElement = dispatchCustomEvent(htmlElement, signal);
+    let dispatchFromDiv = dispatchCustomEvent(divElement, signal);
+    let dispatchFromSvgElement = dispatchCustomEvent(svgElement, signal);
+    let dispatchFromSvgCircleElement = dispatchCustomEvent(svgCircleElement, signal);
+    let dispatchFromMathElement = dispatchCustomEvent(mathElement, signal);
+    let dispatchFromMathIdentifierElement = dispatchCustomEvent(
+      mathIdentifierElement,
+      signal,
+    );
+
+    assert.equal(
+      dispatchFromElement("drag:release", { velocityX: 1, velocityY: 2 }),
+      true,
+    );
+    assert.equal(
+      dispatchFromHTMLElement("drag:release", { velocityX: 3, velocityY: 4 }),
+      true,
+    );
+    assert.equal(
+      dispatchFromDiv("drag:release", { velocityX: 5, velocityY: 6 }),
+      true,
+    );
+    assert.equal(
+      dispatchFromSvgElement("drag:release", { velocityX: 7, velocityY: 8 }),
+      true,
+    );
+    assert.equal(
+      dispatchFromSvgCircleElement("drag:release", {
+        velocityX: 9,
+        velocityY: 10,
+      }),
+      true,
+    );
+    assert.equal(
+      dispatchFromMathElement("drag:release", { velocityX: 11, velocityY: 12 }),
+      true,
+    );
+    assert.equal(
+      dispatchFromMathIdentifierElement("drag:release", {
+        velocityX: 13,
+        velocityY: 14,
+      }),
+      true,
+    );
   });
 
   it("dispatches granular events and the change envelopes used by state subscribers", () => {

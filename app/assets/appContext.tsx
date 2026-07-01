@@ -18,32 +18,6 @@ type Settings = {
   layout: "zen" | "normal";
 };
 
-// class AppContext extends SemanticEventTarget<{
-//   user: User,
-//   settings: Settings
-// }> {
-//   #user: User = null
-//   #settings: Settings = {theme: 'system', layout: 'normal'}
-
-//   get user() {
-//     return this.#user
-//   }
-
-//   get settings() {
-//     return this.#settings
-//   }
-
-// setUser(user: User | null) {
-//   this.#user = user
-//   this.dispatchEvent(new Event('userChange'))
-// }
-
-// setSettings(settings: Settings) {
-//   this.#settings = settings
-//   this.dispatchEvent(new Event('settingsChange'))
-// }
-// }
-
 type AppContext = {
   user: User;
   settings: Settings;
@@ -61,7 +35,7 @@ function AppProvider(
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
-  let appContextEventTargetRef: RefCallback<
+  let appContextTargetRef: RefCallback<
     AppContextEventMap["target"]["body"]
   > = (target, signal) => {
     handle.context.set({ context: initAppContext, target });
@@ -73,7 +47,7 @@ function AppProvider(
   };
 
   return () => (
-    <body mix={ref(appContextEventTargetRef)}>{handle.props.children}</body>
+    <body mix={ref(appContextTargetRef)}>{handle.props.children}</body>
   );
 }
 
@@ -82,8 +56,7 @@ function UserDisplay(handle: Handle) {
   let user = handle.context.get(AppProvider).context.user;
 
   addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
-    "context:user"({ detail }) {
-      user = detail;
+    "context:user"() {
       handle.update();
     },
   });
@@ -95,8 +68,7 @@ function SomeComponent(handle: Handle) {
   let context = handle.context.get(AppProvider).context;
 
   addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
-    "context:changeMany"({ detail }) {
-      Object.assign(context, detail);
+    "context:changeMany"() {
       handle.update();
     },
   });
@@ -108,22 +80,10 @@ function SomeComponent(handle: Handle) {
   );
 }
 
-// type Theme = {
-//   value: 'light' | 'dark'
-// }
-
 type Theme = {
   value: "light" | "dark";
 };
 type ThemeEventMap = CustomEventMap<Theme, "theme">;
-
-// class Theme extends SemanticEventTarget<{value: ThemeValue}> {
-//   #value: 'light' | 'dark' = 'light'
-
-//   get value() {
-//     return this.#value
-//   }
-// }
 
 function ThemeProvider(
   handle: Handle<
@@ -131,12 +91,9 @@ function ThemeProvider(
     { target: ThemeEventMap["target"]["div"]; theme: Theme }
   >,
 ) {
-  // let themeEvtTarget = new SemanticEventTarget<Theme>({
-  //   state: {value: 'dark'}
-  // })
   let theme: Theme = { value: "dark" };
   let dispatch: ThemeEventMap["dispatcherWithoutSignal"];
-  let themeEventTargetRef: RefCallback<ThemeEventMap["target"]["div"]> = (
+  let themeTargetRef: RefCallback<ThemeEventMap["target"]["div"]> = (
     target,
     signal,
   ) => {
@@ -150,8 +107,7 @@ function ThemeProvider(
   };
 
   return () => (
-    <div mix={ref(themeEventTargetRef)}>
-      <p>Current theme: {theme.value}</p>
+    <div mix={ref(themeTargetRef)}>
       <button
         mix={[
           on("click", (_, signal) => {
@@ -175,8 +131,7 @@ function ThemedContent(handle: Handle) {
   let theme = handle.context.get(ThemeProvider).theme.value;
   // Subscribe to granular updates
   addEventListeners(handle.context.get(ThemeProvider).target, handle.signal, {
-    "theme:value"({ detail }) {
-      theme = detail;
+    "theme:value"() {
       handle.update();
     },
   });
