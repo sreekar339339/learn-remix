@@ -95,7 +95,10 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
     });
   };
   let searchEvent: SearchEventMap["types"]['search:change']["detail"] = initialQuery
-    ? { event: 'search:querySubmitted', detail: { query: initialQuery } }
+    ? {
+        event: 'search:querySubmitted',
+        detail: { query: initialQuery },
+      }
     : { event: 'search:queryEmpty' };
 
   return () => (
@@ -117,6 +120,7 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
         />
       </label>
       {match(searchEvent)
+        .with({ changes: P._ }, () => null)
         .with({ event: 'search:queryEmpty' }, () => <p>Enter the title of any book.</p>)
         .with({ event: 'search:querySubmitted' }, ({detail: {query}}) => (
           <p>fetching books with title containing {query}...</p>

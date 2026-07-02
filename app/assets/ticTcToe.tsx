@@ -293,6 +293,7 @@ function TTT(handle: Handle) {
     addEventListeners(target, handle.signal, {
       click() {},
       async "ttt:change"({ detail }) {
+        if ("changes" in detail) return;
         if (detail.event === 'ttt:nextPosition') {
           nextPosition = detail.detail;
           pendingUpdate = handle.update();

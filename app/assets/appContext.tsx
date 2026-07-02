@@ -31,20 +31,30 @@ function AppProvider(
     { target: AppContextEventMap["target"]["body"]; context: AppContext }
   >,
 ) {
-  let initAppContext: AppContext = {
+  let appContext: AppContext = {
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
   let appContextTargetRef: RefCallback<
     AppContextEventMap["target"]["body"]
   > = (target, signal) => {
-    handle.context.set({ context: initAppContext, target });
+    handle.context.set({ context: appContext, target });
     addEventListeners(target, signal, {
-      "context:changeMany"({ detail }) {
-        Object.assign(initAppContext, detail);
+      "context:change"({ detail }) {
+        if ("changes" in detail) {
+          Object.assign(appContext, detail.changes);
+          return;
+        }
       },
     });
+    // perform auth and other async stuff and dispatch context value
+    dispatchCustomEvent(target, signal, "context:change", {changes: {
+      user: {age: 23, name: 'Bob Lazar'},
+      settings: {layout: 'zen', theme: 'light'}
+    }})
   };
+
+
 
   return () => (
     <body mix={ref(appContextTargetRef)}>{handle.props.children}</body>
@@ -53,7 +63,7 @@ function AppProvider(
 
 // Components can subscribe to only the events they care about
 function UserDisplay(handle: Handle) {
-  let user = handle.context.get(AppProvider).context.user;
+  let context = handle.context.get(AppProvider).context
 
   addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
     "context:user"() {
@@ -61,14 +71,14 @@ function UserDisplay(handle: Handle) {
     },
   });
 
-  return () => <div>{user?.name ?? "Not logged in"}</div>;
+  return () => <div>{context.user?.name ?? "Not logged in"}</div>;
 }
 
 function SomeComponent(handle: Handle) {
   let context = handle.context.get(AppProvider).context;
 
   addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
-    "context:changeMany"() {
+    "context:change"() {
       handle.update();
     },
   });
@@ -100,8 +110,11 @@ function ThemeProvider(
     handle.context.set({ theme, target });
     dispatch = dispatchCustomEvent(target);
     addEventListeners(target, signal, {
-      "theme:changeMany"({ detail }) {
-        Object.assign(theme, detail);
+      "theme:change"({ detail }) {
+        if ("changes" in detail) {
+          Object.assign(theme, detail.changes);
+          return;
+        }
       },
     });
   };
@@ -115,7 +128,7 @@ function ThemeProvider(
             dispatch(
               signal,
               "theme:value",
-              theme.value === "light" ? "dark" : "light",
+              theme.value === 'dark' ? 'light' : 'dark',
             );
           }),
         ]}
@@ -128,7 +141,7 @@ function ThemeProvider(
 }
 
 function ThemedContent(handle: Handle) {
-  let theme = handle.context.get(ThemeProvider).theme.value;
+  let theme = handle.context.get(ThemeProvider).theme
   // Subscribe to granular updates
   addEventListeners(handle.context.get(ThemeProvider).target, handle.signal, {
     "theme:value"() {
@@ -137,8 +150,8 @@ function ThemedContent(handle: Handle) {
   });
 
   return () => (
-    <div mix={[css({ backgroundColor: theme === "dark" ? "#000" : "#fff" })]}>
-      Current theme: {theme}
+    <div mix={[css({ backgroundColor: theme.value === "dark" ? "#000" : "#fff" })]}>
+      Current theme: {theme.value}
     </div>
   );
 }

@@ -18,9 +18,10 @@ import {
 type SearchEventMap = CustomEventMap<
   {
     booksFound: { books: string[] };
+    booksNotFound: { reason: "emptyList" | { other: string } };
     errorOccurred: Error;
     querySubmitted: { query: string };
-    reset: null;
+    idle: null;
   },
   "search"
 >;
@@ -28,7 +29,7 @@ type SearchEventMap = CustomEventMap<
 type User = { name: string; age: number } | null;
 type Settings = {
   theme: "dark" | "light" | "system";
-  layout: "normal" | "zen";
+  layout: "normal" | "zen" | "grid";
 };
 
 type TestAppContext = {
@@ -38,32 +39,45 @@ type TestAppContext = {
 
 type AppContextEventMap = CustomEventMap<TestAppContext, "context">;
 
+async function fetchBooks(query: string, dispatch: SearchEventMap["dispatcher"], signal: AbortSignal) {
+  dispatch("search:querySubmitted", { query });
+  try {
+    let resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
+    if (!resp.ok) throw new Error("Network response was not ok");
+    let data = await resp.json();
+    if (!Array.isArray(data.books) || data.books.length === 0) {
+      return dispatch("search:booksNotFound", { reason: "emptyList" });
+    }
+    dispatch("search:booksFound", { books: data.books });
+  } catch (error) {
+    dispatch("search:errorOccurred", error as Error);
+  }
+}
+
 function SearchForm(handle: Handle<Props<"div">>) {
-  let status = "idle";
+  let event: SearchEventMap["types"]["search:change"]["detail"] = { event: "search:idle" };
 
   let searchTargetRef = (target: SearchEventMap["target"]["div"]) => {
+    let search = (query: string, signal: AbortSignal) => {
+      let dispatch = dispatchCustomEvent(target, signal);
+      if (!query) return dispatch("search:idle");
+      fetchBooks(query, dispatch, signal);
+    };
+
     addEventListeners(target, handle.signal, {
-      "search:querySubmitted"({ detail }) {
-        status = `query:${detail.query}`;
-        handle.update();
-      },
-      "search:reset"() {
-        status = "idle";
-        handle.update();
+      input(evt, signal) {
+        let input = evt.target as HTMLInputElement;
+        search(input.value.trim(), signal);
       },
       submit(evt, signal) {
         evt.preventDefault();
-
         let form = evt.target as HTMLFormElement;
-        let dispatch = dispatchCustomEvent(target, signal);
         let query = String(new FormData(form).get("q") ?? "").trim();
-
-        if (!query) {
-          dispatch("search:reset");
-          return;
-        }
-
-        dispatch("search:querySubmitted", { query });
+        search(query, signal);
+      },
+      "search:change"({ detail }) {
+        event = detail;
+        handle.update();
       },
     });
   };
@@ -74,82 +88,7 @@ function SearchForm(handle: Handle<Props<"div">>) {
         <input name="q" />
         <button>Search</button>
       </form>
-      <output>{status}</output>
-    </div>
-  );
-}
-
-function SearchResults(handle: Handle<Props<"section">>) {
-  let status = "waiting";
-  let dispatch: SearchEventMap["dispatcherWithoutSignal"];
-
-  let searchTargetRef = (target: SearchEventMap["target"]["section"]) => {
-    dispatch = dispatchCustomEvent(target);
-    addEventListeners(target, handle.signal, {
-      "search:booksFound"({ detail }) {
-        status = detail.books.join(", ");
-        handle.update();
-      },
-      "search:errorOccurred"({ detail }) {
-        status = detail.message;
-        handle.update();
-      },
-    });
-  };
-
-  return () => (
-    <section mix={ref(searchTargetRef)}>
-      <button
-        type="button"
-        mix={on("click", (_, signal) => {
-          dispatch(signal, "search:booksFound", {
-            books: ["Dune", "Hyperion"],
-          });
-        })}
-      >
-        Load
-      </button>
-      <button
-        type="button"
-        mix={on("click", (_, signal) => {
-          let dispatchWithSignal = dispatch(signal);
-          dispatchWithSignal("search:errorOccurred", new Error("offline"));
-        })}
-      >
-        Error
-      </button>
-      <output>{status}</output>
-    </section>
-  );
-}
-
-function DirectDispatchWidget(handle: Handle<Props<"div">>) {
-  let status = "active";
-
-  let directTargetRef = (target: SearchEventMap["target"]["div"]) => {
-    addEventListeners(target, handle.signal, {
-      "search:reset"() {
-        status = "idle";
-        handle.update();
-      },
-    });
-  };
-
-  return () => (
-    <div mix={ref(directTargetRef)}>
-      <button
-        type="button"
-        mix={on("click", (evt, signal) => {
-          dispatchCustomEvent(
-            evt.currentTarget.parentElement as SearchEventMap["target"]["div"],
-            signal,
-            "search:reset",
-          );
-        })}
-      >
-        Reset
-      </button>
-      <output>{status}</output>
+      <output><pre>{JSON.stringify(event, null, 2)}</pre></output>
     </div>
   );
 }
@@ -165,7 +104,7 @@ function TestAppProvider(
 ) {
   let context: TestAppContext = {
     user: null,
-    settings: { layout: "normal", theme: "dark" },
+    settings: { layout: "normal", theme: "system" },
   };
   let dispatch: AppContextEventMap["dispatcherWithoutSignal"];
 
@@ -173,8 +112,13 @@ function TestAppProvider(
     handle.context.set({ context, target });
     dispatch = dispatchCustomEvent(target);
     addEventListeners(target, handle.signal, {
-      "context:changeMany"({ detail }) {
-        Object.assign(context, detail);
+      "context:change"({ detail }) {
+        if ("changes" in detail) {
+          return Object.assign(context, detail.changes);
+        } else {
+          let key = detail.event.split(":").at(-1) as keyof TestAppContext;
+          Object.assign(context, { [key]: detail.detail });
+        }
       },
     });
   };
@@ -200,7 +144,35 @@ function TestAppProvider(
           });
         })}
       >
-        Theme
+        Set Zen-Light Theme
+      </button>
+      <button
+        type="button"
+        data-action="reset"
+        mix={on("click", (_, signal) => {
+          dispatch(signal, "context:change", {
+            changes: {
+              user: null,
+              settings: { layout: "normal", theme: "system" },
+            },
+          });
+        })}
+      >
+        Reset Context
+      </button>
+      <button
+        type="button"
+        data-action="loadContext"
+        mix={on("click", (_, signal) => {
+          dispatch(signal, "context:change", {
+            changes: {
+              user: { name: "Bob Lazar", age: 23 },
+              settings: { layout: "grid", theme: "dark" },
+            },
+          });
+        })}
+      >
+        Set Full Context
       </button>
       {handle.props.children}
     </section>
@@ -209,86 +181,250 @@ function TestAppProvider(
 
 function UserDisplay(handle: Handle) {
   let provider = handle.context.get(TestAppProvider);
-  let user = provider.context.user;
+  let context = provider.context;
+  let updateCount = 0;
 
   addEventListeners(provider.target, handle.signal, {
-    "context:user"({ detail }) {
-      user = detail;
+    "context:user"() {
       handle.update();
+      updateCount++;
     },
   });
 
-  return () => <output data-testid="user">{user?.name ?? "Not logged in"}</output>;
+  return () => (
+    <output data-testid="user">{context.user?.name ?? "Not logged in"} AND updateCount:{updateCount}</output>
+  )
+}
+
+function SettingsDisplay(handle: Handle) {
+  let provider = handle.context.get(TestAppProvider);
+  let context = provider.context;
+  let updateCount = 0;
+
+  addEventListeners(provider.target, handle.signal, {
+    "context:settings"() {
+      handle.update();
+      updateCount++;
+    },
+  });
+
+  return () => (
+    <output data-testid="settings">
+      {context.settings.theme}:{context.settings.layout} AND updateCount:{updateCount}
+    </output>
+  );
 }
 
 function ContextSnapshot(handle: Handle) {
   let provider = handle.context.get(TestAppProvider);
   let context = provider.context;
+  let updateCount = 0;
 
   addEventListeners(provider.target, handle.signal, {
-    "context:changeMany"() {
+    "context:change"() {
       handle.update();
+      updateCount++;
     },
   });
 
   return () => (
     <output data-testid="snapshot">
-      {`${context.user?.name ?? "none"}:${context.settings.theme}:${context.settings.layout}`}
+      {context.user?.name ?? "none"}:{context.settings.theme}:{context.settings.layout} AND updateCount:{updateCount}
     </output>
   );
 }
 
 describe("dispatchCustomEvent component usage", () => {
-  it("uses a target-and-signal-bound dispatcher from a form event handler", async () => {
+  it("uses a target-and-signal-bound dispatcher from a form event handler", async (t) => {
+    t.mock.method(window, "fetch", async (input: RequestInfo, init?: RequestInit) => {
+      let url = typeof input === "string" ? input : input.url;
+      if (url.includes("q=dune")) {
+        return new Response(JSON.stringify({ books: ["Dune", "Hyperion"] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } else if (url.includes("q=offline")) {
+        return new Response(null, { status: 500 });
+      } else {
+        return new Response(JSON.stringify({ books: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    });
     let result = render(<SearchForm />);
 
     try {
       let input = result.$("input") as HTMLInputElement;
-      let form = result.$("form") as HTMLFormElement;
+      let submitButton = result.$("button") as HTMLButtonElement;
 
       input.value = " dune ";
-      await result.act(() => form.requestSubmit());
+      await result.act(() => submitButton.click());
 
-      assert.equal(result.$("output")?.textContent, "query:dune");
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "dune" },
+      }, null, 2));
 
       input.value = "";
-      await result.act(() => form.requestSubmit());
+      await result.act(() => submitButton.click());
 
-      assert.equal(result.$("output")?.textContent, "idle");
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:idle",
+      }, null, 2));
+
+      input.value = "offline";
+      await result.act(() => submitButton.click());
+
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:errorOccurred",
+        detail: { message: "Network response was not ok" },
+      }, null, 2));
+
+      input.value = "notfound";
+      await result.act(() => submitButton.click());
+
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:booksNotFound",
+        detail: { reason: "emptyList" },
+      }, null, 2));
     } finally {
       result.cleanup();
     }
   });
 
-  it("uses a target-only dispatcher with signal supplied later", async () => {
-    let result = render(<SearchResults />);
+  it("aborts stale keystroke searches and skips their render consequences", async (t) => {
+    type SearchRequest = {
+      query: string;
+      signal: AbortSignal;
+      reject(error: unknown): void;
+      resolveBooks(books: string[]): void;
+    };
+
+    let requests: SearchRequest[] = [];
+
+    t.mock.method(window, "fetch", (input: RequestInfo, init?: RequestInit) => {
+      let url = typeof input === "string" ? input : input.url;
+      let query = new URL(url, window.location.href).searchParams.get("q") ?? "";
+      let signal = init?.signal;
+
+      assert.ok(signal instanceof AbortSignal);
+
+      return new Promise<Response>((resolve, reject) => {
+        let request: SearchRequest = {
+          query,
+          signal,
+          reject,
+          resolveBooks(books) {
+            resolve(
+              new Response(JSON.stringify({ books }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              }),
+            );
+          },
+        };
+
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          },
+          { once: true },
+        );
+
+        requests.push(request);
+      });
+    });
+
+    let result = render(<SearchForm />);
 
     try {
-      await result.act(() => result.$$("button")[0].click());
-      assert.equal(result.$("output")?.textContent, "Dune, Hyperion");
+      let input = result.$("input") as HTMLInputElement;
+      let typeQuery = async (query: string) => {
+        input.value = query;
 
-      await result.act(() => result.$$("button")[1].click());
-      assert.equal(result.$("output")?.textContent, "offline");
+        await result.act(() => {
+          input.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              data: query.at(-1) ?? null,
+              inputType: "insertText",
+            }),
+          );
+        });
+      };
+
+      await typeQuery("d");
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].query, "d");
+      assert.equal(requests[0].signal.aborted, false);
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "d" },
+      }, null, 2));
+
+      await typeQuery("du");
+      assert.equal(requests.length, 2);
+      assert.equal(requests[0].signal.aborted, true);
+      assert.equal(requests[1].query, "du");
+      assert.equal(requests[1].signal.aborted, false);
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "du" },
+      }, null, 2));
+
+      await typeQuery("dun");
+      assert.equal(requests.length, 3);
+      assert.equal(requests[1].signal.aborted, true);
+      assert.equal(requests[2].query, "dun");
+      assert.equal(requests[2].signal.aborted, false);
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "dun" },
+      }, null, 2));
+
+      await typeQuery("dune");
+      assert.equal(requests.length, 4);
+      assert.equal(requests[2].signal.aborted, true);
+      assert.equal(requests[3].query, "dune");
+      assert.equal(requests[3].signal.aborted, false);
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "dune" },
+      }, null, 2));
+
+      await result.act(async () => {
+        requests[0].resolveBooks(["Stale D"]);
+        requests[1].reject(new Error("stale network failure"));
+        requests[2].resolveBooks(["Stale Dun"]);
+        await Promise.resolve();
+      });
+
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:querySubmitted",
+        detail: { query: "dune" },
+      }, null, 2));
+
+      await result.act(async () => {
+        requests[3].resolveBooks(["Dune", "Dune Messiah"]);
+        await Promise.resolve();
+      });
+
+      assert.equal(result.$("output")?.textContent, JSON.stringify({
+        event: "search:booksFound",
+        detail: { books: ["Dune", "Dune Messiah"] },
+      }, null, 2));
     } finally {
       result.cleanup();
     }
   });
 
-  it("uses direct dispatch for a one-shot no-detail component event", async () => {
-    let result = render(<DirectDispatchWidget />);
-
-    try {
-      await result.act(() => result.$("button")?.click());
-      assert.equal(result.$("output")?.textContent, "idle");
-    } finally {
-      result.cleanup();
-    }
-  });
-
-  it("supports AppContext-style providers with granular and aggregate subscribers", async () => {
+  it("supports AppContext-style providers with granular and patch changes", async () => {
     let result = render(
       <TestAppProvider>
         <UserDisplay />
+        <SettingsDisplay />
         <ContextSnapshot />
       </TestAppProvider>,
     );
@@ -296,31 +432,72 @@ describe("dispatchCustomEvent component usage", () => {
     try {
       assert.equal(
         result.$('[data-testid="user"]')?.textContent,
-        "Not logged in",
+        "Not logged in AND updateCount:0",
       );
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
-        "none:dark:normal",
+        "none:system:normal AND updateCount:0",
+      );
+      assert.equal(
+        result.$('[data-testid="settings"]')?.textContent,
+        "system:normal AND updateCount:0",
       );
 
       await result.act(() =>
         (result.$('[data-action="login"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada");
+      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada AND updateCount:1");
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
-        "Ada:dark:normal",
+        "Ada:system:normal AND updateCount:1",
+      );
+      assert.equal(
+        result.$('[data-testid="settings"]')?.textContent,
+        "system:normal AND updateCount:0",
       );
 
       await result.act(() =>
         (result.$('[data-action="theme"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada");
+      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada AND updateCount:1");
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
-        "Ada:light:zen",
+        "Ada:light:zen AND updateCount:2",
+      );
+
+      assert.equal(
+        result.$('[data-testid="settings"]')?.textContent,
+        "light:zen AND updateCount:1",
+      );
+
+      await result.act(() =>
+        (result.$('[data-action="reset"]') as HTMLButtonElement).click(),
+      );
+
+      assert.equal(result.$('[data-testid="user"]')?.textContent, "Not logged in AND updateCount:2");
+      assert.equal(
+        result.$('[data-testid="snapshot"]')?.textContent,
+        "none:system:normal AND updateCount:3",
+      );
+      assert.equal(
+        result.$('[data-testid="settings"]')?.textContent,
+        "system:normal AND updateCount:2",
+      );
+
+      await result.act(() =>
+        (result.$('[data-action="loadContext"]') as HTMLButtonElement).click(),
+      );
+
+      assert.equal(result.$('[data-testid="user"]')?.textContent, "Bob Lazar AND updateCount:3");
+      assert.equal(
+        result.$('[data-testid="snapshot"]')?.textContent,
+        "Bob Lazar:dark:grid AND updateCount:4",
+      );
+      assert.equal(
+        result.$('[data-testid="settings"]')?.textContent,
+        "dark:grid AND updateCount:3",
       );
     } finally {
       result.cleanup();

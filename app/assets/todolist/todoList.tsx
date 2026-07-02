@@ -63,13 +63,14 @@ function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
   handle.queueTask(() => {
     addEventListeners(handle.context.get(_TodoList), handle.signal, {
       "todo:change"({detail}) {
+        if ("changes" in detail) return;
         eventName = detail.event
         if (detail.event === 'todo:actionSubmitted') {
           spinnerRevealTimeoutId = setTimeout(() => handle.update(), 300);
           return;
         }
         if (detail.event === 'todo:actionErrored') {
-          error = detail.detail.error;
+          error = detail.detail.error
         }
         clearTimeout(spinnerRevealTimeoutId);
         handle.update();

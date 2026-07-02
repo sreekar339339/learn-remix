@@ -68,6 +68,49 @@ describe("dispatchCustomEvent", () => {
     assert.equal(typeof dispatchFromCurriedSignal, "function");
   });
 
+  it("exposes mutually exclusive change detail branches", () => {
+    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let signal = new AbortController().signal;
+    let eventDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+      event: "theme:value",
+      detail: "dark",
+    };
+    let noDetailEvent: ThemeEventMap["types"]["theme:change"]["detail"] = {
+      event: "theme:reset",
+    };
+    let changesDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+      changes: { value: "light" },
+    };
+    // @ts-expect-error change details allow either event/detail or changes, not both.
+    let invalidDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+      event: "theme:value",
+      detail: "dark",
+      changes: { value: "dark" as const },
+    };
+
+    assert.deepEqual(eventDetail, { event: "theme:value", detail: "dark" });
+    assert.deepEqual(noDetailEvent, { event: "theme:reset" });
+    assert.deepEqual(changesDetail, { changes: { value: "light" } });
+    assert.ok(invalidDetail);
+
+    dispatchCustomEvent(target, signal, "theme:change", eventDetail);
+    dispatchCustomEvent(target, signal, "theme:change", changesDetail);
+
+    if (false) {
+      dispatchCustomEvent(
+        target,
+        signal,
+        "theme:change",
+        // @ts-expect-error direct change dispatch accepts either branch, not both.
+        {
+          event: "theme:value",
+          detail: "dark",
+          changes: { value: "dark" as const },
+        },
+      );
+    }
+  });
+
   it("exposes generic, HTML, SVG, and MathML targets", () => {
     let genericElement = createTypedTarget<DragReleaseEventMap["target"]["element"]>();
     let htmlElement = createTypedTarget<DragReleaseEventMap["target"]["htmlElement"]>();
@@ -132,7 +175,6 @@ describe("dispatchCustomEvent", () => {
 
     observe(target, "theme:value", events);
     observe(target, "theme:change", events);
-    observe(target, "theme:changeMany", events);
 
     let result = dispatchCustomEvent(target, signal, "theme:value", "light");
 
@@ -146,13 +188,10 @@ describe("dispatchCustomEvent", () => {
       },
       {
         type: "theme:change",
-        detail: { event: "theme:value", detail: "light" },
-        bubbles: true,
-        cancelable: true,
-      },
-      {
-        type: "theme:changeMany",
-        detail: { value: "light" },
+        detail: {
+          event: "theme:value",
+          detail: "light",
+        },
         bubbles: true,
         cancelable: true,
       },
@@ -166,7 +205,6 @@ describe("dispatchCustomEvent", () => {
 
     observe(target, "theme:reset", events);
     observe(target, "theme:change", events);
-    observe(target, "theme:changeMany", events);
 
     let result = dispatchCustomEvent(target, signal, "theme:reset");
 
@@ -184,12 +222,6 @@ describe("dispatchCustomEvent", () => {
         bubbles: true,
         cancelable: true,
       },
-      {
-        type: "theme:changeMany",
-        detail: {},
-        bubbles: true,
-        cancelable: true,
-      },
     ]);
     assert.equal(
       Object.hasOwn(events[1].detail as object, "detail"),
@@ -204,7 +236,7 @@ describe("dispatchCustomEvent", () => {
     let events: ObservedEvent[] = [];
 
     observe(target, "todo:actionSubmitted", events);
-    observe(target, "todo:changeMany", events);
+    observe(target, "todo:change", events);
 
     let dispatch = dispatchCustomEvent(target, signal);
     let result = dispatch("todo:actionSubmitted", { form });
@@ -218,8 +250,11 @@ describe("dispatchCustomEvent", () => {
         cancelable: true,
       },
       {
-        type: "todo:changeMany",
-        detail: { actionSubmitted: { form } },
+        type: "todo:change",
+        detail: {
+          event: "todo:actionSubmitted",
+          detail: { form },
+        },
         bubbles: true,
         cancelable: true,
       },
@@ -233,7 +268,7 @@ describe("dispatchCustomEvent", () => {
     let events: ObservedEvent[] = [];
 
     observe(target, "todo:actionSubmitted", events);
-    observe(target, "todo:changeMany", events);
+    observe(target, "todo:change", events);
 
     let withSignal = dispatchCustomEvent(target);
     let dispatch = withSignal(signal);
@@ -248,8 +283,11 @@ describe("dispatchCustomEvent", () => {
         cancelable: true,
       },
       {
-        type: "todo:changeMany",
-        detail: { actionSubmitted: { form } },
+        type: "todo:change",
+        detail: {
+          event: "todo:actionSubmitted",
+          detail: { form },
+        },
         bubbles: true,
         cancelable: true,
       },
@@ -331,14 +369,14 @@ describe("dispatchCustomEvent", () => {
     assert.deepEqual(events, []);
   });
 
-  it("dispatches aggregate events directly without recursively fanning them out", () => {
+  it("fans direct change events out to their granular subscribers", () => {
     let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
     observe(target, "theme:value", events);
+    observe(target, "theme:reset", events);
     observe(target, "theme:change", events);
-    observe(target, "theme:changeMany", events);
 
     dispatchCustomEvent(
       target,
@@ -346,17 +384,33 @@ describe("dispatchCustomEvent", () => {
       "theme:change",
       { event: "theme:value", detail: "dark" },
     );
-    dispatchCustomEvent(target, signal, "theme:changeMany", { value: "dark" });
+    dispatchCustomEvent(
+      target,
+      signal,
+      "theme:change",
+      { changes: { value: "light", reset: null } },
+    );
 
     assert.deepEqual(
       events.map((event) => event.type),
-      ["theme:change", "theme:changeMany"],
+      [
+        "theme:change",
+        "theme:value",
+        "theme:change",
+        "theme:value",
+        "theme:reset",
+      ],
     );
     assert.deepEqual(events[0].detail, {
       event: "theme:value",
       detail: "dark",
     });
-    assert.deepEqual(events[1].detail, { value: "dark" });
+    assert.equal(events[1].detail, "dark");
+    assert.deepEqual(events[2].detail, {
+      changes: { value: "light", reset: null },
+    });
+    assert.equal(events[3].detail, "light");
+    assert.equal(events[4].detail, null);
   });
 
   it("reports cancellation if any dispatched event is prevented", () => {
@@ -371,9 +425,6 @@ describe("dispatchCustomEvent", () => {
     target.addEventListener("theme:change", (event) => {
       observedTypes.push(event.type);
     });
-    target.addEventListener("theme:changeMany", (event) => {
-      observedTypes.push(event.type);
-    });
 
     let result = dispatchCustomEvent(target, signal, "theme:value", "dark");
 
@@ -381,7 +432,6 @@ describe("dispatchCustomEvent", () => {
     assert.deepEqual(observedTypes, [
       "theme:value",
       "theme:change",
-      "theme:changeMany",
     ]);
   });
 });

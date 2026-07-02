@@ -9,23 +9,40 @@ type CustomEventName<
 
 type CustomEventMapBase = Record<string, unknown | null>;
 
-type ChangeManyEventDetailFromMap<EventMap extends CustomEventMapBase> =
+type ChangeEventChangesFromMap<EventMap extends CustomEventMapBase> =
   Partial<EventMap>;
 
-type ChangeEventDetailFromMap<
+type UnionKeys<T> = T extends T ? keyof T : never;
+
+type StrictUnion<T, TAll = T> = T extends object
+  ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
+  : T;
+
+type ChangeEventEventDetailFromMap<
   EventMap extends CustomEventMapBase,
   domain extends Domain,
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
     ? {
         event: CustomEventName<K, domain>;
+        changes?: never;
         detail?: never;
       }
     : {
         event: CustomEventName<K, domain>;
         detail: EventMap[K];
+        changes?: never;
       };
-}[keyof EventMap & string];
+}[keyof EventMap & string] | {
+  changes: ChangeEventChangesFromMap<EventMap>;
+  event?: never;
+  detail?: never;
+};
+
+type ChangeEventDetailFromMap<
+  EventMap extends CustomEventMapBase,
+  domain extends Domain,
+> = StrictUnion<ChangeEventEventDetailFromMap<EventMap, domain>>;
 
 type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
@@ -148,11 +165,6 @@ type CustomEventTypes<
     ChangeEventDetailFromMap<EventMap, domain>
   >;
 } & {
-  [K in typeof CHANGE_MANY_EVENT_NAME as CustomEventName<
-    K,
-    domain
-  >]: CustomEvent<ChangeManyEventDetailFromMap<EventMap>>;
-} & {
   [K in keyof EventMap & string as CustomEventName<K, domain>]: CustomEvent<
     EventMap[K]
   >;
@@ -228,14 +240,9 @@ type CustomEventsOfTarget<Target> = Target extends {
   : never;
 
 const CHANGE_EVENT_NAME = "change" as const;
-const CHANGE_MANY_EVENT_NAME = "changeMany" as const;
 
 function getChangeEventName(name: string) {
   return name.split(":").slice(0, -1).concat(CHANGE_EVENT_NAME).join(":");
-}
-
-function getChangeManyEventName(name: string) {
-  return name.split(":").slice(0, -1).concat(CHANGE_MANY_EVENT_NAME).join(":");
 }
 
 function isChangeEventName(name: string) {
@@ -243,9 +250,8 @@ function isChangeEventName(name: string) {
   return parts[parts.length - 1] === CHANGE_EVENT_NAME;
 }
 
-function isChangeManyEventName(name: string) {
-  const parts = name.split(":");
-  return parts[parts.length - 1] === CHANGE_MANY_EVENT_NAME;
+function getEventNameFromChangeEventName(changeEventName: string, eventKey: string) {
+  return changeEventName.split(":").slice(0, -1).concat(eventKey).join(":");
 }
 
 function getLocalEventName(name: string) {
@@ -258,6 +264,61 @@ type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
 type CustomEventTargetLike = Element & {
   [customEventMapSymbol]?: object;
 };
+
+function dispatchSingleCustomEvent(
+  target: CustomEventTargetLike,
+  name: string,
+  init: EventInit,
+  detail?: unknown,
+  hasExplicitDetail = false,
+) {
+  return target.dispatchEvent(
+    new CustomEvent(name, {
+      ...(hasExplicitDetail ? { detail } : {}),
+      ...init,
+    }),
+  );
+}
+
+function dispatchGranularEventFromChangeDetail(
+  target: CustomEventTargetLike,
+  changeEventName: string,
+  detail: unknown,
+  init: EventInit,
+) {
+  if (!detail || typeof detail !== "object") return true;
+
+  if ("changes" in detail) {
+    let result = true;
+    let changes = detail.changes;
+
+    if (!changes || typeof changes !== "object") return true;
+
+    for (let [eventKey, eventDetail] of Object.entries(changes)) {
+      result = dispatchSingleCustomEvent(
+        target,
+        getEventNameFromChangeEventName(changeEventName, eventKey),
+        init,
+        eventDetail,
+        eventDetail != null,
+      ) && result;
+    }
+
+    return result;
+  }
+
+  if (!("event" in detail) || typeof detail.event !== "string") {
+    return true;
+  }
+
+  return dispatchSingleCustomEvent(
+    target,
+    detail.event,
+    init,
+    "detail" in detail ? detail.detail : undefined,
+    "detail" in detail,
+  );
+}
 
 function dispatchCustomEventImpl(
   target: CustomEventTargetLike,
@@ -275,20 +336,28 @@ function dispatchCustomEventImpl(
     ...evtInit,
   };
 
-  if (isChangeEventName(name) || isChangeManyEventName(name)) {
-    return target.dispatchEvent(
-      new CustomEvent(name, {
-        ...(hasExplicitDetail ? { detail } : {}),
-        ...init,
-      }),
+  if (isChangeEventName(name)) {
+    const changeResult = dispatchSingleCustomEvent(
+      target,
+      name,
+      init,
+      detail,
+      hasExplicitDetail,
     );
+
+    const granularResult = hasExplicitDetail
+      ? dispatchGranularEventFromChangeDetail(target, name, detail, init)
+      : true;
+
+    return changeResult && granularResult;
   }
 
-  const eventResult = target.dispatchEvent(
-    new CustomEvent(name, {
-      ...(hasExplicitDetail ? { detail } : {}),
-      ...init,
-    }),
+  const eventResult = dispatchSingleCustomEvent(
+    target,
+    name,
+    init,
+    detail,
+    hasExplicitDetail,
   );
 
   const changeDetail = hasExplicitDetail
@@ -300,27 +369,15 @@ function dispatchCustomEventImpl(
         event: name,
       };
 
-  const changeResult = target.dispatchEvent(
-    new CustomEvent(getChangeEventName(name), {
-      detail: changeDetail,
-      ...init,
-    }),
+  const changeResult = dispatchSingleCustomEvent(
+    target,
+    getChangeEventName(name),
+    init,
+    changeDetail,
+    true,
   );
 
-  const changeManyDetail = hasExplicitDetail
-    ? {
-        [getLocalEventName(name)]: detail,
-      }
-    : {};
-
-  const changeManyResult = target.dispatchEvent(
-    new CustomEvent(getChangeManyEventName(name), {
-      detail: changeManyDetail,
-      ...init,
-    }),
-  );
-
-  return eventResult && changeResult && changeManyResult;
+  return eventResult && changeResult;
 }
 
 function createDispatcher(
