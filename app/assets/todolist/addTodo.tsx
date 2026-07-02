@@ -5,7 +5,9 @@ import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  let actionEventTargetRef = (target: TodoActionEventMap["target"]["form"]) => {
+  let actionEventTargetRef = (
+    target: TodoActionEventMap["target"] & HTMLFormElement,
+  ) => {
     addEventListeners(target, handle.signal, {
       "todo:actionSucceeded"({ detail }) {
         detail.form.reset();

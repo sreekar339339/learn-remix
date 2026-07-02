@@ -273,7 +273,7 @@ type TTTEventMap = CustomEventMap<
     nextPosition: { position: Position; winner: Result };
     nextFocus: { nodeId: number | "reset" };
   },
-  "ttt"
+  { namespace: "ttt"; target: HTMLDivElement }
 >;
 
 type TTTEventTypes = TTTEventMap["types"];
@@ -288,13 +288,13 @@ function TTT(handle: Handle) {
     winner: null,
   };
 
-  let tttEventTargetRef = (target: TTTEventMap["target"]["div"]) => {
+  let tttEventTargetRef = (target: TTTEventMap["target"]) => {
     let pendingUpdate: Promise<AbortSignal>;
     addEventListeners(target, handle.signal, {
       click() {},
       async "ttt:change"({ detail }) {
         if ("changes" in detail) return;
-        if (detail.event === 'ttt:nextPosition') {
+        if (detail.type === 'nextPosition') {
           nextPosition = detail.detail;
           pendingUpdate = handle.update();
         } else {

@@ -11,21 +11,35 @@ type ThemeEventMap = CustomEventMap<
     value: "light" | "dark";
     reset: null;
   },
-  "theme"
+  { namespace: "theme"; target: HTMLDivElement }
 >;
 
 type TodoEventMap = CustomEventMap<
   {
     actionSubmitted: { form: HTMLFormElement };
   },
-  "todo"
+  { namespace: "todo"; target: HTMLFormElement }
 >;
 
 type DragReleaseEventMap = CustomEventMap<
   {
     release: { velocityX: number; velocityY: number };
   },
-  "drag"
+  { namespace: "drag"; target: HTMLElement }
+>;
+
+type SvgDragReleaseEventMap = CustomEventMap<
+  {
+    release: { velocityX: number; velocityY: number };
+  },
+  { namespace: "drag"; target: SVGCircleElement }
+>;
+
+type MathDragReleaseEventMap = CustomEventMap<
+  {
+    release: { velocityX: number; velocityY: number };
+  },
+  { namespace: "drag"; target: MathMLElement }
 >;
 
 type ObservedEvent = {
@@ -53,7 +67,7 @@ function observe(target: EventTarget, name: string, events: ObservedEvent[]) {
 
 describe("dispatchCustomEvent", () => {
   it("exposes descriptor types for each partial application level", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
 
     let dispatch: ThemeEventMap["dispatcherWithoutSignal"] =
@@ -68,15 +82,37 @@ describe("dispatchCustomEvent", () => {
     assert.equal(typeof dispatchFromCurriedSignal, "function");
   });
 
+  it("uses the required target option as the direct target descriptor", () => {
+    let target = createTypedTarget<ThemeEventMap["target"]>();
+    let signal = new AbortController().signal;
+    let events: ObservedEvent[] = [];
+
+    observe(target, "theme:value", events);
+
+    let result = dispatchCustomEvent(target, signal, "theme:value", "light");
+
+    assert.equal(result, true);
+    assert.deepEqual(events, [
+      {
+        type: "theme:value",
+        detail: "light",
+        bubbles: true,
+        cancelable: true,
+      },
+    ]);
+  });
+
   it("exposes mutually exclusive change detail branches", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let eventDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
       event: "theme:value",
+      type: "value",
       detail: "dark",
     };
     let noDetailEvent: ThemeEventMap["types"]["theme:change"]["detail"] = {
       event: "theme:reset",
+      type: "reset",
     };
     let changesDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
       changes: { value: "light" },
@@ -84,12 +120,13 @@ describe("dispatchCustomEvent", () => {
     // @ts-expect-error change details allow either event/detail or changes, not both.
     let invalidDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
       event: "theme:value",
+      type: "value",
       detail: "dark",
       changes: { value: "dark" as const },
     };
 
-    assert.deepEqual(eventDetail, { event: "theme:value", detail: "dark" });
-    assert.deepEqual(noDetailEvent, { event: "theme:reset" });
+    assert.deepEqual(eventDetail, { event: "theme:value", type: "value", detail: "dark" });
+    assert.deepEqual(noDetailEvent, { event: "theme:reset", type: "reset" });
     assert.deepEqual(changesDetail, { changes: { value: "light" } });
     assert.ok(invalidDetail);
 
@@ -104,6 +141,7 @@ describe("dispatchCustomEvent", () => {
         // @ts-expect-error direct change dispatch accepts either branch, not both.
         {
           event: "theme:value",
+          type: "value",
           detail: "dark",
           changes: { value: "dark" as const },
         },
@@ -111,65 +149,32 @@ describe("dispatchCustomEvent", () => {
     }
   });
 
-  it("exposes generic, HTML, SVG, and MathML targets", () => {
-    let genericElement = createTypedTarget<DragReleaseEventMap["target"]["element"]>();
-    let htmlElement = createTypedTarget<DragReleaseEventMap["target"]["htmlElement"]>();
-    let divElement = createTypedTarget<DragReleaseEventMap["target"]["div"]>();
-    let svgElement = createTypedTarget<DragReleaseEventMap["target"]["svgElement"]>();
-    let svgCircleElement = createTypedTarget<DragReleaseEventMap["target"]["svg"]["circle"]>();
-    let mathElement = createTypedTarget<DragReleaseEventMap["target"]["mathElement"]>();
-    let mathIdentifierElement = createTypedTarget<DragReleaseEventMap["target"]["math"]["mi"]>();
+  it("supports explicit HTML, SVG, and MathML targets", () => {
+    let htmlElement = createTypedTarget<DragReleaseEventMap["target"]>();
+    let svgCircleElement = createTypedTarget<SvgDragReleaseEventMap["target"]>();
+    let mathElement = createTypedTarget<MathDragReleaseEventMap["target"]>();
     let signal = new AbortController().signal;
 
-    let dispatchFromElement = dispatchCustomEvent(genericElement, signal);
     let dispatchFromHTMLElement = dispatchCustomEvent(htmlElement, signal);
-    let dispatchFromDiv = dispatchCustomEvent(divElement, signal);
-    let dispatchFromSvgElement = dispatchCustomEvent(svgElement, signal);
     let dispatchFromSvgCircleElement = dispatchCustomEvent(svgCircleElement, signal);
     let dispatchFromMathElement = dispatchCustomEvent(mathElement, signal);
-    let dispatchFromMathIdentifierElement = dispatchCustomEvent(
-      mathIdentifierElement,
-      signal,
-    );
 
-    assert.equal(
-      dispatchFromElement("drag:release", { velocityX: 1, velocityY: 2 }),
-      true,
-    );
     assert.equal(
       dispatchFromHTMLElement("drag:release", { velocityX: 3, velocityY: 4 }),
       true,
     );
     assert.equal(
-      dispatchFromDiv("drag:release", { velocityX: 5, velocityY: 6 }),
-      true,
-    );
-    assert.equal(
-      dispatchFromSvgElement("drag:release", { velocityX: 7, velocityY: 8 }),
-      true,
-    );
-    assert.equal(
-      dispatchFromSvgCircleElement("drag:release", {
-        velocityX: 9,
-        velocityY: 10,
-      }),
+      dispatchFromSvgCircleElement("drag:release", { velocityX: 9, velocityY: 10 }),
       true,
     );
     assert.equal(
       dispatchFromMathElement("drag:release", { velocityX: 11, velocityY: 12 }),
       true,
     );
-    assert.equal(
-      dispatchFromMathIdentifierElement("drag:release", {
-        velocityX: 13,
-        velocityY: 14,
-      }),
-      true,
-    );
   });
 
   it("dispatches granular events and the change envelopes used by state subscribers", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -190,6 +195,7 @@ describe("dispatchCustomEvent", () => {
         type: "theme:change",
         detail: {
           event: "theme:value",
+          type: "value",
           detail: "light",
         },
         bubbles: true,
@@ -199,7 +205,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("represents no-detail events as a change envelope without a detail property", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["button"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -218,7 +224,7 @@ describe("dispatchCustomEvent", () => {
       },
       {
         type: "theme:change",
-        detail: { event: "theme:reset" },
+        detail: { event: "theme:reset", type: "reset" },
         bubbles: true,
         cancelable: true,
       },
@@ -230,7 +236,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("supports the bound dispatcher form used by component refs", () => {
-    let target = createTypedTarget<TodoEventMap["target"]["form"]>();
+    let target = createTypedTarget<TodoEventMap["target"]>();
     let signal = new AbortController().signal;
     let form = {} as HTMLFormElement;
     let events: ObservedEvent[] = [];
@@ -253,6 +259,7 @@ describe("dispatchCustomEvent", () => {
         type: "todo:change",
         detail: {
           event: "todo:actionSubmitted",
+          type: "actionSubmitted",
           detail: { form },
         },
         bubbles: true,
@@ -262,7 +269,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("can bind the target first and receive the signal later", () => {
-    let target = createTypedTarget<TodoEventMap["target"]["form"]>();
+    let target = createTypedTarget<TodoEventMap["target"]>();
     let signal = new AbortController().signal;
     let form = {} as HTMLFormElement;
     let events: ObservedEvent[] = [];
@@ -286,6 +293,7 @@ describe("dispatchCustomEvent", () => {
         type: "todo:change",
         detail: {
           event: "todo:actionSubmitted",
+          type: "actionSubmitted",
           detail: { form },
         },
         bubbles: true,
@@ -295,7 +303,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("can bind the target first and dispatch when the signal is supplied", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -319,7 +327,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("accepts custom event init settings after the detail argument", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["button"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -350,7 +358,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("does not dispatch anything after the supplied signal is aborted", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let controller = new AbortController();
     let events: ObservedEvent[] = [];
 
@@ -370,7 +378,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("fans direct change events out to their granular subscribers", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -382,7 +390,7 @@ describe("dispatchCustomEvent", () => {
       target,
       signal,
       "theme:change",
-      { event: "theme:value", detail: "dark" },
+      { event: "theme:value", type: "value", detail: "dark" },
     );
     dispatchCustomEvent(
       target,
@@ -403,6 +411,7 @@ describe("dispatchCustomEvent", () => {
     );
     assert.deepEqual(events[0].detail, {
       event: "theme:value",
+      type: "value",
       detail: "dark",
     });
     assert.equal(events[1].detail, "dark");
@@ -414,7 +423,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("reports cancellation if any dispatched event is prevented", () => {
-    let target = createTypedTarget<ThemeEventMap["target"]["div"]>();
+    let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
     let observedTypes: string[] = [];
 

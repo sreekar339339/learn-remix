@@ -17,7 +17,9 @@ interface TodoItemsProps extends Props<"ul"> {
 }
 
 export function TodoItems(handle: Handle<TodoItemsProps>) {
-  let actionEventTargetRef = (target: TodoActionEventMap["target"]["ul"]) => {
+  let actionEventTargetRef = (
+    target: TodoActionEventMap["target"] & HTMLUListElement,
+  ) => {
     let lastEvent:
       | TodoActionEventMap["types"]["todo:change"]["detail"]
       | undefined;

@@ -62,7 +62,7 @@ type SearchEventMap = CustomEventMap<{
   errorOccurred: Error;
   queryEmpty: null;
   querySubmitted: { query: string };
-}, 'search'>;
+}, { namespace: "search"; target: HTMLDivElement }>;
 
 // type SeachEventTypes = SearchEventMap["types"];
 
@@ -76,7 +76,7 @@ interface SearchBooksProps extends Props<"div"> {
 
 function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
   let { initialQuery } = handle.props;
-  let searchEventTargetRef = (target: SearchEventMap["target"]["div"]) => {
+  let searchEventTargetRef = (target: SearchEventMap["target"]) => {
     addEventListeners(target, handle.signal, {
       "search:change"({ detail }) {
         searchEvent = detail;
@@ -87,9 +87,7 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
         let input = evt.target as HTMLInputElement | null;
         if (!input) return;
         const query = input.value.trim();
-        if (!query) {
-          return void dispatch('search:queryEmpty');
-        }
+        if (!query) return void dispatch('search:queryEmpty');
         fetchBooks(query, dispatch, signal);
       },
     });
@@ -97,9 +95,10 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
   let searchEvent: SearchEventMap["types"]['search:change']["detail"] = initialQuery
     ? {
         event: 'search:querySubmitted',
+        type: 'querySubmitted',
         detail: { query: initialQuery },
       }
-    : { event: 'search:queryEmpty' };
+    : { event: 'search:queryEmpty', type: 'queryEmpty' };
 
   return () => (
     <div mix={[css({ display: "contents" }), ref(searchEventTargetRef)]}>
@@ -121,27 +120,27 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
       </label>
       {match(searchEvent)
         .with({ changes: P._ }, () => null)
-        .with({ event: 'search:queryEmpty' }, () => <p>Enter the title of any book.</p>)
-        .with({ event: 'search:querySubmitted' }, ({detail: {query}}) => (
+        .with({ type: 'queryEmpty' }, () => <p>Enter the title of any book.</p>)
+        .with({ type: 'querySubmitted' }, ({detail: {query}}) => (
           <p>fetching books with title containing {query}...</p>
         ))
-        .with({ event: 'search:booksFound' }, ({detail: books}) => (
+        .with({ type: 'booksFound' }, ({detail: books}) => (
           <ul>
             {books.map((book) => (
               <li>{book.title}</li>
             ))}
           </ul>
         ))
-        .with({ event: 'search:booksNotFound', detail: { reason: "emptyList" } }, () => (
+        .with({ type: 'booksNotFound', detail: { reason: "emptyList" } }, () => (
           <p>No books were found for this title at this time.</p>
         ))
         .with(
           {
-            event: 'search:booksNotFound', detail: { reason: { other: P.select() } },
+            type: 'booksNotFound', detail: { reason: { other: P.select() } },
           },
           (msg) => <p>Could not fetch books for this title. Reason: {msg}.</p>,
         )
-        .with({ event: 'search:errorOccurred' }, ({detail: error}) => (
+        .with({ type: 'errorOccurred' }, ({detail: error}) => (
           <p>
             Unexpected error occured, try again! {error.message} Cause:{" "}
             {error.cause as string}.

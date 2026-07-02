@@ -10,14 +10,17 @@ importers:
     dependencies:
       remix:
         specifier: 3.0.0-beta.4
-        version: 3.0.0-beta.4(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
+        version: 3.0.0-beta.4(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
       ts-pattern:
         specifier: ^5.9.0
         version: 5.9.0
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 25.9.3
+        version: 26.1.0
+      playwright:
+        specifier: ^1.61.1
+        version: 1.61.1
       typescript:
         specifier: latest
         version: 6.0.3
@@ -864,8 +867,8 @@ packages:
   '@types/istanbul-lib-coverage@2.0.6':
     resolution: {integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==}
 
-  '@types/node@25.9.3':
-    resolution: {integrity: sha512-603BddQMv3pUcr4U2dhujk83N2tTDVr/34wII2B6bJy6g+8WD6yUb11jszNs0gdi4PesVWl7ABt8nYMVpnLUcg==}
+  '@types/node@26.1.0':
+    resolution: {integrity: sha512-O0A1G3xPGy4w7AgQdAQYUlQ+BKk2Oovw8eRpofyp5KdBZULnbe+WqaOVNrm705SHphCiG4XHsACrSmPu1f+Kgw==}
 
   aws4fetch@1.0.20:
     resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
@@ -888,6 +891,11 @@ packages:
     resolution: {integrity: sha512-IxpibTjyVnmrIQo5aqNpCgoACA/dTKLTlhMHihVHhdkxKyPO1uBBthumT0rdHmcsk9uMonIWS0m4FljWzILh3w==}
     engines: {node: '>=18'}
     hasBin: true
+
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
 
   get-tsconfig@4.14.0:
     resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
@@ -1011,6 +1019,16 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
+  playwright-core@1.61.1:
+    resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.61.1:
+    resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   readdirp@5.0.0:
     resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
     engines: {node: '>= 20.19.0'}
@@ -1061,8 +1079,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@7.24.6:
-    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+  undici-types@8.3.0:
+    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
 
   v8-to-istanbul@9.3.0:
     resolution: {integrity: sha512-kiGUalWN+rgBJ/1OHZsBtU4rXZOfj/7rKQxULKlIzwzQSvMJUUNgPwJEEh7gU6xEVxC0ahoOBvN2YI8GH6FNgA==}
@@ -1478,10 +1496,10 @@ snapshots:
       '@remix-run/fetch-router': 0.20.0
       '@remix-run/session': 0.4.2
 
-  '@remix-run/cli@0.3.3(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)':
+  '@remix-run/cli@0.3.3(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)':
     dependencies:
       '@remix-run/terminal': 0.1.1
-      '@remix-run/test': 0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
+      '@remix-run/test': 0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
       semver: 7.8.4
     transitivePeerDependencies:
       - '@emnapi/core'
@@ -1635,7 +1653,7 @@ snapshots:
 
   '@remix-run/terminal@0.1.1': {}
 
-  '@remix-run/test@0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)':
+  '@remix-run/test@0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)':
     dependencies:
       '@remix-run/node-tsx': 0.1.1(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
       '@remix-run/terminal': 0.1.1
@@ -1649,6 +1667,8 @@ snapshots:
       oxc-resolver: 11.21.3
       source-map-js: 1.2.1
       v8-to-istanbul: 9.3.0
+    optionalDependencies:
+      playwright: 1.61.1
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -1668,9 +1688,9 @@ snapshots:
 
   '@types/istanbul-lib-coverage@2.0.6': {}
 
-  '@types/node@25.9.3':
+  '@types/node@26.1.0':
     dependencies:
-      undici-types: 7.24.6
+      undici-types: 8.3.0
 
   aws4fetch@1.0.20: {}
 
@@ -1712,6 +1732,9 @@ snapshots:
       '@esbuild/win32-arm64': 0.27.7
       '@esbuild/win32-ia32': 0.27.7
       '@esbuild/win32-x64': 0.27.7
+
+  fsevents@2.3.2:
+    optional: true
 
   get-tsconfig@4.14.0:
     dependencies:
@@ -1895,16 +1918,24 @@ snapshots:
 
   picomatch@4.0.4: {}
 
+  playwright-core@1.61.1: {}
+
+  playwright@1.61.1:
+    dependencies:
+      playwright-core: 1.61.1
+    optionalDependencies:
+      fsevents: 2.3.2
+
   readdirp@5.0.0: {}
 
-  remix@3.0.0-beta.4(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0):
+  remix@3.0.0-beta.4(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1):
     dependencies:
       '@remix-run/assert': 0.3.0
       '@remix-run/assets': 0.4.3(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
       '@remix-run/async-context-middleware': 0.3.3
       '@remix-run/auth': 0.2.5
       '@remix-run/auth-middleware': 0.2.3
-      '@remix-run/cli': 0.3.3(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
+      '@remix-run/cli': 0.3.3(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
       '@remix-run/compression-middleware': 0.1.11
       '@remix-run/cookie': 0.5.4
       '@remix-run/cop-middleware': 0.1.6
@@ -1941,8 +1972,10 @@ snapshots:
       '@remix-run/static-middleware': 0.4.12
       '@remix-run/tar-parser': 0.7.1
       '@remix-run/terminal': 0.1.1
-      '@remix-run/test': 0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)
+      '@remix-run/test': 0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
       '@remix-run/ui': 0.3.0
+    optionalDependencies:
+      playwright: 1.61.1
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -1964,7 +1997,7 @@ snapshots:
 
   typescript@6.0.3: {}
 
-  undici-types@7.24.6: {}
+  undici-types@8.3.0: {}
 
   v8-to-istanbul@9.3.0:
     dependencies:

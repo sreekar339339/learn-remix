@@ -23,38 +23,53 @@ type AppContext = {
   settings: Settings;
 };
 
-type AppContextEventMap = CustomEventMap<AppContext, "context">;
+type AppContextEventMap = CustomEventMap<
+  AppContext,
+  { namespace: "context"; target: HTMLBodyElement }
+>;
 
 function AppProvider(
   handle: Handle<
     { children?: RemixNode },
-    { target: AppContextEventMap["target"]["body"]; context: AppContext }
+    { target: AppContextEventMap["target"]; context: AppContext }
   >,
 ) {
   let appContext: AppContext = {
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
-  let appContextTargetRef: RefCallback<
-    AppContextEventMap["target"]["body"]
-  > = (target, signal) => {
-    handle.context.set({ context: appContext, target });
-    addEventListeners(target, signal, {
+  let target: AppContextEventMap["target"];
+
+  handle.context.set({
+    context: appContext,
+    get target() {
+      return target;
+    },
+  });
+
+  let appContextTargetRef: RefCallback<AppContextEventMap["target"]> = async (
+    node,
+    signal,
+  ) => {
+    target = node;
+    addEventListeners(node, signal, {
       "context:change"({ detail }) {
         if ("changes" in detail) {
           Object.assign(appContext, detail.changes);
-          return;
+        } else {
+          Object.assign(appContext, { [detail.type]: detail.detail });
         }
       },
     });
     // perform auth and other async stuff and dispatch context value
-    dispatchCustomEvent(target, signal, "context:change", {changes: {
-      user: {age: 23, name: 'Bob Lazar'},
-      settings: {layout: 'zen', theme: 'light'}
-    }})
+    await Promise.resolve();
+    dispatchCustomEvent(node, signal, "context:change", {
+      changes: {
+        user: { age: 23, name: "Bob Lazar" },
+        settings: { layout: "zen", theme: "light" },
+      },
+    });
   };
-
-
 
   return () => (
     <body mix={ref(appContextTargetRef)}>{handle.props.children}</body>
@@ -63,24 +78,30 @@ function AppProvider(
 
 // Components can subscribe to only the events they care about
 function UserDisplay(handle: Handle) {
-  let context = handle.context.get(AppProvider).context
+  let provider = handle.context.get(AppProvider);
+  let context = provider.context;
 
-  addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
-    "context:user"() {
-      handle.update();
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "context:user"() {
+        handle.update();
+      },
+    });
   });
 
   return () => <div>{context.user?.name ?? "Not logged in"}</div>;
 }
 
 function SomeComponent(handle: Handle) {
-  let context = handle.context.get(AppProvider).context;
+  let provider = handle.context.get(AppProvider);
+  let context = provider.context;
 
-  addEventListeners(handle.context.get(AppProvider).target, handle.signal, {
-    "context:change"() {
-      handle.update();
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "context:change"() {
+        handle.update();
+      },
+    });
   });
 
   return () => (
@@ -93,27 +114,40 @@ function SomeComponent(handle: Handle) {
 type Theme = {
   value: "light" | "dark";
 };
-type ThemeEventMap = CustomEventMap<Theme, "theme">;
+type ThemeEventMap = CustomEventMap<
+  Theme,
+  { namespace: "theme"; target: HTMLDivElement }
+>;
 
 function ThemeProvider(
   handle: Handle<
     { children?: RemixNode },
-    { target: ThemeEventMap["target"]["div"]; theme: Theme }
+    { target: ThemeEventMap["target"]; theme: Theme }
   >,
 ) {
   let theme: Theme = { value: "dark" };
+  let target: ThemeEventMap["target"];
   let dispatch: ThemeEventMap["dispatcherWithoutSignal"];
-  let themeTargetRef: RefCallback<ThemeEventMap["target"]["div"]> = (
-    target,
+
+  handle.context.set({
+    theme,
+    get target() {
+      return target;
+    },
+  });
+
+  let themeTargetRef: RefCallback<ThemeEventMap["target"]> = (
+    node,
     signal,
   ) => {
-    handle.context.set({ theme, target });
-    dispatch = dispatchCustomEvent(target);
-    addEventListeners(target, signal, {
+    target = node;
+    dispatch = dispatchCustomEvent(node);
+    addEventListeners(node, signal, {
       "theme:change"({ detail }) {
         if ("changes" in detail) {
           Object.assign(theme, detail.changes);
-          return;
+        } else {
+          Object.assign(theme, { [detail.type]: detail.detail });
         }
       },
     });
@@ -128,7 +162,7 @@ function ThemeProvider(
             dispatch(
               signal,
               "theme:value",
-              theme.value === 'dark' ? 'light' : 'dark',
+              theme.value === "dark" ? "light" : "dark",
             );
           }),
         ]}
@@ -141,16 +175,22 @@ function ThemeProvider(
 }
 
 function ThemedContent(handle: Handle) {
-  let theme = handle.context.get(ThemeProvider).theme
+  let provider = handle.context.get(ThemeProvider);
+  let theme = provider.theme;
+
   // Subscribe to granular updates
-  addEventListeners(handle.context.get(ThemeProvider).target, handle.signal, {
-    "theme:value"() {
-      handle.update();
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "theme:value"() {
+        handle.update();
+      },
+    });
   });
 
   return () => (
-    <div mix={[css({ backgroundColor: theme.value === "dark" ? "#000" : "#fff" })]}>
+    <div
+      mix={[css({ backgroundColor: theme.value === "dark" ? "#000" : "#fff" })]}
+    >
       Current theme: {theme.value}
     </div>
   );

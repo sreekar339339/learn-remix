@@ -23,21 +23,8 @@ type SearchEventMap = CustomEventMap<
     querySubmitted: { query: string };
     idle: null;
   },
-  "search"
+  { namespace: "search"; target: HTMLDivElement }
 >;
-
-type User = { name: string; age: number } | null;
-type Settings = {
-  theme: "dark" | "light" | "system";
-  layout: "normal" | "zen" | "grid";
-};
-
-type TestAppContext = {
-  user: User;
-  settings: Settings;
-};
-
-type AppContextEventMap = CustomEventMap<TestAppContext, "context">;
 
 async function fetchBooks(query: string, dispatch: SearchEventMap["dispatcher"], signal: AbortSignal) {
   dispatch("search:querySubmitted", { query });
@@ -55,9 +42,12 @@ async function fetchBooks(query: string, dispatch: SearchEventMap["dispatcher"],
 }
 
 function SearchForm(handle: Handle<Props<"div">>) {
-  let event: SearchEventMap["types"]["search:change"]["detail"] = { event: "search:idle" };
+  let event: SearchEventMap["types"]["search:change"]["detail"] = {
+    event: "search:idle",
+    type: "idle",
+  };
 
-  let searchTargetRef = (target: SearchEventMap["target"]["div"]) => {
+  let searchTargetRef = (target: SearchEventMap["target"]) => {
     let search = (query: string, signal: AbortSignal) => {
       let dispatch = dispatchCustomEvent(target, signal);
       if (!query) return dispatch("search:idle");
@@ -93,12 +83,25 @@ function SearchForm(handle: Handle<Props<"div">>) {
   );
 }
 
+type TestAppContext = {
+  user: { name: string; age: number } | null;;
+  settings: {
+    theme: "dark" | "light" | "system";
+    layout: "normal" | "zen" | "grid";
+  };
+};
+
+type AppContextEventMap = CustomEventMap<
+  TestAppContext,
+  { namespace: "context"; target: HTMLElement }
+>;
+
 function TestAppProvider(
   handle: Handle<
     { children?: RemixNode },
     {
       context: TestAppContext;
-      target: AppContextEventMap["target"]["section"];
+      target: AppContextEventMap["target"];
     }
   >,
 ) {
@@ -106,18 +109,25 @@ function TestAppProvider(
     user: null,
     settings: { layout: "normal", theme: "system" },
   };
+  let target: AppContextEventMap["target"];
   let dispatch: AppContextEventMap["dispatcherWithoutSignal"];
 
-  let appContextRef = (target: AppContextEventMap["target"]["section"]) => {
-    handle.context.set({ context, target });
-    dispatch = dispatchCustomEvent(target);
-    addEventListeners(target, handle.signal, {
+  handle.context.set({
+    context,
+    get target() {
+      return target;
+    },
+  });
+
+  let appContextRef = (node: AppContextEventMap["target"]) => {
+    target = node;
+    dispatch = dispatchCustomEvent(node);
+    addEventListeners(node, handle.signal, {
       "context:change"({ detail }) {
         if ("changes" in detail) {
-          return Object.assign(context, detail.changes);
+          Object.assign(context, detail.changes);
         } else {
-          let key = detail.event.split(":").at(-1) as keyof TestAppContext;
-          Object.assign(context, { [key]: detail.detail });
+          Object.assign(context, { [detail.type]: detail.detail });
         }
       },
     });
@@ -180,15 +190,16 @@ function TestAppProvider(
 }
 
 function UserDisplay(handle: Handle) {
+  let updateCount = 0;
   let provider = handle.context.get(TestAppProvider);
   let context = provider.context;
-  let updateCount = 0;
-
-  addEventListeners(provider.target, handle.signal, {
-    "context:user"() {
-      handle.update();
-      updateCount++;
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "context:user"() {
+        updateCount++;
+        handle.update();
+      },
+    });
   });
 
   return () => (
@@ -197,15 +208,16 @@ function UserDisplay(handle: Handle) {
 }
 
 function SettingsDisplay(handle: Handle) {
+  let updateCount = 0;
   let provider = handle.context.get(TestAppProvider);
   let context = provider.context;
-  let updateCount = 0;
-
-  addEventListeners(provider.target, handle.signal, {
-    "context:settings"() {
-      handle.update();
-      updateCount++;
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "context:settings"() {
+        updateCount++;
+        handle.update();
+      },
+    });
   });
 
   return () => (
@@ -216,15 +228,16 @@ function SettingsDisplay(handle: Handle) {
 }
 
 function ContextSnapshot(handle: Handle) {
+  let updateCount = 0;
   let provider = handle.context.get(TestAppProvider);
   let context = provider.context;
-  let updateCount = 0;
-
-  addEventListeners(provider.target, handle.signal, {
-    "context:change"() {
-      handle.update();
-      updateCount++;
-    },
+  handle.queueTask(() => {
+    addEventListeners(provider.target, handle.signal, {
+      "context:change"() {
+        updateCount++;
+        handle.update();
+      },
+    });
   });
 
   return () => (
@@ -232,6 +245,12 @@ function ContextSnapshot(handle: Handle) {
       {context.user?.name ?? "none"}:{context.settings.theme}:{context.settings.layout} AND updateCount:{updateCount}
     </output>
   );
+}
+
+async function settleAsyncSearch() {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
 }
 
 describe("dispatchCustomEvent component usage", () => {
@@ -263,6 +282,7 @@ describe("dispatchCustomEvent component usage", () => {
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "dune" },
       }, null, 2));
 
@@ -271,6 +291,7 @@ describe("dispatchCustomEvent component usage", () => {
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:idle",
+        type: "idle",
       }, null, 2));
 
       input.value = "offline";
@@ -278,14 +299,19 @@ describe("dispatchCustomEvent component usage", () => {
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:errorOccurred",
-        detail: { message: "Network response was not ok" },
+        type: "errorOccurred",
+        detail: new Error("Network response was not ok"),
       }, null, 2));
 
       input.value = "notfound";
-      await result.act(() => submitButton.click());
+      await result.act(async () => {
+        submitButton.click();
+        await settleAsyncSearch();
+      });
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:booksNotFound",
+        type: "booksNotFound",
         detail: { reason: "emptyList" },
       }, null, 2));
     } finally {
@@ -361,6 +387,7 @@ describe("dispatchCustomEvent component usage", () => {
       assert.equal(requests[0].signal.aborted, false);
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "d" },
       }, null, 2));
 
@@ -371,6 +398,7 @@ describe("dispatchCustomEvent component usage", () => {
       assert.equal(requests[1].signal.aborted, false);
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "du" },
       }, null, 2));
 
@@ -381,6 +409,7 @@ describe("dispatchCustomEvent component usage", () => {
       assert.equal(requests[2].signal.aborted, false);
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "dun" },
       }, null, 2));
 
@@ -391,6 +420,7 @@ describe("dispatchCustomEvent component usage", () => {
       assert.equal(requests[3].signal.aborted, false);
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "dune" },
       }, null, 2));
 
@@ -398,21 +428,23 @@ describe("dispatchCustomEvent component usage", () => {
         requests[0].resolveBooks(["Stale D"]);
         requests[1].reject(new Error("stale network failure"));
         requests[2].resolveBooks(["Stale Dun"]);
-        await Promise.resolve();
+        await settleAsyncSearch();
       });
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:querySubmitted",
+        type: "querySubmitted",
         detail: { query: "dune" },
       }, null, 2));
 
       await result.act(async () => {
         requests[3].resolveBooks(["Dune", "Dune Messiah"]);
-        await Promise.resolve();
+        await settleAsyncSearch();
       });
 
       assert.equal(result.$("output")?.textContent, JSON.stringify({
         event: "search:booksFound",
+        type: "booksFound",
         detail: { books: ["Dune", "Dune Messiah"] },
       }, null, 2));
     } finally {
@@ -426,7 +458,7 @@ describe("dispatchCustomEvent component usage", () => {
         <UserDisplay />
         <SettingsDisplay />
         <ContextSnapshot />
-      </TestAppProvider>,
+      </TestAppProvider>
     );
 
     try {

@@ -17,7 +17,7 @@ import { getInput } from "./utils/dom.ts";
 type SearchEventMap = CustomEventMap<{
   queryEmpty: null;
   querySubmitted: { query: string };
-}, 'search'>;
+}, { namespace: "search"; target: HTMLDivElement }>;
 
 // type SeachEventTypes = SearchEventMap["types"];
 
@@ -30,7 +30,7 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() || "";
 
-    let searchEventTargetRef = (target: SearchEventMap["target"]["div"]) => {
+    let searchEventTargetRef = (target: SearchEventMap["target"]) => {
       addEventListeners(target, handle.signal, {
         submit(evt, signal) {
           let dispatch = dispatchCustomEvent(target, signal);
@@ -51,9 +51,10 @@ export const SearchBooksWithFrame = clientEntry(
     let searchEvent: SearchEventMap["types"]["search:change"]["detail"] = initialQuery
     ? {
         event: 'search:querySubmitted',
+        type: 'querySubmitted',
         detail: { query: initialQuery },
       }
-    : { event: 'search:queryEmpty' };
+    : { event: 'search:queryEmpty', type: 'queryEmpty' };
 
     return () => (
       <div mix={[css({ display: "contents" }), ref(searchEventTargetRef)]}>

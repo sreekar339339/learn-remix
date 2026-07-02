@@ -20,7 +20,7 @@ export type TodoActionEventMap = CustomEventMap<
     actionErrored: { error: Error; form?: HTMLFormElement };
     idle: null;
   },
-  "todo"
+  { namespace: "todo"; target: HTMLFormElement | HTMLUListElement }
 >;
 type TodoActionEventTypes = TodoActionEventMap['types']
 
@@ -65,11 +65,11 @@ function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
       "todo:change"({detail}) {
         if ("changes" in detail) return;
         eventName = detail.event
-        if (detail.event === 'todo:actionSubmitted') {
+        if (detail.type === 'actionSubmitted') {
           spinnerRevealTimeoutId = setTimeout(() => handle.update(), 300);
           return;
         }
-        if (detail.event === 'todo:actionErrored') {
+        if (detail.type === 'actionErrored') {
           error = detail.detail.error
         }
         clearTimeout(spinnerRevealTimeoutId);

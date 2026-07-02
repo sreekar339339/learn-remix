@@ -1,11 +1,16 @@
 import type { EventMap as RemixEventMap } from "remix/ui";
 
-type Domain = string;
+type Namespace = string;
+
+type CustomEventMapOptions<namespace extends Namespace = Namespace> = {
+  namespace: namespace;
+  target: Element;
+};
 
 type CustomEventName<
   EventName extends string,
-  domain extends string,
-> = `${domain}:${EventName}`;
+  namespace extends Namespace,
+> = `${namespace}:${EventName}`;
 
 type CustomEventMapBase = Record<string, unknown | null>;
 
@@ -20,29 +25,32 @@ type StrictUnion<T, TAll = T> = T extends object
 
 type ChangeEventEventDetailFromMap<
   EventMap extends CustomEventMapBase,
-  domain extends Domain,
+  namespace extends Namespace,
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
     ? {
-        event: CustomEventName<K, domain>;
+        event: CustomEventName<K, namespace>;
+        type: K;
         changes?: never;
         detail?: never;
       }
     : {
-        event: CustomEventName<K, domain>;
+        event: CustomEventName<K, namespace>;
+        type: K;
         detail: EventMap[K];
         changes?: never;
       };
 }[keyof EventMap & string] | {
   changes: ChangeEventChangesFromMap<EventMap>;
   event?: never;
+  type?: never;
   detail?: never;
 };
 
 type ChangeEventDetailFromMap<
   EventMap extends CustomEventMapBase,
-  domain extends Domain,
-> = StrictUnion<ChangeEventEventDetailFromMap<EventMap, domain>>;
+  namespace extends Namespace,
+> = StrictUnion<ChangeEventEventDetailFromMap<EventMap, namespace>>;
 
 type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
@@ -66,64 +74,6 @@ type DispatchCustomEventArgs<
 
 declare const customEventMapSymbol: unique symbol;
 
-type EventNameFromOnProperty<Key extends PropertyKey> =
-  Key extends `on${infer EventName}` ? EventName : never;
-
-type NativeEventNamesFromElement<Target> = {
-  [K in keyof Target]: K extends `on${string}`
-    ? Target[K] extends ((...args: any[]) => any) | null | undefined
-      ? EventNameFromOnProperty<K>
-      : never
-    : never;
-}[keyof Target];
-
-type NativeHTMLElementEventNames = {
-  [TagName in keyof HTMLElementTagNameMap]: NativeEventNamesFromElement<
-    HTMLElementTagNameMap[TagName]
-  >;
-}[keyof HTMLElementTagNameMap];
-
-type EventNameCollisions<EventTypes extends object> = Extract<
-  keyof EventTypes,
-  NativeHTMLElementEventNames
->;
-
-type CustomEventNameCollisionError<Collisions> = {
-  readonly __customEventNameCollisionError: "Custom event names collide with native DOM event names. Use a domain argument or rename the local custom event.";
-  readonly collidingEventNames: Collisions;
-  readonly types?: never;
-  readonly dispatcher?: never;
-  readonly dispatcherWithoutSignal?: never;
-  readonly target?: never;
-};
-
-type GenericCustomEventTargetMap<EventTypes extends object> = {
-  element: CustomEventTarget<EventTypes, Element>;
-  htmlElement: CustomEventTarget<EventTypes, HTMLElement>;
-  mathElement: CustomEventTarget<EventTypes, MathMLElement>;
-  svgElement: CustomEventTarget<EventTypes, SVGElement>;
-  math: {
-    [TagName in keyof MathMLElementTagNameMap]: CustomEventTarget<
-      EventTypes,
-      MathMLElementTagNameMap[TagName]
-    >;
-  };
-  svg: {
-    [TagName in keyof SVGElementTagNameMap]: CustomEventTarget<
-      EventTypes,
-      SVGElementTagNameMap[TagName]
-    >;
-  };
-};
-
-type HTMLElementToCustomEventTargetMap<EventTypes extends object> =
-  GenericCustomEventTargetMap<EventTypes> & {
-  [TagName in keyof HTMLElementTagNameMap]: CustomEventTarget<
-    EventTypes,
-    HTMLElementTagNameMap[TagName]
-  > 
-};
-
 type CustomEventTarget<
   EventTypes extends object,
   Target extends Element,
@@ -136,7 +86,7 @@ type CustomEventTarget<
 
   /**
    * For customEventDispatcher inference only.
-   * This preserves the exact custom event map for this component/domain.
+   * This preserves the exact custom event map for this component namespace.
    */
   [customEventMapSymbol]?: EventTypes;
 };
@@ -159,18 +109,21 @@ type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
 
 type CustomEventTypes<
   EventMap extends CustomEventMapBase,
-  domain extends Domain,
+  namespace extends Namespace,
 > = {
-  [K in typeof CHANGE_EVENT_NAME as CustomEventName<K, domain>]: CustomEvent<
-    ChangeEventDetailFromMap<EventMap, domain>
+  [K in typeof CHANGE_EVENT_NAME as CustomEventName<K, namespace>]: CustomEvent<
+    ChangeEventDetailFromMap<EventMap, namespace>
   >;
 } & {
-  [K in keyof EventMap & string as CustomEventName<K, domain>]: CustomEvent<
+  [K in keyof EventMap & string as CustomEventName<K, namespace>]: CustomEvent<
     EventMap[K]
   >;
 };
 
-type CustomEventMapDescriptor<EventTypes extends object> = {
+type CustomEventMapDescriptor<
+  EventTypes extends object,
+  Options extends CustomEventMapOptions,
+> = {
   /**
    * Raw custom event map.
    * Use for global HTMLElementEventMap augmentation.
@@ -188,19 +141,16 @@ type CustomEventMapDescriptor<EventTypes extends object> = {
   dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<EventTypes>;
 
   /**
-   * DOM target helpers.
+   * DOM target with native and custom event inference.
    */
-  target: HTMLElementToCustomEventTargetMap<EventTypes>;
+  target: CustomEventTarget<EventTypes, Options["target"]>;
 };
 
 export type CustomEventMap<
   EventMap extends CustomEventMapBase,
-  domain extends Domain,
-  EventTypes extends object = CustomEventTypes<EventMap, domain>,
-> =
-  EventNameCollisions<EventTypes> extends never
-    ? CustomEventMapDescriptor<EventTypes>
-    : CustomEventNameCollisionError<EventNameCollisions<EventTypes>>;
+  Options extends CustomEventMapOptions,
+  EventTypes extends object = CustomEventTypes<EventMap, Options["namespace"]>,
+> = CustomEventMapDescriptor<EventTypes, Options>;
 
 function isNoDetailArgs<
   EventTypes extends object,
@@ -245,6 +195,10 @@ function getChangeEventName(name: string) {
   return name.split(":").slice(0, -1).concat(CHANGE_EVENT_NAME).join(":");
 }
 
+function getChangeEventType(name: string) {
+  return name.split(":").at(-1) ?? name;
+}
+
 function isChangeEventName(name: string) {
   const parts = name.split(":");
   return parts[parts.length - 1] === CHANGE_EVENT_NAME;
@@ -252,11 +206,6 @@ function isChangeEventName(name: string) {
 
 function getEventNameFromChangeEventName(changeEventName: string, eventKey: string) {
   return changeEventName.split(":").slice(0, -1).concat(eventKey).join(":");
-}
-
-function getLocalEventName(name: string) {
-  const parts = name.split(":");
-  return parts[parts.length - 1];
 }
 
 type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
@@ -363,10 +312,12 @@ function dispatchCustomEventImpl(
   const changeDetail = hasExplicitDetail
     ? {
         event: name,
+        type: getChangeEventType(name),
         detail,
       }
     : {
         event: name,
+        type: getChangeEventType(name),
       };
 
   const changeResult = dispatchSingleCustomEvent(

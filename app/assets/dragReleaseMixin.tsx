@@ -8,7 +8,7 @@ type DragReleaseEventMap = CustomEventMap<
   {
     release: { velocityX: number; velocityY: number };
   },
-  "drag"
+  { namespace: "drag"; target: HTMLElement }
 >;
 
 type DragRelaseEventTypes = DragReleaseEventMap["types"];
@@ -18,7 +18,7 @@ declare global {
 }
 
 export let dragRelease = createMixin<HTMLElement>((handle) => {
-  let node: DragReleaseEventMap["target"]["htmlElement"] | undefined;
+  let node: DragReleaseEventMap["target"] | undefined;
   let tracking = false;
   let velocityX = 0;
   let velocityY = 0;
@@ -77,4 +77,3 @@ function DraggableCard() {
     />
   )
 }
-
