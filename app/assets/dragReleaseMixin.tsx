@@ -11,10 +11,10 @@ type DragReleaseEventMap = CustomEventMap<
   { namespace: "drag"; target: HTMLElement }
 >;
 
-type DragRelaseEventTypes = DragReleaseEventMap["namespacedEvents"];
+type DragReleaseEvents = DragReleaseEventMap["namespacedEvents"];
 
 declare global {
-  interface HTMLElementEventMap extends DragRelaseEventTypes {}
+  interface HTMLElementEventMap extends DragReleaseEvents {}
 }
 
 export let dragRelease = createMixin<HTMLElement>((handle) => {
@@ -52,10 +52,10 @@ export let dragRelease = createMixin<HTMLElement>((handle) => {
           lastY = event.clientY;
           lastT = event.timeStamp;
         }),
-        on("pointerup", (evt, signal) => {
+        on("pointerup", () => {
           if (!tracking) return;
           tracking = false;
-          dispatchCustomEvent(node!, signal, "drag:release", {
+          dispatchCustomEvent(node!, handle.signal, "drag:release", {
             velocityX,
             velocityY,
           });

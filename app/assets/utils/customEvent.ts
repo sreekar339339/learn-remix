@@ -4,7 +4,7 @@ type Namespace = string;
 
 type CustomEventMapOptions<namespace extends Namespace = Namespace> = {
   namespace: namespace;
-  target: Element;
+  target: Element | EventTarget;
 };
 
 type NamespacedCustomEventName<
@@ -101,11 +101,11 @@ type DispatchCustomEventArgs<
     ? NoDetailArgs
     : WithDetailArgs<DetailFor<EventTypes, T>>;
 
-declare const customEventMapSymbol: unique symbol;
+declare const CustomEventTypesSymbol: unique symbol;
 
 type CustomEventTarget<
   EventTypes extends object,
-  Target extends Element,
+  Target extends CustomEventTargetLike,
 > = Target & {
   /**
    * For remix/ui addEventListeners inference.
@@ -117,7 +117,7 @@ type CustomEventTarget<
    * For customEventDispatcher inference only.
    * This preserves the exact custom event map for this component namespace.
    */
-  [customEventMapSymbol]?: EventTypes;
+  [CustomEventTypesSymbol]?: EventTypes;
 };
 
 type DispatchCustomEvent<EventTypes extends object> = <
@@ -191,6 +191,8 @@ type CustomEventMapDescriptor<
    * DOM target with native and custom event inference.
    */
   target: CustomEventTarget<NamespacedEventTypes, Options["target"]>;
+
+  namespace: Options["namespace"];
 };
 
 export type CustomEventMap<
@@ -233,7 +235,7 @@ function normalizeDispatchArgs<
 }
 
 type CustomEventsOfTarget<Target> = Target extends {
-  [customEventMapSymbol]?: infer EventTypes;
+  [CustomEventTypesSymbol]?: infer EventTypes;
 }
   ? EventTypes extends object
     ? EventTypes
@@ -261,8 +263,8 @@ function getEventNameFromChangeEventName(changeEventName: string, eventKey: stri
 
 type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
 
-type CustomEventTargetLike = Element & {
-  [customEventMapSymbol]?: object;
+type CustomEventTargetLike = Element | EventTarget & {
+  [CustomEventTypesSymbol]?: object;
 };
 
 function dispatchSingleCustomEvent(
