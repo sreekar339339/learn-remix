@@ -1,11 +1,22 @@
-import type { EventMap as RemixEventMap } from "remix/ui";
-
 type Namespace = string;
 
-type CustomEventMapOptions<namespace extends Namespace = Namespace> = {
-  namespace: namespace;
-  target: Element | EventTarget;
+type CustomEventMapOptions<
+  namespace extends Namespace = Namespace,
+  target extends Element | EventTarget = EventTarget,
+> = {
+  namespace?: namespace;
+  target?: target;
 };
+
+type NamespaceFromOptions<Options extends CustomEventMapOptions> =
+  Options extends { namespace: infer namespace extends Namespace }
+    ? namespace
+    : never;
+
+type TargetFromOptions<Options extends CustomEventMapOptions> =
+  Options extends { target: infer target extends CustomEventTargetLike }
+    ? target
+    : EventTarget;
 
 type NamespacedCustomEventName<
   EventName extends string,
@@ -29,7 +40,7 @@ type ChangeEventEventField<
   EventRequired extends boolean,
 > = EventRequired extends true
   ? { event: NamespacedCustomEventName<EventName, namespace> }
-  : { event?: NamespacedCustomEventName<EventName, namespace> };
+  : { event?: EventName | NamespacedCustomEventName<EventName, namespace> };
 
 type ChangeEventDetailBranchFromMap<
   EventMap extends CustomEventMapBase,
@@ -68,13 +79,46 @@ type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
 type WithDetailArgs<Detail> = [detail: Detail, evtInit?: EventInit];
 
+type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
+
 type DetailFor<EventTypes extends object, T extends keyof EventTypes & string> =
   EventTypes[T] extends CustomEvent<infer Detail> ? Detail : never;
+
+type DispatchDetailFor<
+  EventTypes extends object,
+  T extends keyof EventTypes & string,
+> = T extends `${string}:${typeof CHANGE_EVENT_NAME}`
+  ? NamespacedChangeDispatchDetail<DetailFor<EventTypes, T>>
+  : T extends typeof CHANGE_EVENT_NAME
+    ? LocalChangeDispatchDetail<DetailFor<EventTypes, T>>
+  : DetailFor<EventTypes, T>;
+
+type NamespacedChangeDispatchDetail<Detail> = Detail extends {
+  changes: unknown;
+}
+  ? Detail
+  : Detail extends {
+        event: string;
+        type: infer Type;
+      }
+    ? Omit<Detail, "type"> & { type?: Type }
+    : Detail;
+
+type LocalChangeDispatchDetail<Detail> = Detail extends {
+  changes: unknown;
+}
+  ? Detail
+  : Detail extends {
+        event?: infer Event;
+        type: infer Type;
+      }
+    ? Omit<Detail, "event"> & { event?: Event }
+    : Detail;
 
 type DispatchArgsRuntimeFor<
   EventTypes extends object,
   T extends keyof EventTypes & string,
-> = NoDetailArgs | WithDetailArgs<DetailFor<EventTypes, T>>;
+> = NoDetailArgs | WithDetailArgs<DispatchDetailFor<EventTypes, T>>;
 
 type DispatchCustomEventArgs<
   EventTypes extends object,
@@ -82,7 +126,7 @@ type DispatchCustomEventArgs<
 > =
   DetailFor<EventTypes, T> extends null | undefined
     ? NoDetailArgs
-    : WithDetailArgs<DetailFor<EventTypes, T>>;
+    : WithDetailArgs<DispatchDetailFor<EventTypes, T>>;
 
 declare const CustomEventTypesSymbol: unique symbol;
 
@@ -94,7 +138,7 @@ type CustomEventTarget<
    * For remix/ui addEventListeners inference.
    * This must contain native events + custom events.
    */
-  __eventMap?: RemixEventMap<Target> & EventTypes;
+  __eventMap?: NativeEventMap<Target> & EventTypes;
 
   /**
    * For customEventDispatcher inference only.
@@ -102,6 +146,10 @@ type CustomEventTarget<
    */
   [CustomEventTypesSymbol]?: EventTypes;
 };
+
+type NativeEventMap<Target> = Target extends Element
+  ? ElementEventMap & GlobalEventHandlersEventMap
+  : {};
 
 type DispatchCustomEvent<EventTypes extends object> = <
   T extends keyof EventTypes & string,
@@ -122,15 +170,17 @@ type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
 type NamespacedCustomEventTypes<
   EventMap extends CustomEventMapBase,
   namespace extends Namespace,
-> = {
-  [K in typeof CHANGE_EVENT_NAME as NamespacedCustomEventName<K, namespace>]: CustomEvent<
-    ChangeEventDetailFromMap<EventMap, namespace>
-  >;
-} & {
-  [K in keyof EventMap & string as NamespacedCustomEventName<K, namespace>]: CustomEvent<
-    EventMap[K]
-  >;
-};
+> = [namespace] extends [never]
+  ? {}
+  : {
+      [K in typeof CHANGE_EVENT_NAME as NamespacedCustomEventName<K, namespace>]: CustomEvent<
+        ChangeEventDetailFromMap<EventMap, namespace>
+      >;
+    } & {
+      [K in keyof EventMap & string as NamespacedCustomEventName<K, namespace>]: CustomEvent<
+        EventMap[K]
+      >;
+    };
 
 type LocalCustomEventTypes<
   EventMap extends CustomEventMapBase,
@@ -163,20 +213,53 @@ type CustomEventMapDescriptor<
   /**
    * Dispatcher type after target and signal have both been applied.
    */
-  dispatcher: DispatchCustomEvent<NamespacedEventTypes>;
+  dispatcher: DispatchCustomEvent<
+    EventTypesForTarget<
+      TargetFromOptions<Options>,
+      EventTypes,
+      NamespacedEventTypes,
+      NamespaceFromOptions<Options>
+    >
+  >;
 
   /**
    * Dispatcher type after only target has been applied.
    */
-  dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<NamespacedEventTypes>;
+  dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<
+    EventTypesForTarget<
+      TargetFromOptions<Options>,
+      EventTypes,
+      NamespacedEventTypes,
+      NamespaceFromOptions<Options>
+    >
+  >;
 
   /**
    * DOM target with native and custom event inference.
    */
-  target: CustomEventTarget<NamespacedEventTypes, Options["target"]>;
+  target: CustomEventTarget<
+    EventTypesForTarget<
+      TargetFromOptions<Options>,
+      EventTypes,
+      NamespacedEventTypes,
+      NamespaceFromOptions<Options>
+    >,
+    TargetFromOptions<Options>
+  >;
 
-  namespace: Options["namespace"];
+  namespace: NamespaceFromOptions<Options>;
 };
+
+type EventTypesForTarget<
+  Target extends CustomEventTargetLike,
+  EventTypes extends object,
+  NamespacedEventTypes extends object,
+  namespace extends Namespace,
+> = [namespace] extends [never]
+  ? EventTypes
+  : Target extends Element
+    ? NamespacedEventTypes
+    : EventTypes;
 
 type ReservedCustomEventMapKey = typeof CHANGE_EVENT_NAME;
 
@@ -192,28 +275,25 @@ type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
 
 export type CustomEventMap<
   EventMap extends CustomEventMapBase,
-  Options extends CustomEventMapOptions,
-  EventTypes extends object = LocalCustomEventTypes<EventMap, Options["namespace"]>,
+  Options extends CustomEventMapOptions = {},
+  EventTypes extends object = LocalCustomEventTypes<
+    EventMap,
+    NamespaceFromOptions<Options>
+  >,
   NamespacedEventTypes extends object = NamespacedCustomEventTypes<
     EventMap,
-    Options["namespace"]
+    NamespaceFromOptions<Options>
   >,
 > =
   EventMapReservedKeys<EventMap> extends never
     ? CustomEventMapDescriptor<EventTypes, NamespacedEventTypes, Options>
     : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
 
-function isNoDetailArgs<
-  EventTypes extends object,
-  T extends keyof EventTypes & string,
->(args: DispatchArgsRuntimeFor<EventTypes, T>): args is NoDetailArgs {
+function isNoDetailArgs(args: RuntimeDispatchArgs): args is NoDetailArgs {
   return args.length === 0 || args[0] == null;
 }
 
-function normalizeDispatchArgs<
-  EventTypes extends object,
-  T extends keyof EventTypes & string,
->(args: DispatchArgsRuntimeFor<EventTypes, T>) {
+function normalizeDispatchArgs(args: RuntimeDispatchArgs) {
   if (isNoDetailArgs(args)) {
     const [, evtInit] = args;
 
@@ -235,6 +315,12 @@ function normalizeDispatchArgs<
 type CustomEventsOfTarget<Target> = Target extends {
   [CustomEventTypesSymbol]?: infer EventTypes;
 }
+  ? EventTypes extends object
+    ? EventTypes
+    : never
+  : Target extends {
+      __eventMap?: infer EventTypes;
+    }
   ? EventTypes extends object
     ? EventTypes
     : never
@@ -263,19 +349,25 @@ function normalizeChangeEventDetail(detail: unknown) {
   if (
     !detail ||
     typeof detail !== "object" ||
-    !("event" in detail) ||
-    typeof detail.event !== "string"
+    (!("event" in detail) && !("type" in detail))
   ) {
     return detail;
   }
 
+  const event = "event" in detail && typeof detail.event === "string"
+    ? detail.event
+    : "type" in detail && typeof detail.type === "string"
+      ? detail.type
+      : undefined;
+
+  if (!event) return detail;
+
   return {
     ...detail,
-    type: getChangeEventType(detail.event),
+    event,
+    type: getChangeEventType(event),
   };
 }
-
-type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
 
 type CustomEventTargetLike = Element | EventTarget & {
   [CustomEventTypesSymbol]?: object;

@@ -9,8 +9,7 @@ type DrummerEventMap = CustomEventMap<
     [K in "kick" | "snare" | "hat" | "play" | "stop" | "tempo"]: {
       tempoBpm: number;
     };
-  },
-  { namespace: "drum"; target: EventTarget }
+  }
 >;
 
 export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
@@ -57,7 +56,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
       30,
       Math.min(300, Math.floor(bpm || this.#tempoBpm)),
     );
-    this.dispatch("drum:tempo", { tempoBpm: this.#tempoBpm });
+    this.dispatch("tempo", { tempoBpm: this.#tempoBpm });
   }
 
   async play(bpm?: number) {
@@ -73,7 +72,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
     // don't reset current16th so setTempo can adjust mid-groove if restarted
     if (this.#intervalId != null) window.clearInterval(this.#intervalId);
     this.#intervalId = window.setInterval(this.#scheduler, this.#lookaheadMs);
-    this.dispatch("drum:play", { tempoBpm: this.#tempoBpm });
+    this.dispatch("play", { tempoBpm: this.#tempoBpm });
   }
 
   async stop() {
@@ -85,7 +84,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
     this.#_isPlaying = false;
     this.#current16th = 0;
     this.#nextNoteTime = this.#audioCtx.currentTime;
-    this.dispatch("drum:stop", { tempoBpm: this.#tempoBpm });
+    this.dispatch("stop", { tempoBpm: this.#tempoBpm });
   }
 
   #ensureContext() {
@@ -125,7 +124,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
     osc.connect(gain).connect(this.#masterGain);
     osc.start(time);
     osc.stop(time + 0.2);
-    this.dispatch("drum:kick", { tempoBpm: this.#tempoBpm });
+    this.dispatch("kick", { tempoBpm: this.#tempoBpm });
   }
 
   #playSnare(time: number) {
@@ -153,7 +152,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
     osc.connect(oscGain).connect(this.#masterGain);
     osc.start(time);
     osc.stop(time + 0.15);
-    this.dispatch("drum:snare", { tempoBpm: this.#tempoBpm });
+    this.dispatch("snare", { tempoBpm: this.#tempoBpm });
   }
 
   #playHiHat(time: number) {
@@ -169,7 +168,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
     noise.connect(hp).connect(gain).connect(this.#masterGain);
     noise.start(time);
     noise.stop(time + 0.05);
-    this.dispatch("drum:hat", { tempoBpm: this.#tempoBpm });
+    this.dispatch("hat", { tempoBpm: this.#tempoBpm });
   }
 
   // Simple "boom bap" pattern over 16 steps

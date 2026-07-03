@@ -39,8 +39,7 @@ type PlayerEventMap = CustomEventMap<
     loaded: { track: string };
     played: { track: string };
     stopped: null;
-  },
-  { namespace: "player"; target: EventTarget }
+  }
 >;
 
 
@@ -101,7 +100,7 @@ function GesturePad(handle: Handle) {
   );
 }
 
-class TestPlayer extends TypedEventTarget<PlayerEventMap["namespacedEvents"]> {
+class TestPlayer extends TypedEventTarget<PlayerEventMap["events"]> {
   #track: string | null = null;
   dispatch: PlayerEventMap["dispatcher"];
 
@@ -112,16 +111,16 @@ class TestPlayer extends TypedEventTarget<PlayerEventMap["namespacedEvents"]> {
 
   load(track: string) {
     this.#track = track;
-    this.dispatch("player:loaded", { track });
+    this.dispatch("loaded", { track });
   }
 
   play() {
     if (!this.#track) return;
-    this.dispatch("player:played", { track: this.#track });
+    this.dispatch("played", { track: this.#track });
   }
 
   stop() {
-    this.dispatch("player:stopped");
+    this.dispatch("stopped");
   }
 }
 
@@ -448,9 +447,9 @@ describe("dispatchCustomEvent component usage", () => {
   it("supports TypedEventTarget classes dispatching granular and change events", async (t) => {
     function PlayerUI(handle: Handle) {
       let player = new TestPlayer(handle.signal);
-      let events: PlayerEventMap["namespacedEvents"]["player:change"]["detail"][] = [];
+      let events: PlayerEventMap["events"]["change"]["detail"][] = [];
 
-      player.addEventListener('player:change', ({ detail }) => {
+      player.addEventListener("change", ({ detail }) => {
         events.push(detail);
         handle.update();
       }, { signal: handle.signal });
@@ -509,7 +508,7 @@ describe("dispatchCustomEvent component usage", () => {
       JSON.stringify(
         [
           {
-            event: "player:loaded",
+            event: "loaded",
             type: "loaded",
             detail: { track: "North Star" },
           },
@@ -526,12 +525,12 @@ describe("dispatchCustomEvent component usage", () => {
       JSON.stringify(
         [
           {
-            event: "player:loaded",
+            event: "loaded",
             type: "loaded",
             detail: { track: "North Star" },
           },
           {
-            event: "player:played",
+            event: "played",
             type: "played",
             detail: { track: "North Star" },
           },
@@ -548,16 +547,16 @@ describe("dispatchCustomEvent component usage", () => {
       JSON.stringify(
         [
           {
-            event: "player:loaded",
+            event: "loaded",
             type: "loaded",
             detail: { track: "North Star" },
           },
           {
-            event: "player:played",
+            event: "played",
             type: "played",
             detail: { track: "North Star" },
           },
-          { event: "player:stopped", type: "stopped" },
+          { event: "stopped", type: "stopped" },
         ],
         null,
         2,

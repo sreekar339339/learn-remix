@@ -42,11 +42,17 @@ type MathDragReleaseEventMap = CustomEventMap<
   { namespace: "drag"; target: MathMLElement }
 >;
 
+type LocalDomEventMap = CustomEventMap<
+  {
+    selected: { id: string };
+  },
+  { target: HTMLDivElement }
+>;
+
 type PlainEventTargetEventMap = CustomEventMap<
   {
     ready: { source: "worker" };
-  },
-  { namespace: "plain"; target: EventTarget }
+  }
 >;
 
 type ReservedChangeEventMap = CustomEventMap<
@@ -206,20 +212,82 @@ describe("dispatchCustomEvent", () => {
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
-    observe(target, "plain:ready", events);
+    observe(target, "ready", events);
 
     let dispatch = dispatchCustomEvent(target, signal);
-    let result = dispatch("plain:ready", { source: "worker" });
+    let result = dispatch("ready", { source: "worker" });
 
     assert.equal(result, true);
     assert.deepEqual(events, [
       {
-        type: "plain:ready",
+        type: "ready",
         detail: { source: "worker" },
         bubbles: true,
         cancelable: true,
       },
     ]);
+  });
+
+  it("uses local event names for DOM targets when no namespace is configured", () => {
+    let target = document.createElement("div") as LocalDomEventMap["target"];
+    let signal = new AbortController().signal;
+    let events: ObservedEvent[] = [];
+
+    observe(target, "selected", events);
+
+    let dispatch = dispatchCustomEvent(target, signal);
+    let result = dispatch("selected", { id: "book-1" });
+
+    assert.equal(result, true);
+    assert.deepEqual(events, [
+      {
+        type: "selected",
+        detail: { id: "book-1" },
+        bubbles: true,
+        cancelable: true,
+      },
+    ]);
+  });
+
+  it("normalizes local change dispatch arguments when event is omitted", () => {
+    let target = new EventTarget() as PlainEventTargetEventMap["target"];
+    let signal = new AbortController().signal;
+    let events: ObservedEvent[] = [];
+
+    observe(target, "ready", events);
+    observe(target, "change", events);
+
+    let dispatch = dispatchCustomEvent(target, signal);
+    // @ts-expect-error local change dispatch requires type when event is omitted.
+    let invalidChangeDetail: PlainEventTargetEventMap["events"]["change"]["detail"] = {
+      event: "ready",
+      detail: { source: "worker" },
+    };
+
+    dispatch("change", { type: "ready", detail: { source: "worker" } });
+
+    assert.deepEqual(events, [
+      {
+        type: "change",
+        detail: {
+          event: "ready",
+          type: "ready",
+          detail: { source: "worker" },
+        },
+        bubbles: true,
+        cancelable: true,
+      },
+      {
+        type: "ready",
+        detail: { source: "worker" },
+        bubbles: true,
+        cancelable: true,
+      },
+    ]);
+    assert.deepEqual(invalidChangeDetail, {
+      event: "ready",
+      detail: { source: "worker" },
+    });
   });
 
   it("dispatches granular events and the change envelopes used by state subscribers", () => {
@@ -439,7 +507,7 @@ describe("dispatchCustomEvent", () => {
       target,
       signal,
       "theme:change",
-      { event: "theme:value", type: "value", detail: "dark" },
+      { event: "theme:value", detail: "dark" },
     );
     dispatchCustomEvent(
       target,
