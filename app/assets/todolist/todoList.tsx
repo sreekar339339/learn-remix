@@ -22,7 +22,7 @@ export type TodoActionEventMap = CustomEventMap<
   },
   { namespace: "todo"; target: HTMLFormElement | HTMLUListElement }
 >;
-type TodoActionEventTypes = TodoActionEventMap['types']
+type TodoActionEventTypes = TodoActionEventMap['namespacedEvents']
 
 declare global {
   interface HTMLElementEventMap extends TodoActionEventTypes {}
@@ -56,15 +56,15 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }, HTMLDivElement>) {
 
 function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
   let spinnerRevealTimeoutId: any;
-  let eventName: keyof HTMLElementEventMap = handle.props.pending
-    ? "todo:actionSubmitted"
-    : "todo:idle";
+  let eventType: keyof TodoActionEventMap['events'] = handle.props.pending
+    ? "actionSubmitted"
+    : "idle";
   let error: Error;
   handle.queueTask(() => {
     addEventListeners(handle.context.get(_TodoList), handle.signal, {
       "todo:change"({detail}) {
         if ("changes" in detail) return;
-        eventName = detail.event
+        eventType = detail.type
         if (detail.type === 'actionSubmitted') {
           spinnerRevealTimeoutId = setTimeout(() => handle.update(), 300);
           return;
@@ -86,9 +86,9 @@ function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
         }),
       ]}
     >
-      {eventName === "todo:actionSubmitted" ? (
+      {eventType === "actionSubmitted" ? (
         <Glyph name="spinner" height={24} width={24} />
-      ) : eventName === "todo:actionErrored" ? (
+      ) : eventType === "actionErrored" ? (
         <>Oops! Please try again!</>
       ) : null}
     </p>

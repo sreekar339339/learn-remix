@@ -7,7 +7,7 @@ type CustomEventMapOptions<namespace extends Namespace = Namespace> = {
   target: Element;
 };
 
-type CustomEventName<
+type NamespacedCustomEventName<
   EventName extends string,
   namespace extends Namespace,
 > = `${namespace}:${EventName}`;
@@ -29,13 +29,13 @@ type ChangeEventEventDetailFromMap<
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
     ? {
-        event: CustomEventName<K, namespace>;
+        event: NamespacedCustomEventName<K, namespace>;
         type: K;
         changes?: never;
         detail?: never;
       }
     : {
-        event: CustomEventName<K, namespace>;
+        event: NamespacedCustomEventName<K, namespace>;
         type: K;
         detail: EventMap[K];
         changes?: never;
@@ -51,6 +51,35 @@ type ChangeEventDetailFromMap<
   EventMap extends CustomEventMapBase,
   namespace extends Namespace,
 > = StrictUnion<ChangeEventEventDetailFromMap<EventMap, namespace>>;
+
+type LocalChangeEventEventDetailFromMap<
+  EventMap extends CustomEventMapBase,
+  namespace extends Namespace,
+> = {
+  [K in keyof EventMap & string]: EventMap[K] extends null | undefined
+    ? {
+        event?: NamespacedCustomEventName<K, namespace>;
+        type: K;
+        changes?: never;
+        detail?: never;
+      }
+    : {
+        event?: NamespacedCustomEventName<K, namespace>;
+        type: K;
+        detail: EventMap[K];
+        changes?: never;
+      };
+}[keyof EventMap & string] | {
+  changes: ChangeEventChangesFromMap<EventMap>;
+  event?: never;
+  type?: never;
+  detail?: never;
+};
+
+type LocalChangeEventDetailFromMap<
+  EventMap extends CustomEventMapBase,
+  namespace extends Namespace,
+> = StrictUnion<LocalChangeEventEventDetailFromMap<EventMap, namespace>>;
 
 type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
@@ -107,50 +136,72 @@ type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
   ): boolean;
 };
 
-type CustomEventTypes<
+type NamespacedCustomEventTypes<
   EventMap extends CustomEventMapBase,
   namespace extends Namespace,
 > = {
-  [K in typeof CHANGE_EVENT_NAME as CustomEventName<K, namespace>]: CustomEvent<
+  [K in typeof CHANGE_EVENT_NAME as NamespacedCustomEventName<K, namespace>]: CustomEvent<
     ChangeEventDetailFromMap<EventMap, namespace>
   >;
 } & {
-  [K in keyof EventMap & string as CustomEventName<K, namespace>]: CustomEvent<
+  [K in keyof EventMap & string as NamespacedCustomEventName<K, namespace>]: CustomEvent<
     EventMap[K]
   >;
 };
 
+type CustomEventTypes<
+  EventMap extends CustomEventMapBase,
+  namespace extends Namespace,
+> = {
+  [K in typeof CHANGE_EVENT_NAME]: CustomEvent<
+    LocalChangeEventDetailFromMap<EventMap, namespace>
+  >;
+} & {
+  [K in keyof EventMap & string]: CustomEvent<EventMap[K]>;
+};
+
 type CustomEventMapDescriptor<
   EventTypes extends object,
+  NamespacedEventTypes extends object,
   Options extends CustomEventMapOptions,
 > = {
   /**
-   * Raw custom event map.
+   * Local custom event map.
+   * Use for local state such as initial change event details.
+   */
+  events: EventTypes;
+
+  /**
+   * Namespaced custom event map.
    * Use for global HTMLElementEventMap augmentation.
    */
-  types: EventTypes;
+  namespacedEvents: NamespacedEventTypes;
 
   /**
    * Dispatcher type after target and signal have both been applied.
    */
-  dispatcher: DispatchCustomEvent<EventTypes>;
+  dispatcher: DispatchCustomEvent<NamespacedEventTypes>;
 
   /**
    * Dispatcher type after only target has been applied.
    */
-  dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<EventTypes>;
+  dispatcherWithoutSignal: DispatchCustomEventWithoutSignal<NamespacedEventTypes>;
 
   /**
    * DOM target with native and custom event inference.
    */
-  target: CustomEventTarget<EventTypes, Options["target"]>;
+  target: CustomEventTarget<NamespacedEventTypes, Options["target"]>;
 };
 
 export type CustomEventMap<
   EventMap extends CustomEventMapBase,
   Options extends CustomEventMapOptions,
   EventTypes extends object = CustomEventTypes<EventMap, Options["namespace"]>,
-> = CustomEventMapDescriptor<EventTypes, Options>;
+  NamespacedEventTypes extends object = NamespacedCustomEventTypes<
+    EventMap,
+    Options["namespace"]
+  >,
+> = CustomEventMapDescriptor<EventTypes, NamespacedEventTypes, Options>;
 
 function isNoDetailArgs<
   EventTypes extends object,

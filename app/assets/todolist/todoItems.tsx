@@ -12,16 +12,12 @@ import { _TodoList, type TodoActionEventMap } from "./todoList.tsx";
 import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
-interface TodoItemsProps extends Props<"ul"> {
-  todos: Todo[];
-}
-
-export function TodoItems(handle: Handle<TodoItemsProps>) {
+export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   let actionEventTargetRef = (
     target: TodoActionEventMap["target"] & HTMLUListElement,
   ) => {
     let lastEvent:
-      | TodoActionEventMap["types"]["todo:change"]["detail"]
+      | TodoActionEventMap["events"]["change"]["detail"]
       | undefined;
     addEventListeners(target, handle.signal, {
       "todo:actionSubmitted"({ detail }) {
@@ -36,17 +32,17 @@ export function TodoItems(handle: Handle<TodoItemsProps>) {
       "todo:change"(evt) {
         lastEvent = evt.detail;
       },
-      focusout(evt) {
+      focusout(evt, signal) {
         if (!lastEvent) return;
         if (
-          !(lastEvent.event === 'todo:actionErrored') ||
+          !(lastEvent.type === 'actionErrored') ||
           !lastEvent.detail.form
         )
           return;
         let { form } = lastEvent.detail;
-        dispatchCustomEvent(target, handle.signal, "todo:idle");
-        let inputInErrorEvt = getInput(form);
+        dispatchCustomEvent(target, signal, "todo:idle");
         if (!(evt.target instanceof HTMLInputElement)) return;
+        let inputInErrorEvt = getInput(form);
         if (inputInErrorEvt !== evt.target) return;
         inputInErrorEvt.value = inputInErrorEvt.defaultValue;
       },

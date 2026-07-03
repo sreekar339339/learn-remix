@@ -276,7 +276,7 @@ type TTTEventMap = CustomEventMap<
   { namespace: "ttt"; target: HTMLDivElement }
 >;
 
-type TTTEventTypes = TTTEventMap["types"];
+type TTTEventTypes = TTTEventMap["namespacedEvents"];
 
 declare global {
   interface HTMLElementEventMap extends TTTEventTypes {}
@@ -288,7 +288,7 @@ function TTT(handle: Handle) {
     winner: null,
   };
 
-  let tttEventTargetRef = (target: TTTEventMap["target"]) => {
+  let tttTargetRef = (target: TTTEventMap["target"]) => {
     let pendingUpdate: Promise<AbortSignal>;
     addEventListeners(target, handle.signal, {
       click() {},
@@ -319,7 +319,7 @@ function TTT(handle: Handle) {
           flexDirection: "column",
           gap: "36px",
         }),
-        ref(tttEventTargetRef),
+        ref(tttTargetRef),
       ]}
     >
       <div

@@ -42,8 +42,7 @@ async function fetchBooks(query: string, dispatch: SearchEventMap["dispatcher"],
 }
 
 function SearchForm(handle: Handle<Props<"div">>) {
-  let event: SearchEventMap["types"]["search:change"]["detail"] = {
-    event: "search:idle",
+  let event: SearchEventMap["events"]["change"]["detail"] = {
     type: "idle",
   };
 
@@ -84,7 +83,7 @@ function SearchForm(handle: Handle<Props<"div">>) {
 }
 
 type TestAppContext = {
-  user: { name: string; age: number } | null;;
+  user: { name: string; age: number } | null;
   settings: {
     theme: "dark" | "light" | "system";
     layout: "normal" | "zen" | "grid";

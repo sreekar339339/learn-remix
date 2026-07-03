@@ -102,29 +102,38 @@ describe("dispatchCustomEvent", () => {
     ]);
   });
 
-  it("exposes mutually exclusive change detail branches", () => {
+  it("exposes local and namespaced change detail branches", () => {
     let target = createTypedTarget<ThemeEventMap["target"]>();
     let signal = new AbortController().signal;
-    let eventDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+    let localEventDetail: ThemeEventMap["events"]["change"]["detail"] = {
+      type: "value",
+      detail: "dark",
+    };
+    let localNoDetailEvent: ThemeEventMap["events"]["change"]["detail"] = {
+      type: "reset",
+    };
+    let eventDetail: ThemeEventMap["namespacedEvents"]["theme:change"]["detail"] = {
       event: "theme:value",
       type: "value",
       detail: "dark",
     };
-    let noDetailEvent: ThemeEventMap["types"]["theme:change"]["detail"] = {
+    let noDetailEvent: ThemeEventMap["namespacedEvents"]["theme:change"]["detail"] = {
       event: "theme:reset",
       type: "reset",
     };
-    let changesDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+    let changesDetail: ThemeEventMap["events"]["change"]["detail"] = {
       changes: { value: "light" },
     };
     // @ts-expect-error change details allow either event/detail or changes, not both.
-    let invalidDetail: ThemeEventMap["types"]["theme:change"]["detail"] = {
+    let invalidDetail: ThemeEventMap["namespacedEvents"]["theme:change"]["detail"] = {
       event: "theme:value",
       type: "value",
       detail: "dark",
       changes: { value: "dark" as const },
     };
 
+    assert.deepEqual(localEventDetail, { type: "value", detail: "dark" });
+    assert.deepEqual(localNoDetailEvent, { type: "reset" });
     assert.deepEqual(eventDetail, { event: "theme:value", type: "value", detail: "dark" });
     assert.deepEqual(noDetailEvent, { event: "theme:reset", type: "reset" });
     assert.deepEqual(changesDetail, { changes: { value: "light" } });

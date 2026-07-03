@@ -19,11 +19,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         let dispatch = dispatchCustomEvent(target, signal);
         evt.preventDefault();
         let form = evt.currentTarget;
-        let input = getInput(form);
-        if (!input?.value)
-          return void dispatch("todo:idle");
-        let formAction = new URL(form.action);
         let formData = new FormData(form, evt.submitter);
+        if (formData.get("text") === "") return void dispatch("todo:idle");
+        let formAction = new URL(form.action);
         formData.set("redirectTo", "none");
         try {
           dispatch("todo:actionSubmitted", { form });

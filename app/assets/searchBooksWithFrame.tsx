@@ -19,7 +19,7 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }, { namespace: "search"; target: HTMLDivElement }>;
 
-// type SeachEventTypes = SearchEventMap["types"];
+// type SeachEventTypes = SearchEventMap["namespacedEvents"];
 
 // declare global {
 //   interface HTMLElementEventMap extends SeachEventTypes {}
@@ -33,9 +33,9 @@ export const SearchBooksWithFrame = clientEntry(
     let searchEventTargetRef = (target: SearchEventMap["target"]) => {
       addEventListeners(target, handle.signal, {
         submit(evt, signal) {
+          evt.preventDefault();
           let dispatch = dispatchCustomEvent(target, signal);
           let form = evt.target as HTMLFormElement;
-          evt.preventDefault();
           let query = (new FormData(form).get("q") as string).trim();
           if (!query) return void dispatch("search:queryEmpty");
           dispatch("search:querySubmitted", { query });
@@ -48,13 +48,12 @@ export const SearchBooksWithFrame = clientEntry(
       });
     };
 
-    let searchEvent: SearchEventMap["types"]["search:change"]["detail"] = initialQuery
+    let searchEvent: SearchEventMap["events"]["change"]["detail"] = initialQuery
     ? {
-        event: 'search:querySubmitted',
         type: 'querySubmitted',
         detail: { query: initialQuery },
       }
-    : { event: 'search:queryEmpty', type: 'queryEmpty' };
+    : { type: 'queryEmpty' };
 
     return () => (
       <div mix={[css({ display: "contents" }), ref(searchEventTargetRef)]}>
@@ -76,8 +75,8 @@ export const SearchBooksWithFrame = clientEntry(
         </form>
         {match(searchEvent)
           .with({ changes: P._ }, () => null)
-          .with({ event: 'search:queryEmpty' }, () => <p>Enter the title of any book.</p>)
-          .with({ event: 'search:querySubmitted' }, ({detail: {query}}) => (
+          .with({ type: 'queryEmpty' }, () => <p>Enter the title of any book.</p>)
+          .with({ type: 'querySubmitted' }, ({detail: {query}}) => (
             <Frame
               key={query}
               fallback={

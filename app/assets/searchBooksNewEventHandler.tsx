@@ -5,7 +5,6 @@ import {
   on,
   ref,
   type Handle,
-  type Props,
 } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
@@ -20,7 +19,7 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    dispatch('search:querySubmitted', { query });
+    dispatch("search:querySubmitted", { query });
     let resp = await fetch(
       routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
       {
@@ -34,21 +33,15 @@ async function fetchBooks(
     }
     let json = await resp.json();
     if (!("docs" in json)) {
-      return void dispatch(
-        "search:booksNotFound",
-        {
-          reason: { other: json.detail[0].msg },
-        },
-      );
+      return void dispatch("search:booksNotFound", {
+        reason: { other: json.detail[0].msg },
+      });
     }
     let books = json.docs;
     if (!books.length) {
-      return void dispatch(
-        "search:booksNotFound",
-        {
-          reason: "emptyList",
-        },
-      );
+      return void dispatch("search:booksNotFound", {
+        reason: "emptyList",
+      });
     }
     dispatch("search:booksFound", books);
   } catch (error) {
@@ -56,27 +49,27 @@ async function fetchBooks(
   }
 }
 
-type SearchEventMap = CustomEventMap<{
-  booksFound: Array<{ title: string }>;
-  booksNotFound: { reason: "emptyList" | { other: string } };
-  errorOccurred: Error;
-  queryEmpty: null;
-  querySubmitted: { query: string };
-}, { namespace: "search"; target: HTMLDivElement }>;
+type SearchEventMap = CustomEventMap<
+  {
+    booksFound: Array<{ title: string }>;
+    booksNotFound: { reason: "emptyList" | { other: string } };
+    errorOccurred: Error;
+    queryEmpty: null;
+    querySubmitted: { query: string };
+  },
+  { namespace: "search"; target: HTMLDivElement }
+>;
 
-// type SeachEventTypes = SearchEventMap["types"];
+type SearchEventTypes = SearchEventMap["namespacedEvents"];
 
 // declare global {
-//   interface HTMLElementEventMap extends SeachEventTypes {}
+//   interface HTMLElementEventMap extends SearchEventTypes {}
 // }
 
-interface SearchBooksProps extends Props<"div"> {
-  initialQuery: string;
-}
-
-function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
+function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
-  let searchEventTargetRef = (target: SearchEventMap["target"]) => {
+
+  let searchTargetRef = (target: SearchEventMap["target"]) => {
     addEventListeners(target, handle.signal, {
       "search:change"({ detail }) {
         searchEvent = detail;
@@ -84,24 +77,23 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
       },
       input(evt, signal) {
         let dispatch = dispatchCustomEvent(target, signal);
-        let input = evt.target as HTMLInputElement | null;
-        if (!input) return;
-        const query = input.value.trim();
-        if (!query) return void dispatch('search:queryEmpty');
+        let query = (evt.target as HTMLInputElement).value.trim();
+        if (!query) return void dispatch("search:queryEmpty");
         fetchBooks(query, dispatch, signal);
       },
     });
   };
-  let searchEvent: SearchEventMap["types"]['search:change']["detail"] = initialQuery
-    ? {
-        event: 'search:querySubmitted',
-        type: 'querySubmitted',
-        detail: { query: initialQuery },
-      }
-    : { event: 'search:queryEmpty', type: 'queryEmpty' };
+
+  let searchEvent: SearchEventMap["events"]["change"]["detail"] =
+    initialQuery
+      ? {
+          type: "querySubmitted",
+          detail: { query: initialQuery },
+        }
+      : { type: "queryEmpty" };
 
   return () => (
-    <div mix={[css({ display: "contents" }), ref(searchEventTargetRef)]}>
+    <div mix={[css({ display: "contents" }), ref(searchTargetRef)]}>
       <label>
         Search{" "}
         <input
@@ -120,27 +112,29 @@ function SearchBooksNewEventHandler(handle: Handle<SearchBooksProps>) {
       </label>
       {match(searchEvent)
         .with({ changes: P._ }, () => null)
-        .with({ type: 'queryEmpty' }, () => <p>Enter the title of any book.</p>)
-        .with({ type: 'querySubmitted' }, ({detail: {query}}) => (
+        .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
+        .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
           <p>fetching books with title containing {query}...</p>
         ))
-        .with({ type: 'booksFound' }, ({detail: books}) => (
+        .with({ type: "booksFound" }, ({ detail: books }) => (
           <ul>
             {books.map((book) => (
               <li>{book.title}</li>
             ))}
           </ul>
         ))
-        .with({ type: 'booksNotFound', detail: { reason: "emptyList" } }, () => (
-          <p>No books were found for this title at this time.</p>
-        ))
+        .with(
+          { type: "booksNotFound", detail: { reason: "emptyList" } },
+          () => <p>No books were found for this title at this time.</p>,
+        )
         .with(
           {
-            type: 'booksNotFound', detail: { reason: { other: P.select() } },
+            type: "booksNotFound",
+            detail: { reason: { other: P.select() } },
           },
           (msg) => <p>Could not fetch books for this title. Reason: {msg}.</p>,
         )
-        .with({ type: 'errorOccurred' }, ({detail: error}) => (
+        .with({ type: "errorOccurred" }, ({ detail: error }) => (
           <p>
             Unexpected error occured, try again! {error.message} Cause:{" "}
             {error.cause as string}.
