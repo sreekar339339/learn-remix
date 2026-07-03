@@ -33,7 +33,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
   constructor(tempoBpm: number = 90) {
     super();
     this.#tempoBpm = tempoBpm;
-    this.dispatch = dispatchCustomEvent(this, new AbortSignal());
+    this.dispatch = dispatchCustomEvent(this, new AbortController().signal);
   }
 
   get isPlaying() {

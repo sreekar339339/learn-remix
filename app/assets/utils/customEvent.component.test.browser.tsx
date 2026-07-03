@@ -2,18 +2,17 @@ import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import {
   addEventListeners,
+  createMixin,
   on,
   ref,
   type Handle,
   type Props,
   type RemixNode,
+  TypedEventTarget,
 } from "remix/ui";
 import { render } from "remix/ui/test";
 
-import {
-  dispatchCustomEvent,
-  type CustomEventMap,
-} from "./customEvent.ts";
+import { dispatchCustomEvent, type CustomEventMap } from "./customEvent.ts";
 
 type SearchEventMap = CustomEventMap<
   {
@@ -26,10 +25,116 @@ type SearchEventMap = CustomEventMap<
   { namespace: "search"; target: HTMLDivElement }
 >;
 
-async function fetchBooks(query: string, dispatch: SearchEventMap["dispatcher"], signal: AbortSignal) {
+type GestureEventMap = CustomEventMap<
+  {
+    activated: { pointerId: number };
+    moved: { x: number; y: number };
+    released: null;
+  },
+  { namespace: "gesture"; target: HTMLElement }
+>;
+
+type PlayerEventMap = CustomEventMap<
+  {
+    loaded: { track: string };
+    played: { track: string };
+    stopped: null;
+  },
+  { namespace: "player"; target: EventTarget }
+>;
+
+
+declare global {
+  type GlobalGestureEvents = GestureEventMap['namespacedEvents']
+  interface HTMLElementEventMap extends GlobalGestureEvents {}
+}
+
+const gestureMixin = createMixin<HTMLElement>((handle) => {
+  let target: GestureEventMap["target"] | null = null;
+
+  handle.addEventListener("insert", (event) => {
+    target = event.node;
+  });
+
+  return (props) => (
+    <handle.element
+      {...props}
+      mix={[
+        on("pointerdown", (event, signal) => {
+          if (!target) return;
+          dispatchCustomEvent(target, signal, "gesture:activated", {
+            pointerId: event.pointerId,
+          });
+        }),
+        on("pointermove", (event, signal) => {
+          if (!target) return;
+          dispatchCustomEvent(target, signal, "gesture:moved", {
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }),
+        on("pointerup", (_, signal) => {
+          if (!target) return;
+          dispatchCustomEvent(target, signal, "gesture:released");
+        }),
+      ]}
+    />
+  );
+});
+
+function GesturePad(handle: Handle) {
+  let events: GestureEventMap["namespacedEvents"]["gesture:change"]["detail"][] =
+    [];
+    
+  return () => (
+    <button
+      type="button"
+      data-testid="gesture-pad"
+      mix={[gestureMixin(), on('gesture:change', ({ detail }) => {
+        if ("changes" in detail) return;
+        events.push(detail);
+        handle.update();
+      })]}
+    >
+      <pre>{JSON.stringify(events, null, 2)}</pre>
+    </button>
+  );
+}
+
+class TestPlayer extends TypedEventTarget<PlayerEventMap["namespacedEvents"]> {
+  #track: string | null = null;
+  dispatch: PlayerEventMap["dispatcher"];
+
+  constructor(signal: AbortSignal) {
+    super();
+    this.dispatch = dispatchCustomEvent(this, signal);
+  }
+
+  load(track: string) {
+    this.#track = track;
+    this.dispatch("player:loaded", { track });
+  }
+
+  play() {
+    if (!this.#track) return;
+    this.dispatch("player:played", { track: this.#track });
+  }
+
+  stop() {
+    this.dispatch("player:stopped");
+  }
+}
+
+async function fetchBooks(
+  query: string,
+  dispatch: SearchEventMap["dispatcher"],
+  signal: AbortSignal,
+) {
   dispatch("search:querySubmitted", { query });
   try {
-    let resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
+    let resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+      signal,
+    });
     if (!resp.ok) throw new Error("Network response was not ok");
     let data = await resp.json();
     if (!Array.isArray(data.books) || data.books.length === 0) {
@@ -77,7 +182,9 @@ function SearchForm(handle: Handle<Props<"div">>) {
         <input name="q" />
         <button>Search</button>
       </form>
-      <output><pre>{JSON.stringify(event, null, 2)}</pre></output>
+      <output>
+        <pre>{JSON.stringify(event, null, 2)}</pre>
+      </output>
     </div>
   );
 }
@@ -202,8 +309,10 @@ function UserDisplay(handle: Handle) {
   });
 
   return () => (
-    <output data-testid="user">{context.user?.name ?? "Not logged in"} AND updateCount:{updateCount}</output>
-  )
+    <output data-testid="user">
+      {context.user?.name ?? "Not logged in"} AND updateCount:{updateCount}
+    </output>
+  );
 }
 
 function SettingsDisplay(handle: Handle) {
@@ -221,7 +330,8 @@ function SettingsDisplay(handle: Handle) {
 
   return () => (
     <output data-testid="settings">
-      {context.settings.theme}:{context.settings.layout} AND updateCount:{updateCount}
+      {context.settings.theme}:{context.settings.layout} AND updateCount:
+      {updateCount}
     </output>
   );
 }
@@ -241,7 +351,8 @@ function ContextSnapshot(handle: Handle) {
 
   return () => (
     <output data-testid="snapshot">
-      {context.user?.name ?? "none"}:{context.settings.theme}:{context.settings.layout} AND updateCount:{updateCount}
+      {context.user?.name ?? "none"}:{context.settings.theme}:
+      {context.settings.layout} AND updateCount:{updateCount}
     </output>
   );
 }
@@ -253,23 +364,228 @@ async function settleAsyncSearch() {
 }
 
 describe("dispatchCustomEvent component usage", () => {
+  it("supports createMixin-style host behavior with multiple custom events", async () => {
+    let result = render(<GesturePad />);
+
+    try {
+      let pad = result.$('[data-testid="gesture-pad"]') as HTMLButtonElement;
+
+      await result.act(() => {
+        pad.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 7,
+          }),
+        );
+      });
+
+      assert.equal(
+        pad.textContent,
+        JSON.stringify(
+          [
+            {
+              event: "gesture:activated",
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+          ],
+          null,
+          2,
+        ),
+      );
+
+      await result.act(() => {
+        pad.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            clientX: 20,
+            clientY: 35,
+          }),
+        );
+      });
+
+      assert.equal(
+        pad.textContent,
+        JSON.stringify(
+          [
+            {
+              event: "gesture:activated",
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+            { event: "gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
+          ],
+          null,
+          2,
+        ),
+      );
+
+      await result.act(() => {
+        pad.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      });
+
+      assert.equal(
+        pad.textContent,
+        JSON.stringify(
+          [
+            {
+              event: "gesture:activated",
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+            { event: "gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
+            { event: "gesture:released", type: "released" },
+          ],
+          null,
+          2,
+        ),
+      );
+    } finally {
+      result.cleanup();
+    }
+  });
+
+  it("supports TypedEventTarget classes dispatching granular and change events", async (t) => {
+    function PlayerUI(handle: Handle) {
+      let player = new TestPlayer(handle.signal);
+      let events: PlayerEventMap["namespacedEvents"]["player:change"]["detail"][] = [];
+
+      player.addEventListener('player:change', ({ detail }) => {
+        events.push(detail);
+        handle.update();
+      }, { signal: handle.signal });
+
+      handle.signal.addEventListener("abort", () => {
+        player.stop();
+      });
+
+      return () => (
+        <>
+          <output data-testid="player-events">
+            <pre>{JSON.stringify(events, null, 2)}</pre>
+          </output>
+          <button
+            data-testid="load-button"
+            mix={on("click", () => player.load("North Star"))}
+          >
+            Load
+          </button>
+          <button
+            data-testid="play-button"
+            mix={on("click", () => player.play())}
+          >
+            Play
+          </button>
+          <button
+            data-testid="stop-button"
+            mix={on("click", () => player.stop())}
+          >
+            Stop
+          </button>
+        </>
+      );
+    }
+
+    let result = render(<PlayerUI />);
+    t.after(() => result.cleanup());
+
+    let loadButton = result.$(
+      'button[data-testid="load-button"]',
+    ) as HTMLButtonElement;
+    let playButton = result.$(
+      'button[data-testid="play-button"]',
+    ) as HTMLButtonElement;
+    let stopButton = result.$(
+      'button[data-testid="stop-button"]',
+    ) as HTMLButtonElement;
+    let output = result.$(
+      'output[data-testid="player-events"]',
+    ) as HTMLOutputElement;
+
+    await result.act(() => loadButton.click());
+
+    assert.equal(
+      output.textContent,
+      JSON.stringify(
+        [
+          {
+            event: "player:loaded",
+            type: "loaded",
+            detail: { track: "North Star" },
+          },
+        ],
+        null,
+        2,
+      ),
+    );
+
+    await result.act(() => playButton.click());
+
+    assert.equal(
+      output.textContent,
+      JSON.stringify(
+        [
+          {
+            event: "player:loaded",
+            type: "loaded",
+            detail: { track: "North Star" },
+          },
+          {
+            event: "player:played",
+            type: "played",
+            detail: { track: "North Star" },
+          },
+        ],
+        null,
+        2,
+      ),
+    );
+
+    await result.act(() => stopButton.click());
+
+    assert.equal(
+      output.textContent,
+      JSON.stringify(
+        [
+          {
+            event: "player:loaded",
+            type: "loaded",
+            detail: { track: "North Star" },
+          },
+          {
+            event: "player:played",
+            type: "played",
+            detail: { track: "North Star" },
+          },
+          { event: "player:stopped", type: "stopped" },
+        ],
+        null,
+        2,
+      ),
+    );
+  });
+
   it("uses a target-and-signal-bound dispatcher from a form event handler", async (t) => {
-    t.mock.method(window, "fetch", async (input: RequestInfo, init?: RequestInit) => {
-      let url = typeof input === "string" ? input : input.url;
-      if (url.includes("q=dune")) {
-        return new Response(JSON.stringify({ books: ["Dune", "Hyperion"] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } else if (url.includes("q=offline")) {
-        return new Response(null, { status: 500 });
-      } else {
-        return new Response(JSON.stringify({ books: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    });
+    t.mock.method(
+      window,
+      "fetch",
+      async (input: RequestInfo, init?: RequestInit) => {
+        let url = typeof input === "string" ? input : input.url;
+        if (url.includes("q=dune")) {
+          return new Response(JSON.stringify({ books: ["Dune", "Hyperion"] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        } else if (url.includes("q=offline")) {
+          return new Response(null, { status: 500 });
+        } else {
+          return new Response(JSON.stringify({ books: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      },
+    );
     let result = render(<SearchForm />);
 
     try {
@@ -279,28 +595,49 @@ describe("dispatchCustomEvent component usage", () => {
       input.value = " dune ";
       await result.act(() => submitButton.click());
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "dune" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "dune" },
+          },
+          null,
+          2,
+        ),
+      );
 
       input.value = "";
       await result.act(() => submitButton.click());
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:idle",
-        type: "idle",
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:idle",
+            type: "idle",
+          },
+          null,
+          2,
+        ),
+      );
 
       input.value = "offline";
       await result.act(() => submitButton.click());
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:errorOccurred",
-        type: "errorOccurred",
-        detail: new Error("Network response was not ok"),
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:errorOccurred",
+            type: "errorOccurred",
+            detail: new Error("Network response was not ok"),
+          },
+          null,
+          2,
+        ),
+      );
 
       input.value = "notfound";
       await result.act(async () => {
@@ -308,11 +645,18 @@ describe("dispatchCustomEvent component usage", () => {
         await settleAsyncSearch();
       });
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:booksNotFound",
-        type: "booksNotFound",
-        detail: { reason: "emptyList" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:booksNotFound",
+            type: "booksNotFound",
+            detail: { reason: "emptyList" },
+          },
+          null,
+          2,
+        ),
+      );
     } finally {
       result.cleanup();
     }
@@ -330,7 +674,8 @@ describe("dispatchCustomEvent component usage", () => {
 
     t.mock.method(window, "fetch", (input: RequestInfo, init?: RequestInit) => {
       let url = typeof input === "string" ? input : input.url;
-      let query = new URL(url, window.location.href).searchParams.get("q") ?? "";
+      let query =
+        new URL(url, window.location.href).searchParams.get("q") ?? "";
       let signal = init?.signal;
 
       assert.ok(signal instanceof AbortSignal);
@@ -353,7 +698,9 @@ describe("dispatchCustomEvent component usage", () => {
         signal.addEventListener(
           "abort",
           () => {
-            reject(new DOMException("The operation was aborted.", "AbortError"));
+            reject(
+              new DOMException("The operation was aborted.", "AbortError"),
+            );
           },
           { once: true },
         );
@@ -384,44 +731,72 @@ describe("dispatchCustomEvent component usage", () => {
       assert.equal(requests.length, 1);
       assert.equal(requests[0].query, "d");
       assert.equal(requests[0].signal.aborted, false);
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "d" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "d" },
+          },
+          null,
+          2,
+        ),
+      );
 
       await typeQuery("du");
       assert.equal(requests.length, 2);
       assert.equal(requests[0].signal.aborted, true);
       assert.equal(requests[1].query, "du");
       assert.equal(requests[1].signal.aborted, false);
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "du" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "du" },
+          },
+          null,
+          2,
+        ),
+      );
 
       await typeQuery("dun");
       assert.equal(requests.length, 3);
       assert.equal(requests[1].signal.aborted, true);
       assert.equal(requests[2].query, "dun");
       assert.equal(requests[2].signal.aborted, false);
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "dun" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "dun" },
+          },
+          null,
+          2,
+        ),
+      );
 
       await typeQuery("dune");
       assert.equal(requests.length, 4);
       assert.equal(requests[2].signal.aborted, true);
       assert.equal(requests[3].query, "dune");
       assert.equal(requests[3].signal.aborted, false);
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "dune" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "dune" },
+          },
+          null,
+          2,
+        ),
+      );
 
       await result.act(async () => {
         requests[0].resolveBooks(["Stale D"]);
@@ -430,22 +805,36 @@ describe("dispatchCustomEvent component usage", () => {
         await settleAsyncSearch();
       });
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:querySubmitted",
-        type: "querySubmitted",
-        detail: { query: "dune" },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:querySubmitted",
+            type: "querySubmitted",
+            detail: { query: "dune" },
+          },
+          null,
+          2,
+        ),
+      );
 
       await result.act(async () => {
         requests[3].resolveBooks(["Dune", "Dune Messiah"]);
         await settleAsyncSearch();
       });
 
-      assert.equal(result.$("output")?.textContent, JSON.stringify({
-        event: "search:booksFound",
-        type: "booksFound",
-        detail: { books: ["Dune", "Dune Messiah"] },
-      }, null, 2));
+      assert.equal(
+        result.$("output")?.textContent,
+        JSON.stringify(
+          {
+            event: "search:booksFound",
+            type: "booksFound",
+            detail: { books: ["Dune", "Dune Messiah"] },
+          },
+          null,
+          2,
+        ),
+      );
     } finally {
       result.cleanup();
     }
@@ -457,7 +846,7 @@ describe("dispatchCustomEvent component usage", () => {
         <UserDisplay />
         <SettingsDisplay />
         <ContextSnapshot />
-      </TestAppProvider>
+      </TestAppProvider>,
     );
 
     try {
@@ -478,7 +867,10 @@ describe("dispatchCustomEvent component usage", () => {
         (result.$('[data-action="login"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada AND updateCount:1");
+      assert.equal(
+        result.$('[data-testid="user"]')?.textContent,
+        "Ada AND updateCount:1",
+      );
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
         "Ada:system:normal AND updateCount:1",
@@ -492,7 +884,10 @@ describe("dispatchCustomEvent component usage", () => {
         (result.$('[data-action="theme"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Ada AND updateCount:1");
+      assert.equal(
+        result.$('[data-testid="user"]')?.textContent,
+        "Ada AND updateCount:1",
+      );
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
         "Ada:light:zen AND updateCount:2",
@@ -507,7 +902,10 @@ describe("dispatchCustomEvent component usage", () => {
         (result.$('[data-action="reset"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Not logged in AND updateCount:2");
+      assert.equal(
+        result.$('[data-testid="user"]')?.textContent,
+        "Not logged in AND updateCount:2",
+      );
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
         "none:system:normal AND updateCount:3",
@@ -521,7 +919,10 @@ describe("dispatchCustomEvent component usage", () => {
         (result.$('[data-action="loadContext"]') as HTMLButtonElement).click(),
       );
 
-      assert.equal(result.$('[data-testid="user"]')?.textContent, "Bob Lazar AND updateCount:3");
+      assert.equal(
+        result.$('[data-testid="user"]')?.textContent,
+        "Bob Lazar AND updateCount:3",
+      );
       assert.equal(
         result.$('[data-testid="snapshot"]')?.textContent,
         "Bob Lazar:dark:grid AND updateCount:4",
