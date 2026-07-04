@@ -5,6 +5,7 @@ import {
   on,
   ref,
   type Handle,
+  type RefCallback,
 } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
@@ -65,19 +66,26 @@ declare global {
 function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
 
-  let searchTargetRef = (target: HTMLDivElement) => {
-    addEventListeners(target, handle.signal, {
+  let searchTargetRef: RefCallback<HTMLInputElement> = (target, signal) => {
+    addEventListeners(target, signal, {
       "search:change"({ detail }) {
         searchEvent = detail;
+        if (searchEvent.type === 'querySubmitted') {
+          target.classList.add('pending')
+        } else {
+          target.classList.remove('pending')
+        }
         handle.update();
       },
-      input(evt, signal) {
+      input(_, signal) {
         let dispatch = dispatchCustomEvent(target, signal);
-        let query = (evt.target as HTMLInputElement).value.trim();
+        let query = target.value.trim();
         if (!query) return void dispatch("search:queryEmpty");
         fetchBooks(query, dispatch, signal);
       },
     });
+    target.select();
+    target.dispatchEvent(new Event("input"));
   };
 
   let searchEvent: SearchEventMap["change"]["detail"] =
@@ -89,20 +97,28 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
       : { type: "queryEmpty" };
 
   return () => (
-    <div mix={[css({ display: "contents" }), ref(searchTargetRef)]}>
+    <>
       <label>
         Search{" "}
         <input
           type="text"
           defaultValue={initialQuery}
           mix={[
-            css({ padding: 4 }),
-            ref((node) => {
-              node.select();
-              requestAnimationFrame(() => {
-                node.dispatchEvent(new Event("input", { bubbles: true }));
-              });
+            css({
+              padding: 4,
+              '&.pending':{
+                // backgroundColor: "var(--surface-4)",
+                backgroundImage:
+                  "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+                backgroundSize: "220% 100%",
+                animation: "glimmer 1.15s linear infinite",
+                borderColor: "var(--brand-blue)",
+              },
+              "@media (prefers-reduced-motion: reduce)": {
+                animation: "none",
+              },
             }),
+            ref(searchTargetRef),
           ]}
         />
       </label>
@@ -137,7 +153,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
           </p>
         ))
         .exhaustive()}
-    </div>
+    </>
   );
 }
 

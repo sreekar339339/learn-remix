@@ -233,7 +233,7 @@ export const todosCrudController = createController(routes.todolist.todos, {
       return render(<TodoItemsClientEntryMarked todos={todos} />);
     },
     async action({ formData }) {
-      // await delay(5000);
+      await delay(5000);
       try {
         let input = s.parse(todoActionFormData, formData);
         match(input)

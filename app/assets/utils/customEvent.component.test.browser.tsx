@@ -262,17 +262,6 @@ function TestAppProvider(
     target,
   });
 
-  // handle.queueTask(async (signal) => {
-  //   // perform auth and other async stuff and dispatch context value
-  //   await Promise.resolve();
-  //   dispatchCustomEvent(target, signal, "change", {
-  //     changes: {
-  //       user: { age: 23, name: "Bob Lazar" },
-  //       settings: { layout: "zen", theme: "light" },
-  //     },
-  //   });
-  // })
-
   return () => (
     <section>
       <button

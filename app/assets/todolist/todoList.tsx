@@ -4,6 +4,7 @@ import {
   css,
   Frame,
   ref,
+  TypedEventTarget,
   type Handle,
   type Props,
 } from "remix/ui";
@@ -19,13 +20,9 @@ import { routes } from "../../routes.ts";
 export type TodoActionEventMap = CustomEventMap<{
   actionSubmitted: { form: HTMLFormElement };
   actionSucceeded: { form: HTMLFormElement };
-  actionErrored: { error: Error; form?: HTMLFormElement };
+  actionErrored: { error: Error; form: HTMLFormElement };
   idle: null;
 }>;
-
-declare global {
-  interface HTMLElementEventMap extends Namespaced<TodoActionEventMap, "todo"> {}
-}
 
 export const TodoList = clientEntry(
   import.meta.url,
@@ -34,62 +31,27 @@ export const TodoList = clientEntry(
   },
 );
 
-export function _TodoList(handle: Handle<{ todos: Todo[] }, HTMLDivElement>) {
+export function _TodoList(handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>) {
+  let actionLogger = new TypedEventTarget<TodoActionEventMap>
+  addEventListeners(actionLogger, handle.signal, {
+    change({detail}) {
+      console.log(detail)
+    }
+  })
+  handle.context.set(actionLogger)
   return () => (
-    <div mix={[ref((node) => handle.context.set(node)), css({display: 'contents'})]}>
+    <>
       <AddTodo />
-      <ActionStatus />
       <Frame
         name="TodoItems"
         src={routes.todolist.todos.index.href()}
         fallback={
           <div mix={css({display: 'flex', alignItems: 'center'})}>
-            <ActionStatus pending={true} />&nbsp;Loading todos...
+            <Glyph name="spinner" height={24} width={24} />&nbsp;Loading todos...
           </div>
         }
       />
       {/* <TodoItems todos={handle.props.todos} /> */}
-    </div>
-  );
-}
-
-function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
-  let spinnerRevealTimeoutId: any;
-  let eventType: TodoActionEventMap["change"]["detail"]["type"] = handle.props.pending
-    ? "actionSubmitted"
-    : "idle";
-  let error: Error;
-  handle.queueTask(() => {
-    addEventListeners(handle.context.get(_TodoList), handle.signal, {
-      "todo:change"({detail}) {
-        if ("changes" in detail) return;
-        eventType = detail.type
-        if (detail.type === 'actionSubmitted') {
-          spinnerRevealTimeoutId = setTimeout(() => handle.update(), 300);
-          return;
-        }
-        if (detail.type === 'actionErrored') {
-          error = detail.detail.error
-        }
-        clearTimeout(spinnerRevealTimeoutId);
-        handle.update();
-      },
-    });
-  });
-  return () => (
-    <p
-      mix={[
-        css({
-          height: 24,
-          display: 'inline-block'
-        }),
-      ]}
-    >
-      {eventType === "actionSubmitted" ? (
-        <Glyph name="spinner" height={24} width={24} />
-      ) : eventType === "actionErrored" ? (
-        <>Oops! Please try again!</>
-      ) : null}
-    </p>
+    </>
   );
 }

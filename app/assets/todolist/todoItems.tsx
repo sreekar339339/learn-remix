@@ -3,7 +3,9 @@ import {
   clientEntry,
   css,
   ref,
+  TypedEventTarget,
   type Handle,
+  type RefCallback,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
@@ -12,41 +14,47 @@ import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
-  let actionEventTargetRef = (target: HTMLUListElement) => {
-    let lastEvent: TodoActionEventMap["change"]["detail"] | undefined;
-    addEventListeners(target, handle.signal, {
-      "todo:actionSubmitted"({ detail }) {
-        getInput(detail.form)?.select();
+  let listRef: RefCallback<HTMLUListElement> = (list, signal) => {
+    let actionTarget = new TypedEventTarget<TodoActionEventMap>
+    addEventListeners(actionTarget, signal, {
+      actionSubmitted({ detail }) {
+        let input = getInput(detail.form);
+        input?.select();
+        input?.classList.add("pending");
       },
-      "todo:actionSucceeded"({ detail }) {
+      actionSucceeded({ detail }) {
         let input = getInput(detail.form);
         if (!input) return;
+        input.classList.remove("pending");
         const end = input.value.length;
         input.setSelectionRange(end, end);
       },
-      "todo:change"({ detail }) {
-        lastEvent = detail;
+      actionErrored({ detail }) {
+        let input = getInput(detail.form);
+        if (!input) return
+        input?.classList.remove("pending");
+        input.value = input.defaultValue
       },
-      focusout(evt, signal) {
-        if (!lastEvent) return;
-        if (!(lastEvent.type === "actionErrored") || !lastEvent.detail.form)
-          return;
-        let { form } = lastEvent.detail;
-        dispatchCustomEvent(target, signal, "todo:idle");
+      // change(evt) {
+      //   todolistTarget.dispatchEvent(new CustomEvent(evt.type, evt))
+      // }
+    })
+    addEventListeners(list, signal, {
+      focusout(evt) {
         if (!(evt.target instanceof HTMLInputElement)) return;
-        let inputInErrorEvt = getInput(form);
-        if (inputInErrorEvt !== evt.target) return;
-        inputInErrorEvt.value = inputInErrorEvt.defaultValue;
+        let input = evt.target
+        if (input.classList.contains('pending')) return
+        input.value = input.defaultValue;
       },
-      async submit(evt, signal) {
-        let dispatch = dispatchCustomEvent(target, signal);
+      async submit(evt) {
+        let dispatch = dispatchCustomEvent(actionTarget, signal);
         evt.preventDefault();
         let form = evt.target as HTMLFormElement;
         let formData = new FormData(form, evt.submitter);
         formData.set("redirectTo", "none");
         try {
-          dispatch("todo:actionSubmitted", { form });
-          // await new Promise((res) => setTimeout(res, 1000));
+          dispatch("actionSubmitted", { form });
+          // await new Promise((res, rej) => setTimeout(rej, 25000, new Error('laude lag gaye')));
           let resp = await fetch(form.action, {
             method: "POST",
             body: formData,
@@ -57,11 +65,10 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               cause: await resp.text(),
             });
           }
-          // await new Promise((res, rej) => setTimeout(rej, 0, new Error('laude lag gaye')));
           await handle.frame.reload();
-          dispatch("todo:actionSucceeded", { form });
+          dispatch("actionSucceeded", { form });
         } catch (error) {
-          dispatch("todo:actionErrored", { error: error as Error, form });
+          dispatch("actionErrored", { error: error as Error, form });
         }
       },
     });
@@ -70,7 +77,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   return () => (
     <ul
       mix={[
-        ref(actionEventTargetRef),
+        ref(listRef),
         css({
           listStyleType: "none",
           padding: 0,
@@ -117,16 +124,26 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[
                 css({
                   borderColor: "transparent",
-                  background: "transparent",
+                  backgroundColor: "transparent",
                   padding: 2,
                   font: "inherit",
                   color: "inherit",
                   outline: "none",
-                  flex: 1,
                   "&:focus,&:hover": {
-                    background: "revert",
+                    backgroundColor: "revert",
                     outline: "revert",
                     borderColor: "revert",
+                  },
+                  "&.pending": {
+                    backgroundImage:
+                      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+                    backgroundSize: "220% 100%",
+                    animation: "glimmer 1.15s linear infinite",
+                  },
+                  "@media (prefers-reduced-motion: reduce)": {
+                    "&.pending": {
+                      animation: "none",
+                    },
                   },
                 }),
               ]}

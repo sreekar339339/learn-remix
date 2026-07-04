@@ -18,7 +18,16 @@ const FONT_STACK =
 export function Document(handle: Handle<DocumentProps>) {
   return () => {
     let { children, title = DEFAULT_TITLE } = handle.props;
-
+    let glimmer = `
+    @keyframes glimmer {
+      from {
+        background-position: 160% 0;
+      }
+      to {
+        background-position: -60% 0;
+      }
+    }
+    `
     return (
       <html lang="en">
         <head>
@@ -38,6 +47,9 @@ export function Document(handle: Handle<DocumentProps>) {
             rel="stylesheet"
             href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
           />
+          <style>
+            {glimmer}
+          </style>
         </head>
         <body
           mix={css({
