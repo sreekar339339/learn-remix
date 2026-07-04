@@ -11,7 +11,7 @@ type DragReleaseEventMap = CustomEventMap<
   { namespace: "rmx:drag" }
 >;
 
-type DragReleaseEvents = DragReleaseEventMap["namespacedEvents"];
+type DragReleaseEvents = DragReleaseEventMap["globalEvents"];
 
 declare global {
   interface HTMLElementEventMap extends DragReleaseEvents {}

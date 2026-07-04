@@ -29,7 +29,7 @@ type AppContextEventMap = CustomEventMap<
 >;
 
 declare global {
-  type AppContextEventTypes = AppContextEventMap["namespacedEvents"];
+  type AppContextEventTypes = AppContextEventMap["globalEvents"];
   interface HTMLElementEventMap extends AppContextEventTypes {}
 }
 
@@ -128,7 +128,7 @@ declare global {
     Theme,
     { namespace: "theme" }
   >;
-  type ThemeEventTypes = ThemeEventMap["namespacedEvents"];
+  type ThemeEventTypes = ThemeEventMap["globalEvents"];
   interface HTMLElementEventMap extends ThemeEventTypes {}
 }
 

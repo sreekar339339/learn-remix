@@ -59,10 +59,9 @@ type SearchEventMap = CustomEventMap<
   },
   { namespace: "search" }
 >;
-// type SearchDispatcher = dispatchCustomEvent.Dispatcher<HTMLDivElement>;
 
 declare global {
-  type SearchEventTypes = SearchEventMap["namespacedEvents"];
+  type SearchEventTypes = SearchEventMap["globalEvents"];
   interface HTMLElementEventMap extends SearchEventTypes {}
 }
 
@@ -84,7 +83,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
     });
   };
 
-  let searchEvent: SearchEventMap["events"]["change"]["detail"] =
+  let searchEvent: SearchEventMap["localEvents"]["change"]["detail"] =
     initialQuery
       ? {
           type: "querySubmitted",

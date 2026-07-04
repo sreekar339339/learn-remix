@@ -22,7 +22,7 @@ export type TodoActionEventMap = CustomEventMap<
   },
   { namespace: "todo" }
 >;
-type TodoActionEventTypes = TodoActionEventMap['namespacedEvents']
+type TodoActionEventTypes = TodoActionEventMap['globalEvents']
 
 declare global {
   interface HTMLElementEventMap extends TodoActionEventTypes {}
@@ -56,7 +56,7 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }, HTMLDivElement>) {
 
 function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
   let spinnerRevealTimeoutId: any;
-  let eventType: keyof TodoActionEventMap['events'] = handle.props.pending
+  let eventType: keyof TodoActionEventMap['localEvents'] = handle.props.pending
     ? "actionSubmitted"
     : "idle";
   let error: Error;

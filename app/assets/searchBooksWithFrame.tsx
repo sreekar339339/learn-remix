@@ -20,7 +20,7 @@ type SearchWithFrameEventMap = CustomEventMap<{
 }, { namespace: "searchWithFrame" }>;
 
 declare global {
-  type SeachEventTypes = SearchWithFrameEventMap["namespacedEvents"];
+  type SeachEventTypes = SearchWithFrameEventMap["globalEvents"];
   interface HTMLElementEventMap extends SeachEventTypes {}
 }
 
@@ -47,7 +47,7 @@ export const SearchBooksWithFrame = clientEntry(
       });
     };
 
-    let searchEvent: SearchWithFrameEventMap["events"]["change"]["detail"] = initialQuery
+    let searchEvent: SearchWithFrameEventMap["localEvents"]["change"]["detail"] = initialQuery
     ? {
         type: 'querySubmitted',
         detail: { query: initialQuery },

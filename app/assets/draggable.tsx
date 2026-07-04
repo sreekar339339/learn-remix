@@ -14,9 +14,10 @@ type DraggableEventMap = CustomEventMap<
     start: DragDetail;
     end: DragDetail;
   },
-  { namespace: "rmx:drag" }
+  { namespace: DraggableNamespace }
 >;
-type GlobalDraggableEvents = DraggableEventMap["namespacedEvents"];
+type DraggableNamespace = "rmx:drag";
+type GlobalDraggableEvents = DraggableEventMap["globalEvents"];
 declare global {
   interface HTMLElementEventMap extends GlobalDraggableEvents {}
 }
@@ -127,7 +128,7 @@ function readPx(value: string) {
 
 type eventNameMap = {
   [K in GlobalDraggableEvents["rmx:drag:change"]["detail"]["event"] &
-    string as K extends `${DraggableEventMap["namespace"]}:${infer Local}`
+    string as K extends `${DraggableNamespace}:${infer Local}`
     ? Local
     : never]: K;
 };

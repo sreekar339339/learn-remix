@@ -44,12 +44,12 @@ type PlayerEventMap = CustomEventMap<
     stopped: null;
   }
 >;
-type PlayerEventTarget = TypedEventTarget<PlayerEventMap["events"]>;
+type PlayerEventTarget = TypedEventTarget<PlayerEventMap["localEvents"]>;
 
 
 declare global {
-  type GlobalSearchEvents = SearchEventMap["namespacedEvents"];
-  type GlobalGestureEvents = GestureEventMap["namespacedEvents"];
+  type GlobalSearchEvents = SearchEventMap["globalEvents"];
+  type GlobalGestureEvents = GestureEventMap["globalEvents"];
   interface HTMLElementEventMap
     extends GlobalSearchEvents,
       GlobalGestureEvents {}
@@ -89,7 +89,7 @@ const gestureMixin = createMixin<HTMLElement>((handle) => {
 });
 
 function GesturePad(handle: Handle) {
-  let events: GestureEventMap["namespacedEvents"]["test-gesture:change"]["detail"][] =
+  let events: GestureEventMap["globalEvents"]["test-gesture:change"]["detail"][] =
     [];
     
   return () => (
@@ -107,7 +107,7 @@ function GesturePad(handle: Handle) {
   );
 }
 
-class TestPlayer extends TypedEventTarget<PlayerEventMap["events"]> {
+class TestPlayer extends TypedEventTarget<PlayerEventMap["localEvents"]> {
   #track: string | null = null;
   dispatch: dispatchCustomEvent.Dispatcher<PlayerEventTarget>;
 
@@ -153,7 +153,7 @@ async function fetchBooks(
 }
 
 function SearchForm(handle: Handle<Props<"div">>) {
-  let event: SearchEventMap["events"]["change"]["detail"] = {
+  let event: SearchEventMap["localEvents"]["change"]["detail"] = {
     type: "idle",
   };
 
@@ -207,7 +207,7 @@ type AppContextEventMap = CustomEventMap<
   TestAppContext,
   { namespace: "test-context" }
 >;
-type AppContextEventTypes = AppContextEventMap["namespacedEvents"];
+type AppContextEventTypes = AppContextEventMap["globalEvents"];
 
 declare global {
   interface HTMLElementEventMap extends AppContextEventTypes {}
@@ -459,7 +459,7 @@ describe("dispatchCustomEvent component usage", () => {
   it("supports TypedEventTarget classes dispatching granular and change events", async (t) => {
     function PlayerUI(handle: Handle) {
       let player = new TestPlayer(handle.signal);
-      let events: PlayerEventMap["events"]["change"]["detail"][] = [];
+      let events: PlayerEventMap["localEvents"]["change"]["detail"][] = [];
 
       player.addEventListener("change", ({ detail }) => {
         events.push(detail);

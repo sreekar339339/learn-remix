@@ -152,21 +152,18 @@ type LocalCustomEventTypes<
 type CustomEventMapDescriptor<
   EventTypes extends object,
   NamespacedEventTypes extends object,
-  namespace extends Namespace,
 > = {
   /**
    * Local custom event map.
    * Use for local state such as initial change event details.
    */
-  events: EventTypes;
+  localEvents: EventTypes;
 
   /**
    * Namespaced custom event map.
    * Use for global HTMLElementEventMap augmentation.
    */
-  namespacedEvents: NamespacedEventTypes;
-
-  namespace: namespace;
+  globalEvents: NamespacedEventTypes;
 };
 
 type ReservedCustomEventMapKey = typeof CHANGE_EVENT_NAME;
@@ -196,8 +193,7 @@ export type CustomEventMap<
   EventMapReservedKeys<EventMap> extends never
     ? CustomEventMapDescriptor<
         EventTypes,
-        NamespacedEventTypes,
-        NamespaceFromOptions<Options>
+        NamespacedEventTypes
       >
     : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
 

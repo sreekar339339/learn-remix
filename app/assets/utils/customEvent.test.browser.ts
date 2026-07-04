@@ -14,7 +14,7 @@ type ThemeEventMap = CustomEventMap<
   },
   { namespace: "test-theme" }
 >;
-type ThemeEventTypes = ThemeEventMap["namespacedEvents"];
+type ThemeEventTypes = ThemeEventMap["globalEvents"];
 
 type TodoEventMap = CustomEventMap<
   {
@@ -22,7 +22,7 @@ type TodoEventMap = CustomEventMap<
   },
   { namespace: "test-todo" }
 >;
-type TodoEventTypes = TodoEventMap["namespacedEvents"];
+type TodoEventTypes = TodoEventMap["globalEvents"];
 
 type DragReleaseEventMap = CustomEventMap<
   {
@@ -30,7 +30,7 @@ type DragReleaseEventMap = CustomEventMap<
   },
   { namespace: "test-drag" }
 >;
-type DragReleaseEventTypes = DragReleaseEventMap["namespacedEvents"];
+type DragReleaseEventTypes = DragReleaseEventMap["globalEvents"];
 
 type SvgDragReleaseEventMap = CustomEventMap<
   {
@@ -38,7 +38,7 @@ type SvgDragReleaseEventMap = CustomEventMap<
   },
   { namespace: "test-svg-drag" }
 >;
-type SvgDragReleaseEventTypes = SvgDragReleaseEventMap["namespacedEvents"];
+type SvgDragReleaseEventTypes = SvgDragReleaseEventMap["globalEvents"];
 
 type MathDragReleaseEventMap = CustomEventMap<
   {
@@ -46,7 +46,7 @@ type MathDragReleaseEventMap = CustomEventMap<
   },
   { namespace: "test-math-drag" }
 >;
-type MathDragReleaseEventTypes = MathDragReleaseEventMap["namespacedEvents"];
+type MathDragReleaseEventTypes = MathDragReleaseEventMap["globalEvents"];
 
 type LocalDomEventMap = CustomEventMap<
   {
@@ -72,7 +72,7 @@ declare global {
     extends ThemeEventTypes,
       TodoEventTypes,
       DragReleaseEventTypes {
-    selected: LocalDomEventMap["events"]["selected"];
+    selected: LocalDomEventMap["localEvents"]["selected"];
   }
 
   interface SVGElementEventMap extends SvgDragReleaseEventTypes {}
@@ -115,7 +115,7 @@ describe("dispatchCustomEvent", () => {
 
   it("reserves the local change event name for aggregate change details", () => {
     // @ts-expect-error event maps cannot expose a user-defined local "change" event.
-    let reservedEvents: ReservedChangeEventMap["events"] = {};
+    let reservedEvents: ReservedChangeEventMap["localEvents"] = {};
 
     assert.deepEqual(reservedEvents, {});
   });
@@ -143,27 +143,27 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("exposes local and namespaced change detail branches", () => {
-    let localEventDetail: ThemeEventMap["events"]["change"]["detail"] = {
+    let localEventDetail: ThemeEventMap["localEvents"]["change"]["detail"] = {
       type: "value",
       detail: "dark",
     };
-    let localNoDetailEvent: ThemeEventMap["events"]["change"]["detail"] = {
+    let localNoDetailEvent: ThemeEventMap["localEvents"]["change"]["detail"] = {
       type: "reset",
     };
-    let eventDetail: ThemeEventMap["namespacedEvents"]["test-theme:change"]["detail"] = {
+    let eventDetail: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
       event: "test-theme:value",
       type: "value",
       detail: "dark",
     };
-    let noDetailEvent: ThemeEventMap["namespacedEvents"]["test-theme:change"]["detail"] = {
+    let noDetailEvent: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
       event: "test-theme:reset",
       type: "reset",
     };
-    let changesDetail: ThemeEventMap["events"]["change"]["detail"] = {
+    let changesDetail: ThemeEventMap["localEvents"]["change"]["detail"] = {
       changes: { value: "light" },
     };
     // @ts-expect-error change details allow either event/detail or changes, not both.
-    let invalidDetail: ThemeEventMap["namespacedEvents"]["test-theme:change"]["detail"] = {
+    let invalidDetail: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
       event: "test-theme:value",
       type: "value",
       detail: "dark",
@@ -224,7 +224,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("supports plain EventTarget targets for non-DOM use cases", () => {
-    let target = new TypedEventTarget<PlainEventTargetEventMap["events"]>();
+    let target = new TypedEventTarget<PlainEventTargetEventMap["localEvents"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -266,7 +266,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("normalizes local change dispatch arguments when event is omitted", () => {
-    let target = new TypedEventTarget<PlainEventTargetEventMap["events"]>();
+    let target = new TypedEventTarget<PlainEventTargetEventMap["localEvents"]>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -275,7 +275,7 @@ describe("dispatchCustomEvent", () => {
 
     let dispatch = dispatchCustomEvent(target, signal);
     // @ts-expect-error local change dispatch requires type when event is omitted.
-    let invalidChangeDetail: PlainEventTargetEventMap["events"]["change"]["detail"] = {
+    let invalidChangeDetail: PlainEventTargetEventMap["localEvents"]["change"]["detail"] = {
       event: "ready",
       detail: { source: "worker" },
     };
@@ -571,7 +571,7 @@ describe("dispatchCustomEvent", () => {
         event: "test-theme:value",
         type: "reset",
         detail: "dark",
-      } as unknown as ThemeEventMap["namespacedEvents"]["test-theme:change"]["detail"],
+      } as unknown as ThemeEventMap["globalEvents"]["test-theme:change"]["detail"],
     );
 
     assert.deepEqual(events, [

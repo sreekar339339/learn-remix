@@ -11,9 +11,9 @@ type DrummerEventMap = CustomEventMap<
     };
   }
 >;
-type DrummerEventTarget = TypedEventTarget<DrummerEventMap["events"]>;
+type DrummerEventTarget = TypedEventTarget<DrummerEventMap["localEvents"]>;
 
-export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
+export class Drummer extends TypedEventTarget<DrummerEventMap["localEvents"]> {
   #audioCtx: AudioContext | null = null;
   #masterGain: GainNode | null = null;
   #noiseBuffer: AudioBuffer | null = null;

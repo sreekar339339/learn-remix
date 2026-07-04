@@ -15,7 +15,7 @@ import { dispatchCustomEvent } from "../utils/customEvent.ts";
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   let actionEventTargetRef = (target: HTMLUListElement) => {
     let lastEvent:
-      | TodoActionEventMap["events"]["change"]["detail"]
+      | TodoActionEventMap["localEvents"]["change"]["detail"]
       | undefined;
     addEventListeners(target, handle.signal, {
       "todo:actionSubmitted"({ detail }) {

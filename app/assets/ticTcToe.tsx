@@ -276,7 +276,7 @@ type TTTEventMap = CustomEventMap<
   { namespace: "ttt" }
 >;
 
-type TTTEventTypes = TTTEventMap["namespacedEvents"];
+type TTTEventTypes = TTTEventMap["globalEvents"];
 
 declare global {
   interface HTMLElementEventMap extends TTTEventTypes {}
