@@ -12,7 +12,10 @@ import {
 } from "remix/ui";
 import { render } from "remix/ui/test";
 
-import { dispatchCustomEvent, type CustomEventMap } from "./customEvent.ts";
+import {
+  dispatchCustomEvent,
+  type CustomEventMap,
+} from "./customEvent.ts";
 
 type SearchEventMap = CustomEventMap<
   {
@@ -22,7 +25,7 @@ type SearchEventMap = CustomEventMap<
     querySubmitted: { query: string };
     idle: null;
   },
-  { namespace: "search"; target: HTMLDivElement }
+  { namespace: "test-search" }
 >;
 
 type GestureEventMap = CustomEventMap<
@@ -31,7 +34,7 @@ type GestureEventMap = CustomEventMap<
     moved: { x: number; y: number };
     released: null;
   },
-  { namespace: "gesture"; target: HTMLElement }
+  { namespace: "test-gesture" }
 >;
 
 type PlayerEventMap = CustomEventMap<
@@ -41,15 +44,19 @@ type PlayerEventMap = CustomEventMap<
     stopped: null;
   }
 >;
+type PlayerEventTarget = TypedEventTarget<PlayerEventMap["events"]>;
 
 
 declare global {
-  type GlobalGestureEvents = GestureEventMap['namespacedEvents']
-  interface HTMLElementEventMap extends GlobalGestureEvents {}
+  type GlobalSearchEvents = SearchEventMap["namespacedEvents"];
+  type GlobalGestureEvents = GestureEventMap["namespacedEvents"];
+  interface HTMLElementEventMap
+    extends GlobalSearchEvents,
+      GlobalGestureEvents {}
 }
 
 const gestureMixin = createMixin<HTMLElement>((handle) => {
-  let target: GestureEventMap["target"] | null = null;
+  let target: HTMLElement | null = null;
 
   handle.addEventListener("insert", (event) => {
     target = event.node;
@@ -61,20 +68,20 @@ const gestureMixin = createMixin<HTMLElement>((handle) => {
       mix={[
         on("pointerdown", (event, signal) => {
           if (!target) return;
-          dispatchCustomEvent(target, signal, "gesture:activated", {
+          dispatchCustomEvent(target, signal, "test-gesture:activated", {
             pointerId: event.pointerId,
           });
         }),
         on("pointermove", (event, signal) => {
           if (!target) return;
-          dispatchCustomEvent(target, signal, "gesture:moved", {
+          dispatchCustomEvent(target, signal, "test-gesture:moved", {
             x: event.clientX,
             y: event.clientY,
           });
         }),
         on("pointerup", (_, signal) => {
           if (!target) return;
-          dispatchCustomEvent(target, signal, "gesture:released");
+          dispatchCustomEvent(target, signal, "test-gesture:released");
         }),
       ]}
     />
@@ -82,14 +89,14 @@ const gestureMixin = createMixin<HTMLElement>((handle) => {
 });
 
 function GesturePad(handle: Handle) {
-  let events: GestureEventMap["namespacedEvents"]["gesture:change"]["detail"][] =
+  let events: GestureEventMap["namespacedEvents"]["test-gesture:change"]["detail"][] =
     [];
     
   return () => (
     <button
       type="button"
       data-testid="gesture-pad"
-      mix={[gestureMixin(), on('gesture:change', ({ detail }) => {
+      mix={[gestureMixin(), on("test-gesture:change", ({ detail }) => {
         if ("changes" in detail) return;
         events.push(detail);
         handle.update();
@@ -102,11 +109,11 @@ function GesturePad(handle: Handle) {
 
 class TestPlayer extends TypedEventTarget<PlayerEventMap["events"]> {
   #track: string | null = null;
-  dispatch: PlayerEventMap["dispatcher"];
+  dispatch: dispatchCustomEvent.Dispatcher<PlayerEventTarget>;
 
   constructor(signal: AbortSignal) {
     super();
-    this.dispatch = dispatchCustomEvent(this, signal);
+    this.dispatch = dispatchCustomEvent(this as PlayerEventTarget, signal);
   }
 
   load(track: string) {
@@ -126,10 +133,10 @@ class TestPlayer extends TypedEventTarget<PlayerEventMap["events"]> {
 
 async function fetchBooks(
   query: string,
-  dispatch: SearchEventMap["dispatcher"],
+  dispatch: dispatchCustomEvent.Dispatcher<HTMLDivElement>,
   signal: AbortSignal,
 ) {
-  dispatch("search:querySubmitted", { query });
+  dispatch("test-search:querySubmitted", { query });
   try {
     let resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
       signal,
@@ -137,11 +144,11 @@ async function fetchBooks(
     if (!resp.ok) throw new Error("Network response was not ok");
     let data = await resp.json();
     if (!Array.isArray(data.books) || data.books.length === 0) {
-      return dispatch("search:booksNotFound", { reason: "emptyList" });
+      return dispatch("test-search:booksNotFound", { reason: "emptyList" });
     }
-    dispatch("search:booksFound", { books: data.books });
+    dispatch("test-search:booksFound", { books: data.books });
   } catch (error) {
-    dispatch("search:errorOccurred", error as Error);
+    dispatch("test-search:errorOccurred", error as Error);
   }
 }
 
@@ -150,10 +157,10 @@ function SearchForm(handle: Handle<Props<"div">>) {
     type: "idle",
   };
 
-  let searchTargetRef = (target: SearchEventMap["target"]) => {
+  let searchTargetRef = (target: HTMLDivElement) => {
     let search = (query: string, signal: AbortSignal) => {
       let dispatch = dispatchCustomEvent(target, signal);
-      if (!query) return dispatch("search:idle");
+      if (!query) return dispatch("test-search:idle");
       fetchBooks(query, dispatch, signal);
     };
 
@@ -168,7 +175,7 @@ function SearchForm(handle: Handle<Props<"div">>) {
         let query = String(new FormData(form).get("q") ?? "").trim();
         search(query, signal);
       },
-      "search:change"({ detail }) {
+      "test-search:change"({ detail }) {
         event = detail;
         handle.update();
       },
@@ -198,15 +205,20 @@ type TestAppContext = {
 
 type AppContextEventMap = CustomEventMap<
   TestAppContext,
-  { namespace: "context"; target: HTMLElement }
+  { namespace: "test-context" }
 >;
+type AppContextEventTypes = AppContextEventMap["namespacedEvents"];
+
+declare global {
+  interface HTMLElementEventMap extends AppContextEventTypes {}
+}
 
 function TestAppProvider(
   handle: Handle<
     { children?: RemixNode },
     {
       context: TestAppContext;
-      target: AppContextEventMap["target"];
+      target: HTMLElement;
     }
   >,
 ) {
@@ -214,8 +226,8 @@ function TestAppProvider(
     user: null,
     settings: { layout: "normal", theme: "system" },
   };
-  let target: AppContextEventMap["target"];
-  let dispatch: AppContextEventMap["dispatcherWithoutSignal"];
+  let target: HTMLElement;
+  let dispatch: dispatchCustomEvent.DispatcherWithoutSignal<HTMLElement>;
 
   handle.context.set({
     context,
@@ -224,11 +236,11 @@ function TestAppProvider(
     },
   });
 
-  let appContextRef = (node: AppContextEventMap["target"]) => {
+  let appContextRef = (node: HTMLElement) => {
     target = node;
     dispatch = dispatchCustomEvent(node);
     addEventListeners(node, handle.signal, {
-      "context:change"({ detail }) {
+      "test-context:change"({ detail }) {
         if ("changes" in detail) {
           Object.assign(context, detail.changes);
         } else {
@@ -244,7 +256,7 @@ function TestAppProvider(
         type="button"
         data-action="login"
         mix={on("click", (_, signal) => {
-          dispatch(signal, "context:user", { name: "Ada", age: 37 });
+          dispatch(signal, "test-context:user", { name: "Ada", age: 37 });
         })}
       >
         Login
@@ -253,7 +265,7 @@ function TestAppProvider(
         type="button"
         data-action="theme"
         mix={on("click", (_, signal) => {
-          dispatch(signal, "context:settings", {
+          dispatch(signal, "test-context:settings", {
             layout: "zen",
             theme: "light",
           });
@@ -265,7 +277,7 @@ function TestAppProvider(
         type="button"
         data-action="reset"
         mix={on("click", (_, signal) => {
-          dispatch(signal, "context:change", {
+          dispatch(signal, "test-context:change", {
             changes: {
               user: null,
               settings: { layout: "normal", theme: "system" },
@@ -279,7 +291,7 @@ function TestAppProvider(
         type="button"
         data-action="loadContext"
         mix={on("click", (_, signal) => {
-          dispatch(signal, "context:change", {
+          dispatch(signal, "test-context:change", {
             changes: {
               user: { name: "Bob Lazar", age: 23 },
               settings: { layout: "grid", theme: "dark" },
@@ -300,7 +312,7 @@ function UserDisplay(handle: Handle) {
   let context = provider.context;
   handle.queueTask(() => {
     addEventListeners(provider.target, handle.signal, {
-      "context:user"() {
+      "test-context:user"() {
         updateCount++;
         handle.update();
       },
@@ -320,7 +332,7 @@ function SettingsDisplay(handle: Handle) {
   let context = provider.context;
   handle.queueTask(() => {
     addEventListeners(provider.target, handle.signal, {
-      "context:settings"() {
+      "test-context:settings"() {
         updateCount++;
         handle.update();
       },
@@ -341,7 +353,7 @@ function ContextSnapshot(handle: Handle) {
   let context = provider.context;
   handle.queueTask(() => {
     addEventListeners(provider.target, handle.signal, {
-      "context:change"() {
+      "test-context:change"() {
         updateCount++;
         handle.update();
       },
@@ -383,7 +395,7 @@ describe("dispatchCustomEvent component usage", () => {
         JSON.stringify(
           [
             {
-              event: "gesture:activated",
+              event: "test-gesture:activated",
               type: "activated",
               detail: { pointerId: 7 },
             },
@@ -408,11 +420,11 @@ describe("dispatchCustomEvent component usage", () => {
         JSON.stringify(
           [
             {
-              event: "gesture:activated",
+              event: "test-gesture:activated",
               type: "activated",
               detail: { pointerId: 7 },
             },
-            { event: "gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
+            { event: "test-gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
           ],
           null,
           2,
@@ -428,12 +440,12 @@ describe("dispatchCustomEvent component usage", () => {
         JSON.stringify(
           [
             {
-              event: "gesture:activated",
+              event: "test-gesture:activated",
               type: "activated",
               detail: { pointerId: 7 },
             },
-            { event: "gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
-            { event: "gesture:released", type: "released" },
+            { event: "test-gesture:moved", type: "moved", detail: { x: 20, y: 35 } },
+            { event: "test-gesture:released", type: "released" },
           ],
           null,
           2,
@@ -598,7 +610,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "dune" },
           },
@@ -614,7 +626,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:idle",
+            event: "test-search:idle",
             type: "idle",
           },
           null,
@@ -629,7 +641,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:errorOccurred",
+            event: "test-search:errorOccurred",
             type: "errorOccurred",
             detail: new Error("Network response was not ok"),
           },
@@ -648,7 +660,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:booksNotFound",
+            event: "test-search:booksNotFound",
             type: "booksNotFound",
             detail: { reason: "emptyList" },
           },
@@ -734,7 +746,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "d" },
           },
@@ -752,7 +764,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "du" },
           },
@@ -770,7 +782,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "dun" },
           },
@@ -788,7 +800,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "dune" },
           },
@@ -808,7 +820,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:querySubmitted",
+            event: "test-search:querySubmitted",
             type: "querySubmitted",
             detail: { query: "dune" },
           },
@@ -826,7 +838,7 @@ describe("dispatchCustomEvent component usage", () => {
         result.$("output")?.textContent,
         JSON.stringify(
           {
-            event: "search:booksFound",
+            event: "test-search:booksFound",
             type: "booksFound",
             detail: { books: ["Dune", "Dune Messiah"] },
           },

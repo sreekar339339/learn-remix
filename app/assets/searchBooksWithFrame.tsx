@@ -14,23 +14,22 @@ import {
 } from "./utils/customEvent.ts";
 import { getInput } from "./utils/dom.ts";
 
-type SearchEventMap = CustomEventMap<{
+type SearchWithFrameEventMap = CustomEventMap<{
   queryEmpty: null;
   querySubmitted: { query: string };
-}, { namespace: "search"; target: HTMLDivElement }>;
+}, { namespace: "searchWithFrame" }>;
 
-// type SeachEventTypes = SearchEventMap["namespacedEvents"];
-
-// declare global {
-//   interface HTMLElementEventMap extends SeachEventTypes {}
-// }
+declare global {
+  type SeachEventTypes = SearchWithFrameEventMap["namespacedEvents"];
+  interface HTMLElementEventMap extends SeachEventTypes {}
+}
 
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() || "";
 
-    let searchEventTargetRef = (target: SearchEventMap["target"]) => {
+    let searchEventTargetRef = (target: HTMLDivElement) => {
       addEventListeners(target, handle.signal, {
         submit(evt, signal) {
           evt.preventDefault();
@@ -41,14 +40,14 @@ export const SearchBooksWithFrame = clientEntry(
           dispatch("search:querySubmitted", { query });
           getInput(form)?.select();
         },
-        "search:change"(evt) {
+        "searchWithFrame:change"(evt) {
           searchEvent = evt.detail;
           handle.update();
         },
       });
     };
 
-    let searchEvent: SearchEventMap["events"]["change"]["detail"] = initialQuery
+    let searchEvent: SearchWithFrameEventMap["events"]["change"]["detail"] = initialQuery
     ? {
         type: 'querySubmitted',
         detail: { query: initialQuery },

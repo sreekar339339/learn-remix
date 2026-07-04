@@ -14,7 +14,7 @@ type DraggableEventMap = CustomEventMap<
     start: DragDetail;
     end: DragDetail;
   },
-  { namespace: "rmx:drag"; target: HTMLElement }
+  { namespace: "rmx:drag" }
 >;
 type GlobalDraggableEvents = DraggableEventMap["namespacedEvents"];
 declare global {
@@ -26,7 +26,7 @@ type DraggableProps = {
 
 const baseDraggable = createMixin<HTMLElement, [boolean], DraggableProps>(
   (handle) => {
-    let node: DraggableEventMap["target"] | null = null;
+    let node: HTMLElement | null = null;
     let enabled = true;
     let pointerId: number | null = null;
     let startLeft = 0;

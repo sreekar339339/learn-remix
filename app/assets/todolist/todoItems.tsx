@@ -13,9 +13,7 @@ import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
-  let actionEventTargetRef = (
-    target: TodoActionEventMap["target"] & HTMLUListElement,
-  ) => {
+  let actionEventTargetRef = (target: HTMLUListElement) => {
     let lastEvent:
       | TodoActionEventMap["events"]["change"]["detail"]
       | undefined;

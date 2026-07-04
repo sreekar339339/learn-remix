@@ -25,20 +25,25 @@ type AppContext = {
 
 type AppContextEventMap = CustomEventMap<
   AppContext,
-  { namespace: "context"; target: HTMLBodyElement }
+  { namespace: "context" }
 >;
+
+declare global {
+  type AppContextEventTypes = AppContextEventMap["namespacedEvents"];
+  interface HTMLElementEventMap extends AppContextEventTypes {}
+}
 
 function AppProvider(
   handle: Handle<
     { children?: RemixNode },
-    { target: AppContextEventMap["target"]; context: AppContext }
+    { target: HTMLBodyElement; context: AppContext }
   >,
 ) {
   let appContext: AppContext = {
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
-  let target: AppContextEventMap["target"];
+  let target: HTMLBodyElement;
 
   handle.context.set({
     context: appContext,
@@ -47,7 +52,7 @@ function AppProvider(
     },
   });
 
-  let appContextTargetRef: RefCallback<AppContextEventMap["target"]> = async (
+  let appContextTargetRef: RefCallback<HTMLBodyElement> = async (
     node,
     signal,
   ) => {
@@ -114,20 +119,28 @@ function SomeComponent(handle: Handle) {
 type Theme = {
   value: "light" | "dark";
 };
-type ThemeEventMap = CustomEventMap<
-  Theme,
-  { namespace: "theme"; target: HTMLDivElement }
->;
+
+type ThemeDispatcherWithoutSignal =
+  dispatchCustomEvent.DispatcherWithoutSignal<HTMLDivElement>;
+
+declare global {
+  type ThemeEventMap = CustomEventMap<
+    Theme,
+    { namespace: "theme" }
+  >;
+  type ThemeEventTypes = ThemeEventMap["namespacedEvents"];
+  interface HTMLElementEventMap extends ThemeEventTypes {}
+}
 
 function ThemeProvider(
   handle: Handle<
     { children?: RemixNode },
-    { target: ThemeEventMap["target"]; theme: Theme }
+    { target: HTMLDivElement; theme: Theme }
   >,
 ) {
   let theme: Theme = { value: "dark" };
-  let target: ThemeEventMap["target"];
-  let dispatch: ThemeEventMap["dispatcherWithoutSignal"];
+  let target: HTMLDivElement;
+  let dispatch: ThemeDispatcherWithoutSignal;
 
   handle.context.set({
     theme,
@@ -136,7 +149,7 @@ function ThemeProvider(
     },
   });
 
-  let themeTargetRef: RefCallback<ThemeEventMap["target"]> = (
+  let themeTargetRef: RefCallback<HTMLDivElement> = (
     node,
     signal,
   ) => {

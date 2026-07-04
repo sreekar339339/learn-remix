@@ -15,7 +15,7 @@ import {
 
 async function fetchBooks(
   query: string,
-  dispatch: SearchEventMap["dispatcher"],
+  dispatch: ReturnType<typeof dispatchCustomEvent<HTMLDivElement>>,
   signal: AbortSignal,
 ) {
   try {
@@ -57,19 +57,19 @@ type SearchEventMap = CustomEventMap<
     queryEmpty: null;
     querySubmitted: { query: string };
   },
-  { namespace: "search"; target: HTMLDivElement }
+  { namespace: "search" }
 >;
+// type SearchDispatcher = dispatchCustomEvent.Dispatcher<HTMLDivElement>;
 
-type SearchEventTypes = SearchEventMap["namespacedEvents"];
-
-// declare global {
-//   interface HTMLElementEventMap extends SearchEventTypes {}
-// }
+declare global {
+  type SearchEventTypes = SearchEventMap["namespacedEvents"];
+  interface HTMLElementEventMap extends SearchEventTypes {}
+}
 
 function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
 
-  let searchTargetRef = (target: SearchEventMap["target"]) => {
+  let searchTargetRef = (target: HTMLDivElement) => {
     addEventListeners(target, handle.signal, {
       "search:change"({ detail }) {
         searchEvent = detail;

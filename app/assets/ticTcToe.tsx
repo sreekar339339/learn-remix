@@ -273,7 +273,7 @@ type TTTEventMap = CustomEventMap<
     nextPosition: { position: Position; winner: Result };
     nextFocus: { nodeId: number | "reset" };
   },
-  { namespace: "ttt"; target: HTMLDivElement }
+  { namespace: "ttt" }
 >;
 
 type TTTEventTypes = TTTEventMap["namespacedEvents"];
@@ -288,7 +288,7 @@ function TTT(handle: Handle) {
     winner: null,
   };
 
-  let tttTargetRef = (target: TTTEventMap["target"]) => {
+  let tttTargetRef = (target: HTMLDivElement) => {
     let pendingUpdate: Promise<AbortSignal>;
     addEventListeners(target, handle.signal, {
       click() {},

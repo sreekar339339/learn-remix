@@ -11,6 +11,7 @@ type DrummerEventMap = CustomEventMap<
     };
   }
 >;
+type DrummerEventTarget = TypedEventTarget<DrummerEventMap["events"]>;
 
 export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
   #audioCtx: AudioContext | null = null;
@@ -27,12 +28,15 @@ export class Drummer extends TypedEventTarget<DrummerEventMap["events"]> {
   readonly #lookaheadMs = 25; // how frequently to check (ms)
   readonly #scheduleAheadS = 0.1; // how far ahead to schedule (s)
 
-  dispatch: DrummerEventMap["dispatcher"];
+  dispatch: dispatchCustomEvent.Dispatcher<DrummerEventTarget>;
 
   constructor(tempoBpm: number = 90) {
     super();
     this.#tempoBpm = tempoBpm;
-    this.dispatch = dispatchCustomEvent(this, new AbortController().signal);
+    this.dispatch = dispatchCustomEvent(
+      this as DrummerEventTarget,
+      new AbortController().signal,
+    );
   }
 
   get isPlaying() {

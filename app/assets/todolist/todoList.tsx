@@ -20,7 +20,7 @@ export type TodoActionEventMap = CustomEventMap<
     actionErrored: { error: Error; form?: HTMLFormElement };
     idle: null;
   },
-  { namespace: "todo"; target: HTMLFormElement | HTMLUListElement }
+  { namespace: "todo" }
 >;
 type TodoActionEventTypes = TodoActionEventMap['namespacedEvents']
 

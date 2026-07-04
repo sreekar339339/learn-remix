@@ -8,7 +8,7 @@ type DragReleaseEventMap = CustomEventMap<
   {
     release: { velocityX: number; velocityY: number };
   },
-  { namespace: "drag"; target: HTMLElement }
+  { namespace: "rmx:drag" }
 >;
 
 type DragReleaseEvents = DragReleaseEventMap["namespacedEvents"];
@@ -18,7 +18,7 @@ declare global {
 }
 
 export let dragRelease = createMixin<HTMLElement>((handle) => {
-  let node: DragReleaseEventMap["target"] | undefined;
+  let node: HTMLElement | undefined;
   let tracking = false;
   let velocityX = 0;
   let velocityY = 0;
@@ -55,7 +55,7 @@ export let dragRelease = createMixin<HTMLElement>((handle) => {
         on("pointerup", () => {
           if (!tracking) return;
           tracking = false;
-          dispatchCustomEvent(node!, handle.signal, "drag:release", {
+          dispatchCustomEvent(node!, handle.signal, "rmx:drag:release", {
             velocityX,
             velocityY,
           });
@@ -70,7 +70,7 @@ function DraggableCard() {
     <div
       mix={[
         dragRelease(),
-        on('drag:release', ({detail}) => {
+        on('rmx:drag:release', ({detail}) => {
           console.log('released with velocity:', detail.velocityX, detail.velocityY)
         }),
       ]}
