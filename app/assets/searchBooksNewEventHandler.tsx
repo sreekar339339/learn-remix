@@ -10,6 +10,7 @@ import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
 import {
   type CustomEventMap,
+  type Namespaced,
   dispatchCustomEvent,
 } from "./utils/customEvent.ts";
 
@@ -49,20 +50,16 @@ async function fetchBooks(
   }
 }
 
-type SearchEventMap = CustomEventMap<
-  {
-    booksFound: Array<{ title: string }>;
-    booksNotFound: { reason: "emptyList" | { other: string } };
-    errorOccurred: Error;
-    queryEmpty: null;
-    querySubmitted: { query: string };
-  },
-  { namespace: "search" }
->;
+type SearchEventMap = CustomEventMap<{
+  booksFound: Array<{ title: string }>;
+  booksNotFound: { reason: "emptyList" | { other: string } };
+  errorOccurred: Error;
+  queryEmpty: null;
+  querySubmitted: { query: string };
+}>;
 
 declare global {
-  type SearchEventTypes = SearchEventMap["globalEvents"];
-  interface HTMLElementEventMap extends SearchEventTypes {}
+  interface HTMLElementEventMap extends Namespaced<SearchEventMap, "search"> {}
 }
 
 function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
@@ -83,7 +80,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
     });
   };
 
-  let searchEvent: SearchEventMap["localEvents"]["change"]["detail"] =
+  let searchEvent: SearchEventMap["change"]["detail"] =
     initialQuery
       ? {
           type: "querySubmitted",
@@ -152,8 +149,8 @@ export const SearchBooksNewEventHandlerParent = clientEntry(
     return () => (
       <div
         mix={[
-          on("change", (evt) => {
-            // console.log("in parent", evt.detail);
+          on('search:change', (evt) => {
+            console.log("in parent", evt.detail);
           }),
         ]}
       >

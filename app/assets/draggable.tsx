@@ -2,6 +2,7 @@ import { createMixin, on } from "remix/ui";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
+  type Namespaced,
 } from "./utils/customEvent.ts";
 
 export type DragDetail = {
@@ -9,17 +10,18 @@ export type DragDetail = {
   top: number;
 };
 
-type DraggableEventMap = CustomEventMap<
-  {
-    start: DragDetail;
-    end: DragDetail;
-  },
-  { namespace: DraggableNamespace }
->;
+type DraggableEventMap = CustomEventMap<{
+  start: DragDetail;
+  end: DragDetail;
+}>;
+
 type DraggableNamespace = "rmx:drag";
-type GlobalDraggableEvents = DraggableEventMap["globalEvents"];
+
 declare global {
-  interface HTMLElementEventMap extends GlobalDraggableEvents {}
+  interface HTMLElementEventMap extends Namespaced<
+    DraggableEventMap,
+    DraggableNamespace
+  > {}
 }
 type DraggableProps = {
   on?: Record<string, (event: Event) => void>;
@@ -126,16 +128,13 @@ function readPx(value: string) {
   return parsed;
 }
 
-type eventNameMap = {
-  [K in GlobalDraggableEvents["rmx:drag:change"]["detail"]["event"] &
-    string as K extends `${DraggableNamespace}:${infer Local}`
-    ? Local
-    : never]: K;
+type globalEventNameMap = {
+  [K in DraggableEventMap['change']['detail']['type'] & string]: `${DraggableNamespace}:${K}`;
 };
 
-type DraggableMixin = typeof baseDraggable & eventNameMap;
+type DraggableMixin = typeof baseDraggable & globalEventNameMap;
 
 export const draggable: DraggableMixin = Object.assign(baseDraggable, {
   start: "rmx:drag:start",
   end: "rmx:drag:end",
-} as eventNameMap);
+} satisfies globalEventNameMap);

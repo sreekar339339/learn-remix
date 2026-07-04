@@ -10,22 +10,21 @@ import {
 import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
-import type { CustomEventMap } from "../utils/customEvent.ts";
+import type {
+  CustomEventMap,
+  Namespaced,
+} from "../utils/customEvent.ts";
 import { routes } from "../../routes.ts";
 
-export type TodoActionEventMap = CustomEventMap<
-  {
-    actionSubmitted: { form: HTMLFormElement };
-    actionSucceeded: { form: HTMLFormElement };
-    actionErrored: { error: Error; form?: HTMLFormElement };
-    idle: null;
-  },
-  { namespace: "todo" }
->;
-type TodoActionEventTypes = TodoActionEventMap['globalEvents']
+export type TodoActionEventMap = CustomEventMap<{
+  actionSubmitted: { form: HTMLFormElement };
+  actionSucceeded: { form: HTMLFormElement };
+  actionErrored: { error: Error; form?: HTMLFormElement };
+  idle: null;
+}>;
 
 declare global {
-  interface HTMLElementEventMap extends TodoActionEventTypes {}
+  interface HTMLElementEventMap extends Namespaced<TodoActionEventMap, "todo"> {}
 }
 
 export const TodoList = clientEntry(
@@ -56,7 +55,7 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }, HTMLDivElement>) {
 
 function ActionStatus(handle: Handle<Props<"div"> & { pending?: boolean }>) {
   let spinnerRevealTimeoutId: any;
-  let eventType: keyof TodoActionEventMap['localEvents'] = handle.props.pending
+  let eventType: TodoActionEventMap["change"]["detail"]["type"] = handle.props.pending
     ? "actionSubmitted"
     : "idle";
   let error: Error;

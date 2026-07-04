@@ -4,7 +4,6 @@ import {
   css,
   ref,
   type Handle,
-  type Props,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
@@ -14,9 +13,7 @@ import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   let actionEventTargetRef = (target: HTMLUListElement) => {
-    let lastEvent:
-      | TodoActionEventMap["localEvents"]["change"]["detail"]
-      | undefined;
+    let lastEvent: TodoActionEventMap["change"]["detail"] | undefined;
     addEventListeners(target, handle.signal, {
       "todo:actionSubmitted"({ detail }) {
         getInput(detail.form)?.select();
@@ -27,15 +24,12 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
         const end = input.value.length;
         input.setSelectionRange(end, end);
       },
-      "todo:change"(evt) {
-        lastEvent = evt.detail;
+      "todo:change"({ detail }) {
+        lastEvent = detail;
       },
       focusout(evt, signal) {
         if (!lastEvent) return;
-        if (
-          !(lastEvent.type === 'actionErrored') ||
-          !lastEvent.detail.form
-        )
+        if (!(lastEvent.type === "actionErrored") || !lastEvent.detail.form)
           return;
         let { form } = lastEvent.detail;
         dispatchCustomEvent(target, signal, "todo:idle");
@@ -67,10 +61,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           await handle.frame.reload();
           dispatch("todo:actionSucceeded", { form });
         } catch (error) {
-          dispatch(
-            "todo:actionErrored",
-            { error: error as Error, form },
-          );
+          dispatch("todo:actionErrored", { error: error as Error, form });
         }
       },
     });

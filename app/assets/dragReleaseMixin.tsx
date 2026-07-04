@@ -2,19 +2,18 @@ import { createMixin, on } from "remix/ui";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
+  type Namespaced,
 } from "./utils/customEvent.ts";
 
-type DragReleaseEventMap = CustomEventMap<
-  {
-    release: { velocityX: number; velocityY: number };
-  },
-  { namespace: "rmx:drag" }
->;
-
-type DragReleaseEvents = DragReleaseEventMap["globalEvents"];
+type DragReleaseEventMap = CustomEventMap<{
+  release: { velocityX: number; velocityY: number };
+}>;
 
 declare global {
-  interface HTMLElementEventMap extends DragReleaseEvents {}
+  interface HTMLElementEventMap extends Namespaced<
+    DragReleaseEventMap,
+    "rmx:drag"
+  > {}
 }
 
 export let dragRelease = createMixin<HTMLElement>((handle) => {
@@ -70,10 +69,14 @@ function DraggableCard() {
     <div
       mix={[
         dragRelease(),
-        on('rmx:drag:release', ({detail}) => {
-          console.log('released with velocity:', detail.velocityX, detail.velocityY)
+        on("rmx:drag:release", ({ detail }) => {
+          console.log(
+            "released with velocity:",
+            detail.velocityX,
+            detail.velocityY,
+          );
         }),
       ]}
     />
-  )
+  );
 }

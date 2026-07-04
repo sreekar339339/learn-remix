@@ -4,15 +4,6 @@ const CHANGE_EVENT_NAME = "change" as const;
 
 type Namespace = string;
 
-type CustomEventMapOptions = {
-  namespace?: Namespace;
-};
-
-type NamespaceFromOptions<Options extends CustomEventMapOptions> =
-  Options extends { namespace: infer namespace extends Namespace }
-    ? namespace
-    : never;
-
 type NamespacedCustomEventName<
   EventName extends string,
   namespace extends Namespace,
@@ -35,7 +26,7 @@ type ChangeEventEventField<
   EventRequired extends boolean,
 > = EventRequired extends true
   ? { event: NamespacedCustomEventName<EventName, namespace> }
-  : { event?: EventName | NamespacedCustomEventName<EventName, namespace> };
+  : { event?: EventName | NamespacedCustomEventName<EventName, string> };
 
 type ChangeEventDetailBranchFromMap<
   EventMap extends CustomEventMapBase,
@@ -140,7 +131,7 @@ type NamespacedCustomEventTypes<
 
 type LocalCustomEventTypes<
   EventMap extends CustomEventMapBase,
-  namespace extends Namespace,
+  namespace extends Namespace = never,
 > = {
   [K in typeof CHANGE_EVENT_NAME]: CustomEvent<
     LocalChangeEventDetailFromMap<EventMap, namespace>
@@ -149,21 +140,14 @@ type LocalCustomEventTypes<
   [K in keyof EventMap & string]: CustomEvent<EventMap[K]>;
 };
 
-type CustomEventMapDescriptor<
-  EventTypes extends object,
-  NamespacedEventTypes extends object,
-> = {
-  /**
-   * Local custom event map.
-   * Use for local state such as initial change event details.
-   */
-  localEvents: EventTypes;
-
-  /**
-   * Namespaced custom event map.
-   * Use for global HTMLElementEventMap augmentation.
-   */
-  globalEvents: NamespacedEventTypes;
+type EventDetailMapFromCustomEventTypes<EventTypes extends object> = {
+  [K in keyof EventTypes & string as K extends typeof CHANGE_EVENT_NAME
+    ? never
+    : EventTypes[K] extends CustomEvent
+      ? K
+      : never]: EventTypes[K] extends CustomEvent<infer Detail>
+    ? Detail
+    : never;
 };
 
 type ReservedCustomEventMapKey = typeof CHANGE_EVENT_NAME;
@@ -180,22 +164,24 @@ type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
 
 export type CustomEventMap<
   EventMap extends CustomEventMapBase,
-  Options extends CustomEventMapOptions = {},
   EventTypes extends object = LocalCustomEventTypes<
-    EventMap,
-    NamespaceFromOptions<Options>
-  >,
-  NamespacedEventTypes extends object = NamespacedCustomEventTypes<
-    EventMap,
-    NamespaceFromOptions<Options>
+    EventMap
   >,
 > =
   EventMapReservedKeys<EventMap> extends never
-    ? CustomEventMapDescriptor<
-        EventTypes,
-        NamespacedEventTypes
-      >
+    ? EventTypes
     : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
+
+export type Namespaced<
+  EventTypes extends object,
+  namespace extends Namespace,
+  EventMap extends CustomEventMapBase = EventDetailMapFromCustomEventTypes<EventTypes>,
+  NamespacedEventTypes extends object = NamespacedCustomEventTypes<
+    EventMap,
+    namespace
+  >,
+> =
+  NamespacedEventTypes;
 
 function normalizeDispatchArgs(args: RuntimeDispatchArgs) {
   const [detail, evtInit] = args;

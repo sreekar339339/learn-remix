@@ -5,79 +5,61 @@ import { TypedEventTarget } from "remix/ui";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
+  type Namespaced,
 } from "./customEvent.ts";
 
-type ThemeEventMap = CustomEventMap<
-  {
-    value: "light" | "dark";
-    reset: null;
-  },
-  { namespace: "test-theme" }
->;
-type ThemeEventTypes = ThemeEventMap["globalEvents"];
+type ThemeEventMap = CustomEventMap<{
+  value: "light" | "dark";
+  reset: null;
+}>;
+type ThemeEventTypes = Namespaced<ThemeEventMap, "test-theme">;
 
-type TodoEventMap = CustomEventMap<
-  {
-    actionSubmitted: { form: HTMLFormElement };
-  },
-  { namespace: "test-todo" }
->;
-type TodoEventTypes = TodoEventMap["globalEvents"];
+type TodoEventMap = CustomEventMap<{
+  actionSubmitted: { form: HTMLFormElement };
+}>;
 
-type DragReleaseEventMap = CustomEventMap<
-  {
-    release: { velocityX: number; velocityY: number };
-  },
-  { namespace: "test-drag" }
->;
-type DragReleaseEventTypes = DragReleaseEventMap["globalEvents"];
+type DragReleaseEventMap = CustomEventMap<{
+  release: { velocityX: number; velocityY: number };
+}>;
 
-type SvgDragReleaseEventMap = CustomEventMap<
-  {
-    release: { velocityX: number; velocityY: number };
-  },
-  { namespace: "test-svg-drag" }
->;
-type SvgDragReleaseEventTypes = SvgDragReleaseEventMap["globalEvents"];
+type SvgDragReleaseEventMap = CustomEventMap<{
+  release: { velocityX: number; velocityY: number };
+}>;
 
-type MathDragReleaseEventMap = CustomEventMap<
-  {
-    release: { velocityX: number; velocityY: number };
-  },
-  { namespace: "test-math-drag" }
->;
-type MathDragReleaseEventTypes = MathDragReleaseEventMap["globalEvents"];
+type MathDragReleaseEventMap = CustomEventMap<{
+  release: { velocityX: number; velocityY: number };
+}>;
 
-type LocalDomEventMap = CustomEventMap<
-  {
-    selected: { id: string };
-  }
->;
+type LocalDomEventMap = CustomEventMap<{
+  selected: { id: string };
+}>;
 
-type PlainEventTargetEventMap = CustomEventMap<
-  {
-    ready: { source: "worker" };
-  }
->;
+type PlainEventTargetEventMap = CustomEventMap<{
+  ready: { source: "worker" };
+}>;
 
-type ReservedChangeEventMap = CustomEventMap<
-  {
-    change: { value: string };
-  },
-  { namespace: "reserved" }
->;
+type ReservedChangeEventMap = CustomEventMap<{
+  change: { value: string };
+}>;
 
 declare global {
   interface HTMLElementEventMap
-    extends ThemeEventTypes,
-      TodoEventTypes,
-      DragReleaseEventTypes {
-    selected: LocalDomEventMap["localEvents"]["selected"];
+    extends
+      ThemeEventTypes,
+      Namespaced<TodoEventMap, "test-todo">,
+      Namespaced<DragReleaseEventMap, "test-drag"> {
+    selected: LocalDomEventMap["selected"];
   }
 
-  interface SVGElementEventMap extends SvgDragReleaseEventTypes {}
+  interface SVGElementEventMap extends Namespaced<
+    SvgDragReleaseEventMap,
+    "test-svg-drag"
+  > {}
 
-  interface ElementEventMap extends MathDragReleaseEventTypes {}
+  interface ElementEventMap extends Namespaced<
+    MathDragReleaseEventMap,
+    "test-math-drag"
+  > {}
 }
 
 type ObservedEvent = {
@@ -100,7 +82,7 @@ function observe(target: EventTarget, name: string, events: ObservedEvent[]) {
 }
 
 describe("dispatchCustomEvent", () => {
-  it("exposes descriptor types for each partial application level", () => {
+  it("exposes dispatcher types for each partial application level", () => {
     let target = document.createElement("div");
     let signal = new AbortController().signal;
 
@@ -115,7 +97,7 @@ describe("dispatchCustomEvent", () => {
 
   it("reserves the local change event name for aggregate change details", () => {
     // @ts-expect-error event maps cannot expose a user-defined local "change" event.
-    let reservedEvents: ReservedChangeEventMap["localEvents"] = {};
+    let reservedEvents: ReservedChangeEventMap = {};
 
     assert.deepEqual(reservedEvents, {});
   });
@@ -129,7 +111,12 @@ describe("dispatchCustomEvent", () => {
 
     // @ts-expect-error native events are not valid dispatchCustomEvent names.
     dispatchCustomEvent(target, signal, "click");
-    let result = dispatchCustomEvent(target, signal, "test-theme:value", "light");
+    let result = dispatchCustomEvent(
+      target,
+      signal,
+      "test-theme:value",
+      "light",
+    );
 
     assert.equal(result, true);
     assert.deepEqual(events, [
@@ -143,27 +130,27 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("exposes local and namespaced change detail branches", () => {
-    let localEventDetail: ThemeEventMap["localEvents"]["change"]["detail"] = {
+    let localEventDetail: ThemeEventMap["change"]["detail"] = {
       type: "value",
       detail: "dark",
     };
-    let localNoDetailEvent: ThemeEventMap["localEvents"]["change"]["detail"] = {
+    let localNoDetailEvent: ThemeEventMap["change"]["detail"] = {
       type: "reset",
     };
-    let eventDetail: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
+    let eventDetail: ThemeEventTypes["test-theme:change"]["detail"] = {
       event: "test-theme:value",
       type: "value",
       detail: "dark",
     };
-    let noDetailEvent: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
+    let noDetailEvent: ThemeEventTypes["test-theme:change"]["detail"] = {
       event: "test-theme:reset",
       type: "reset",
     };
-    let changesDetail: ThemeEventMap["localEvents"]["change"]["detail"] = {
+    let changesDetail: ThemeEventMap["change"]["detail"] = {
       changes: { value: "light" },
     };
     // @ts-expect-error change details allow either event/detail or changes, not both.
-    let invalidDetail: ThemeEventMap["globalEvents"]["test-theme:change"]["detail"] = {
+    let invalidDetail: ThemeEventTypes["test-theme:change"]["detail"] = {
       event: "test-theme:value",
       type: "value",
       detail: "dark",
@@ -172,8 +159,15 @@ describe("dispatchCustomEvent", () => {
 
     assert.deepEqual(localEventDetail, { type: "value", detail: "dark" });
     assert.deepEqual(localNoDetailEvent, { type: "reset" });
-    assert.deepEqual(eventDetail, { event: "test-theme:value", type: "value", detail: "dark" });
-    assert.deepEqual(noDetailEvent, { event: "test-theme:reset", type: "reset" });
+    assert.deepEqual(eventDetail, {
+      event: "test-theme:value",
+      type: "value",
+      detail: "dark",
+    });
+    assert.deepEqual(noDetailEvent, {
+      event: "test-theme:reset",
+      type: "reset",
+    });
     assert.deepEqual(changesDetail, { changes: { value: "light" } });
     assert.deepEqual(invalidDetail, {
       event: "test-theme:value",
@@ -203,19 +197,31 @@ describe("dispatchCustomEvent", () => {
     observe(mathElement, "test-math-drag:release", mathEvents);
 
     let dispatchFromHTMLElement = dispatchCustomEvent(htmlElement, signal);
-    let dispatchFromSvgCircleElement = dispatchCustomEvent(svgCircleElement, signal);
+    let dispatchFromSvgCircleElement = dispatchCustomEvent(
+      svgCircleElement,
+      signal,
+    );
     let dispatchFromMathElement = dispatchCustomEvent(mathElement, signal);
 
     assert.equal(
-      dispatchFromHTMLElement("test-drag:release", { velocityX: 3, velocityY: 4 }),
+      dispatchFromHTMLElement("test-drag:release", {
+        velocityX: 3,
+        velocityY: 4,
+      }),
       true,
     );
     assert.equal(
-      dispatchFromSvgCircleElement("test-svg-drag:release", { velocityX: 9, velocityY: 10 }),
+      dispatchFromSvgCircleElement("test-svg-drag:release", {
+        velocityX: 9,
+        velocityY: 10,
+      }),
       true,
     );
     assert.equal(
-      dispatchFromMathElement("test-math-drag:release", { velocityX: 11, velocityY: 12 }),
+      dispatchFromMathElement("test-math-drag:release", {
+        velocityX: 11,
+        velocityY: 12,
+      }),
       true,
     );
     assert.deepEqual(htmlEvents[0].detail, { velocityX: 3, velocityY: 4 });
@@ -224,7 +230,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("supports plain EventTarget targets for non-DOM use cases", () => {
-    let target = new TypedEventTarget<PlainEventTargetEventMap["localEvents"]>();
+    let target = new TypedEventTarget<PlainEventTargetEventMap>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -266,7 +272,7 @@ describe("dispatchCustomEvent", () => {
   });
 
   it("normalizes local change dispatch arguments when event is omitted", () => {
-    let target = new TypedEventTarget<PlainEventTargetEventMap["localEvents"]>();
+    let target = new TypedEventTarget<PlainEventTargetEventMap>();
     let signal = new AbortController().signal;
     let events: ObservedEvent[] = [];
 
@@ -275,7 +281,7 @@ describe("dispatchCustomEvent", () => {
 
     let dispatch = dispatchCustomEvent(target, signal);
     // @ts-expect-error local change dispatch requires type when event is omitted.
-    let invalidChangeDetail: PlainEventTargetEventMap["localEvents"]["change"]["detail"] = {
+    let invalidChangeDetail: PlainEventTargetEventMap["change"]["detail"] = {
       event: "ready",
       detail: { source: "worker" },
     };
@@ -314,7 +320,12 @@ describe("dispatchCustomEvent", () => {
     observe(target, "test-theme:value", events);
     observe(target, "test-theme:change", events);
 
-    let result = dispatchCustomEvent(target, signal, "test-theme:value", "light");
+    let result = dispatchCustomEvent(
+      target,
+      signal,
+      "test-theme:value",
+      "light",
+    );
 
     assert.equal(result, true);
     assert.deepEqual(events, [
@@ -362,10 +373,7 @@ describe("dispatchCustomEvent", () => {
         cancelable: true,
       },
     ]);
-    assert.equal(
-      Object.hasOwn(events[1].detail as object, "detail"),
-      false,
-    );
+    assert.equal(Object.hasOwn(events[1].detail as object, "detail"), false);
   });
 
   it("supports the bound dispatcher form used by component refs", () => {
@@ -519,18 +527,13 @@ describe("dispatchCustomEvent", () => {
     observe(target, "test-theme:reset", events);
     observe(target, "test-theme:change", events);
 
-    dispatchCustomEvent(
-      target,
-      signal,
-      "test-theme:change",
-      { event: "test-theme:value", detail: "dark" },
-    );
-    dispatchCustomEvent(
-      target,
-      signal,
-      "test-theme:change",
-      { changes: { value: "light", reset: null } },
-    );
+    dispatchCustomEvent(target, signal, "test-theme:change", {
+      event: "test-theme:value",
+      detail: "dark",
+    });
+    dispatchCustomEvent(target, signal, "test-theme:change", {
+      changes: { value: "light", reset: null },
+    });
 
     assert.deepEqual(
       events.map((event) => event.type),
@@ -563,16 +566,11 @@ describe("dispatchCustomEvent", () => {
     observe(target, "test-theme:value", events);
     observe(target, "test-theme:change", events);
 
-    dispatchCustomEvent(
-      target,
-      signal,
-      "test-theme:change",
-      {
-        event: "test-theme:value",
-        type: "reset",
-        detail: "dark",
-      } as unknown as ThemeEventMap["globalEvents"]["test-theme:change"]["detail"],
-    );
+    dispatchCustomEvent(target, signal, "test-theme:change", {
+      event: "test-theme:value",
+      type: "reset",
+      detail: "dark",
+    } as unknown as ThemeEventTypes["test-theme:change"]["detail"]);
 
     assert.deepEqual(events, [
       {
@@ -607,12 +605,14 @@ describe("dispatchCustomEvent", () => {
       observedTypes.push(event.type);
     });
 
-    let result = dispatchCustomEvent(target, signal, "test-theme:value", "dark");
+    let result = dispatchCustomEvent(
+      target,
+      signal,
+      "test-theme:value",
+      "dark",
+    );
 
     assert.equal(result, false);
-    assert.deepEqual(observedTypes, [
-      "test-theme:value",
-      "test-theme:change",
-    ]);
+    assert.deepEqual(observedTypes, ["test-theme:value", "test-theme:change"]);
   });
 });

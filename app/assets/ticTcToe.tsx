@@ -5,6 +5,7 @@ import {
   css,
   on,
   ref,
+  TypedEventTarget,
   type Dispatched,
   type Handle,
 } from "remix/ui";
@@ -268,42 +269,30 @@ export const TicTacToe = clientEntry(
 
 type Position = Record<number, Player>;
 
-type TTTEventMap = CustomEventMap<
-  {
-    nextPosition: { position: Position; winner: Result };
-    nextFocus: { nodeId: number | "reset" };
-  },
-  { namespace: "ttt" }
->;
-
-type TTTEventTypes = TTTEventMap["globalEvents"];
-
-declare global {
-  interface HTMLElementEventMap extends TTTEventTypes {}
-}
+type TTTEventMap = CustomEventMap<{
+  nextPosition: { position: Position; winner: Result };
+  nextFocus: { nodeId: number | "reset" };
+}>;
 
 function TTT(handle: Handle) {
-  let nextPosition: TTTEventTypes["ttt:nextPosition"]["detail"] = {
+  let nextPosition: TTTEventMap["nextPosition"]["detail"] = {
     position: {},
     winner: null,
   };
-
-  let tttTargetRef = (target: HTMLDivElement) => {
-    let pendingUpdate: Promise<AbortSignal>;
-    addEventListeners(target, handle.signal, {
-      click() {},
-      async "ttt:change"({ detail }) {
-        if ("changes" in detail) return;
-        if (detail.type === 'nextPosition') {
-          nextPosition = detail.detail;
-          pendingUpdate = handle.update();
-        } else {
-          await pendingUpdate;
-          nodeIdMap[detail.detail.nodeId].focus();
-        }
-      },
-    });
-  };
+  let gameTarget = new TypedEventTarget<TTTEventMap>
+  let pendingUpdate: Promise<AbortSignal>;
+  addEventListeners(gameTarget, handle.signal, {
+    async change({ detail }) {
+      if ("changes" in detail) return;
+      if (detail.type === 'nextPosition') {
+        nextPosition = detail.detail;
+        pendingUpdate = handle.update();
+      } else {
+        await pendingUpdate;
+        nodeIdMap[detail.detail.nodeId].focus();
+      }
+    },
+  });
 
   let nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
     reset: HTMLElement;
@@ -319,7 +308,6 @@ function TTT(handle: Handle) {
           flexDirection: "column",
           gap: "36px",
         }),
-        ref(tttTargetRef),
       ]}
     >
       <div
