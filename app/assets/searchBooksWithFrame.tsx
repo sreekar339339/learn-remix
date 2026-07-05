@@ -9,7 +9,7 @@ import {
   on,
 } from "remix/ui";
 import { routes } from "../routes.ts";
-import { match, P } from "ts-pattern";
+import { match } from "ts-pattern";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
@@ -27,12 +27,12 @@ export const SearchBooksWithFrame = clientEntry(
     let searchTarget = new TypedEventTarget<SearchEventMap>();
     addEventListeners(searchTarget, handle.signal, {
       change(evt) {
-        searchEvent = evt.detail;
+        searchEvent = evt.detail.event;
         handle.update();
       },
     });
     let initialQuery = handle.props.initialQuery?.trim() || "";
-    let searchEvent: SearchEventMap["change"]["detail"] = initialQuery
+    let searchEvent: SearchEventMap["change"]["detail"]["event"] = initialQuery
       ? {
           type: "querySubmitted",
           detail: { query: initialQuery },
@@ -69,8 +69,7 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         {match(searchEvent)
-          .with({ changes: P._ }, () => null)
-          .with({ type: "queryEmpty" }, () => (
+          .with({ type: "queryEmpty" }, undefined, () => (
             <p>Enter the title of any book.</p>
           ))
           .with({ type: "querySubmitted" }, ({ detail: { query } }) => (

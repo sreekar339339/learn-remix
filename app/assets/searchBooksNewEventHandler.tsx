@@ -69,12 +69,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let searchTargetRef: RefCallback<HTMLInputElement> = (target, signal) => {
     addEventListeners(target, signal, {
       "search:change"({ detail }) {
-        searchEvent = detail;
-        if (searchEvent.type === 'querySubmitted') {
-          target.classList.add('pending')
-        } else {
-          target.classList.remove('pending')
-        }
+        searchEvent = detail.event;
         handle.update();
       },
       input(_, signal) {
@@ -88,13 +83,12 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
     target.dispatchEvent(new Event("input"));
   };
 
-  let searchEvent: SearchEventMap["change"]["detail"] =
-    initialQuery
-      ? {
-          type: "querySubmitted",
-          detail: { query: initialQuery },
-        }
-      : { type: "queryEmpty" };
+  let searchEvent: SearchEventMap["change"]["detail"]["event"] = initialQuery
+    ? {
+        type: "querySubmitted",
+        detail: { query: initialQuery },
+      }
+    : { type: "queryEmpty" };
 
   return () => (
     <>
@@ -103,11 +97,11 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
         <input
           type="text"
           defaultValue={initialQuery}
+          class={searchEvent?.type === 'querySubmitted' ? 'pending': ''}
           mix={[
             css({
               padding: 4,
-              '&.pending':{
-                // backgroundColor: "var(--surface-4)",
+              "&.pending": {
                 backgroundImage:
                   "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
                 backgroundSize: "220% 100%",
@@ -123,8 +117,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
         />
       </label>
       {match(searchEvent)
-        .with({ changes: P._ }, () => null)
-        .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
+        .with({ type: "queryEmpty" }, undefined, () => <p>Enter the title of any book.</p>)
         .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
           <p>fetching books with title containing {query}...</p>
         ))
@@ -165,7 +158,7 @@ export const SearchBooksNewEventHandlerParent = clientEntry(
     return () => (
       <div
         mix={[
-          on('search:change', (evt) => {
+          on("search:change", (evt) => {
             console.log("in parent", evt.detail);
           }),
         ]}

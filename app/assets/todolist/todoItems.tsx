@@ -17,27 +17,29 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   let listRef: RefCallback<HTMLUListElement> = (list, signal) => {
     let actionTarget = new TypedEventTarget<TodoActionEventMap>
     addEventListeners(actionTarget, signal, {
-      actionSubmitted({ detail }) {
-        let input = getInput(detail.form);
-        input?.select();
-        input?.classList.add("pending");
-      },
-      actionSucceeded({ detail }) {
-        let input = getInput(detail.form);
-        if (!input) return;
-        input.classList.remove("pending");
-        const end = input.value.length;
-        input.setSelectionRange(end, end);
-      },
-      actionErrored({ detail }) {
-        let input = getInput(detail.form);
-        if (!input) return
-        input?.classList.remove("pending");
-        input.value = input.defaultValue
-      },
-      // change(evt) {
-      //   todolistTarget.dispatchEvent(new CustomEvent(evt.type, evt))
-      // }
+      change(evt) {
+        if (!evt.detail.event) return
+        let { type, detail } = evt.detail.event
+        let input = getInput(detail.form)
+        if (input) {
+          if (type === 'actionSubmitted') {
+            input.select();
+            input.classList.add("pending");
+            input.disabled = true
+          } else {
+            if (type === 'actionSucceeded') {
+              const end = input.value.length;
+              input.setSelectionRange(end, end);
+            } 
+            if (type === 'actionErrored') {
+              input.value = input.defaultValue
+            }
+            input.classList.remove("pending");
+            input.disabled = false
+          }
+        }
+        list.parentElement?.dispatchEvent(new CustomEvent(evt.type, evt))
+      }
     })
     addEventListeners(list, signal, {
       focusout(evt) {

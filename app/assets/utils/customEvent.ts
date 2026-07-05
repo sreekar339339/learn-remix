@@ -23,32 +23,38 @@ type StrictUnion<T, TAll = T> = T extends object
 type ChangeEventEventField<
   EventName extends string,
   namespace extends Namespace,
-  EventRequired extends boolean,
-> = EventRequired extends true
-  ? { event: NamespacedCustomEventName<EventName, namespace> }
-  : { event?: EventName | NamespacedCustomEventName<EventName, string> };
+  NamespacedTypeRequired extends boolean,
+> = NamespacedTypeRequired extends true
+  ? {
+      type: EventName;
+      namespacedType: NamespacedCustomEventName<EventName, namespace>;
+    }
+  : {
+      type: EventName;
+      namespacedType?: NamespacedCustomEventName<EventName, string>;
+    };
 
 type ChangeEventDetailBranchFromMap<
   EventMap extends CustomEventMapBase,
   namespace extends Namespace,
-  EventRequired extends boolean,
+  NamespacedTypeRequired extends boolean,
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
-    ? ChangeEventEventField<K, namespace, EventRequired> & {
-        type: K;
+    ? {
+        event: ChangeEventEventField<K, namespace, NamespacedTypeRequired> & {
+          detail?: never;
+        };
         changes?: never;
-        detail?: never;
       }
-    : ChangeEventEventField<K, namespace, EventRequired> & {
-        type: K;
-        detail: EventMap[K];
+    : {
+        event: ChangeEventEventField<K, namespace, NamespacedTypeRequired> & {
+          detail: EventMap[K];
+        };
         changes?: never;
       };
 }[keyof EventMap & string] | {
   changes: ChangeEventChangesFromMap<EventMap>;
   event?: never;
-  type?: never;
-  detail?: never;
 };
 
 type ChangeEventDetailFromMap<
@@ -76,18 +82,22 @@ type DispatchDetailFor<
 > = T extends `${string}:${typeof CHANGE_EVENT_NAME}`
   ? ChangeDispatchDetail<DetailFor<EventTypes, T>, "type">
   : T extends typeof CHANGE_EVENT_NAME
-    ? ChangeDispatchDetail<DetailFor<EventTypes, T>, "event">
+    ? DetailFor<EventTypes, T>
   : DetailFor<EventTypes, T>;
 
 type ChangeDispatchDetail<
   Detail,
-  OptionalKey extends "event" | "type",
+  OptionalKey extends "type",
 > = Detail extends {
   changes: unknown;
 }
   ? Detail
-  : Detail extends { [K in OptionalKey]?: infer Value }
-    ? Omit<Detail, OptionalKey> & { [K in OptionalKey]?: Value }
+  : Detail extends { event: infer Event }
+    ? Omit<Detail, "event"> & {
+        event: Event extends { [K in OptionalKey]?: infer Value }
+          ? Omit<Event, OptionalKey> & { [K in OptionalKey]?: Value }
+          : Event;
+      }
     : Detail;
 
 type DispatchCustomEventArgs<
@@ -224,6 +234,10 @@ function getChangeEventType(name: string) {
   return name.split(":").at(-1) ?? name;
 }
 
+function getNamespacedEventName(name: string) {
+  return name.includes(":") ? name : undefined;
+}
+
 function isChangeEventName(name: string) {
   const parts = name.split(":");
   return parts[parts.length - 1] === CHANGE_EVENT_NAME;
@@ -237,23 +251,44 @@ function normalizeChangeEventDetail(detail: unknown) {
   if (
     !detail ||
     typeof detail !== "object" ||
-    (!("event" in detail) && !("type" in detail))
+    !("event" in detail)
   ) {
     return detail;
   }
 
-  const event = "event" in detail && typeof detail.event === "string"
-    ? detail.event
-    : "type" in detail && typeof detail.type === "string"
-      ? detail.type
-      : undefined;
+  if (!detail.event || typeof detail.event !== "object") {
+    if (typeof detail.event !== "string") return detail;
 
-  if (!event) return detail;
+    return {
+      event: {
+        namespacedType: detail.event,
+        type: getChangeEventType(detail.event),
+        ...("detail" in detail ? { detail: detail.detail } : {}),
+      },
+    };
+  }
+
+  const event = detail.event;
+  const namespacedType =
+    "namespacedType" in event && typeof event.namespacedType === "string"
+      ? event.namespacedType
+      : undefined;
+  const type =
+    namespacedType
+      ? getChangeEventType(namespacedType)
+      : "type" in event && typeof event.type === "string"
+        ? event.type
+        : undefined;
+
+  if (!type) return detail;
 
   return {
     ...detail,
-    event,
-    type: getChangeEventType(event),
+    event: {
+      ...event,
+      type,
+      ...(namespacedType ? { namespacedType } : {}),
+    },
   };
 }
 
@@ -299,16 +334,33 @@ function dispatchGranularEventFromChangeDetail(
     return result;
   }
 
-  if (!("event" in detail) || typeof detail.event !== "string") {
+  if (
+    !("event" in detail) ||
+    !detail.event ||
+    typeof detail.event !== "object"
+  ) {
     return true;
   }
 
+  const event = detail.event;
+  const type = "type" in event && typeof event.type === "string"
+    ? event.type
+    : undefined;
+  const eventName =
+    "namespacedType" in event && typeof event.namespacedType === "string"
+      ? event.namespacedType
+      : type
+        ? getEventNameFromChangeEventName(changeEventName, type)
+        : undefined;
+
+  if (!eventName) return true;
+
   return dispatchSingleCustomEvent(
     target,
-    detail.event,
+    eventName,
     init,
-    "detail" in detail ? detail.detail : undefined,
-    "detail" in detail,
+    "detail" in event ? event.detail : undefined,
+    "detail" in event,
   );
 }
 
@@ -358,13 +410,17 @@ function dispatchCustomEventImpl(
 
   const changeDetail = hasExplicitDetail
     ? {
-        event: name,
-        type: getChangeEventType(name),
-        detail,
+        event: {
+          type: getChangeEventType(name),
+          ...(getNamespacedEventName(name) ? { namespacedType: name } : {}),
+          detail,
+        },
       }
     : {
-        event: name,
-        type: getChangeEventType(name),
+        event: {
+          type: getChangeEventType(name),
+          ...(getNamespacedEventName(name) ? { namespacedType: name } : {}),
+        },
       };
 
   const changeResult = dispatchSingleCustomEvent(

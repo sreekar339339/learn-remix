@@ -283,13 +283,12 @@ function TTT(handle: Handle) {
   let pendingUpdate: Promise<AbortSignal>;
   addEventListeners(gameTarget, handle.signal, {
     async change({ detail }) {
-      if ("changes" in detail) return;
-      if (detail.type === 'nextPosition') {
-        nextPosition = detail.detail;
+      if (detail.event?.type === 'nextPosition') {
+        nextPosition = detail.event.detail;
         pendingUpdate = handle.update();
-      } else {
+      } else if (detail.event?.type === 'nextFocus') {
         await pendingUpdate;
-        nodeIdMap[detail.detail.nodeId].focus();
+        nodeIdMap[detail.event.detail.nodeId].focus();
       }
     },
   });

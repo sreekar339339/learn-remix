@@ -11,17 +11,13 @@ import {
 import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
-import type {
-  CustomEventMap,
-  Namespaced,
-} from "../utils/customEvent.ts";
+import type { CustomEventMap } from "../utils/customEvent.ts";
 import { routes } from "../../routes.ts";
 
 export type TodoActionEventMap = CustomEventMap<{
   actionSubmitted: { form: HTMLFormElement };
   actionSucceeded: { form: HTMLFormElement };
   actionErrored: { error: Error; form: HTMLFormElement };
-  idle: null;
 }>;
 
 export const TodoList = clientEntry(
@@ -31,27 +27,27 @@ export const TodoList = clientEntry(
   },
 );
 
-export function _TodoList(handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>) {
-  let actionLogger = new TypedEventTarget<TodoActionEventMap>
-  addEventListeners(actionLogger, handle.signal, {
-    change({detail}) {
-      console.log(detail)
-    }
-  })
-  handle.context.set(actionLogger)
+export function _TodoList(
+  handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
+) {
   return () => (
-    <>
+    <div
+      mix={ref((node, signal) =>
+        node.addEventListener("change", console.log, { signal }),
+      )}
+    >
       <AddTodo />
       <Frame
         name="TodoItems"
         src={routes.todolist.todos.index.href()}
         fallback={
-          <div mix={css({display: 'flex', alignItems: 'center'})}>
-            <Glyph name="spinner" height={24} width={24} />&nbsp;Loading todos...
+          <div mix={css({ display: "flex", alignItems: "center" })}>
+            <Glyph name="spinner" height={24} width={24} />
+            &nbsp;Loading todos...
           </div>
         }
       />
       {/* <TodoItems todos={handle.props.todos} /> */}
-    </>
+    </div>
   );
 }

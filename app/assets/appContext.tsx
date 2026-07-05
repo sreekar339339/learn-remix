@@ -38,10 +38,10 @@ function AppProvider(
 
   addEventListeners(target, handle.signal, {
     change({ detail }) {
-      if ("changes" in detail) {
-        Object.assign(appContext, detail.changes);
+      if (detail.event) {
+        Object.assign(appContext, { [detail.event.type]: detail.event.detail });
       } else {
-        Object.assign(appContext, { [detail.type]: detail.detail });
+        Object.assign(appContext, detail.changes);
       }
     },
   });

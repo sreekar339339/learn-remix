@@ -11,25 +11,25 @@ import { routes } from "../../routes.ts";
 import type { TodoActionEventMap } from "./todoList.tsx";
 import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { match, P } from "ts-pattern";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
   let actionTarget = new TypedEventTarget<TodoActionEventMap>();
   addEventListeners(actionTarget, handle.signal, {
-    change({detail}) {
-      if ('changes' in detail) return
-      let input = detail.detail ? getInput(detail.detail.form) : null
-      if (detail.type === 'actionSubmitted') {
-        input?.select();
-        input?.classList.add("pending");
-        input!.disabled = true
+    change(evt) {
+      if (!evt.detail.event) return
+      let { type, detail } = evt.detail.event
+      let input = getInput(detail.form)!
+      if (type === 'actionSubmitted') {
+        input.select();
+        input.classList.add("pending");
+        input.disabled = true
         return
       }
-      input?.classList.remove("pending");
-      input!.disabled = false
-      if (detail.type === 'actionSucceeded') {
-        detail.detail.form.reset();
+      if (type === 'actionSucceeded') {
+        detail.form.reset();
       }
+      input.classList.remove("pending");
+      input.disabled = false
     }
   });
   let formRef: RefCallback<HTMLFormElement> = (form, signal) => {
@@ -39,7 +39,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         let dispatch = dispatchCustomEvent(actionTarget, signal);
         let form = evt.currentTarget;
         let formData = new FormData(form, evt.submitter);
-        if (formData.get("text") === "") return void dispatch("idle");
+        if (formData.get("text") === "") return;
         let formAction = new URL(form.action);
         formData.set("redirectTo", "none");
         try {

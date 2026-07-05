@@ -131,48 +131,64 @@ describe("dispatchCustomEvent", () => {
 
   it("exposes local and namespaced change detail branches", () => {
     let localEventDetail: ThemeEventMap["change"]["detail"] = {
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        detail: "dark",
+      },
     };
     let localNoDetailEvent: ThemeEventMap["change"]["detail"] = {
-      type: "reset",
+      event: { type: "reset" },
     };
     let eventDetail: ThemeEventTypes["test-theme:change"]["detail"] = {
-      event: "test-theme:value",
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
     };
     let noDetailEvent: ThemeEventTypes["test-theme:change"]["detail"] = {
-      event: "test-theme:reset",
-      type: "reset",
+      event: {
+        type: "reset",
+        namespacedType: "test-theme:reset",
+      },
     };
     let changesDetail: ThemeEventMap["change"]["detail"] = {
       changes: { value: "light" },
     };
     // @ts-expect-error change details allow either event/detail or changes, not both.
     let invalidDetail: ThemeEventTypes["test-theme:change"]["detail"] = {
-      event: "test-theme:value",
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
       changes: { value: "dark" as const },
     };
 
-    assert.deepEqual(localEventDetail, { type: "value", detail: "dark" });
-    assert.deepEqual(localNoDetailEvent, { type: "reset" });
+    assert.deepEqual(localEventDetail, {
+      event: { type: "value", detail: "dark" },
+    });
+    assert.deepEqual(localNoDetailEvent, { event: { type: "reset" } });
     assert.deepEqual(eventDetail, {
-      event: "test-theme:value",
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
     });
     assert.deepEqual(noDetailEvent, {
-      event: "test-theme:reset",
-      type: "reset",
+      event: {
+        type: "reset",
+        namespacedType: "test-theme:reset",
+      },
     });
     assert.deepEqual(changesDetail, { changes: { value: "light" } });
     assert.deepEqual(invalidDetail, {
-      event: "test-theme:value",
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
       changes: { value: "dark" },
     });
   });
@@ -280,21 +296,25 @@ describe("dispatchCustomEvent", () => {
     observe(target, "change", events);
 
     let dispatch = dispatchCustomEvent(target, signal);
-    // @ts-expect-error local change dispatch requires type when event is omitted.
     let invalidChangeDetail: PlainEventTargetEventMap["change"]["detail"] = {
-      event: "ready",
-      detail: { source: "worker" },
+      // @ts-expect-error local change dispatch requires type when event is omitted.
+      event: {
+        detail: { source: "worker" },
+      },
     };
 
-    dispatch("change", { type: "ready", detail: { source: "worker" } });
+    dispatch("change", {
+      event: { type: "ready", detail: { source: "worker" } },
+    });
 
     assert.deepEqual(events, [
       {
         type: "change",
         detail: {
-          event: "ready",
-          type: "ready",
-          detail: { source: "worker" },
+          event: {
+            type: "ready",
+            detail: { source: "worker" },
+          },
         },
         bubbles: true,
         cancelable: true,
@@ -307,8 +327,9 @@ describe("dispatchCustomEvent", () => {
       },
     ]);
     assert.deepEqual(invalidChangeDetail, {
-      event: "ready",
-      detail: { source: "worker" },
+      event: {
+        detail: { source: "worker" },
+      },
     });
   });
 
@@ -338,9 +359,11 @@ describe("dispatchCustomEvent", () => {
       {
         type: "test-theme:change",
         detail: {
-          event: "test-theme:value",
-          type: "value",
-          detail: "light",
+          event: {
+            type: "value",
+            namespacedType: "test-theme:value",
+            detail: "light",
+          },
         },
         bubbles: true,
         cancelable: true,
@@ -368,7 +391,12 @@ describe("dispatchCustomEvent", () => {
       },
       {
         type: "test-theme:change",
-        detail: { event: "test-theme:reset", type: "reset" },
+        detail: {
+          event: {
+            type: "reset",
+            namespacedType: "test-theme:reset",
+          },
+        },
         bubbles: true,
         cancelable: true,
       },
@@ -399,9 +427,11 @@ describe("dispatchCustomEvent", () => {
       {
         type: "test-todo:change",
         detail: {
-          event: "test-todo:actionSubmitted",
-          type: "actionSubmitted",
-          detail: { form },
+          event: {
+            type: "actionSubmitted",
+            namespacedType: "test-todo:actionSubmitted",
+            detail: { form },
+          },
         },
         bubbles: true,
         cancelable: true,
@@ -433,9 +463,11 @@ describe("dispatchCustomEvent", () => {
       {
         type: "test-todo:change",
         detail: {
-          event: "test-todo:actionSubmitted",
-          type: "actionSubmitted",
-          detail: { form },
+          event: {
+            type: "actionSubmitted",
+            namespacedType: "test-todo:actionSubmitted",
+            detail: { form },
+          },
         },
         bubbles: true,
         cancelable: true,
@@ -528,8 +560,10 @@ describe("dispatchCustomEvent", () => {
     observe(target, "test-theme:change", events);
 
     dispatchCustomEvent(target, signal, "test-theme:change", {
-      event: "test-theme:value",
-      detail: "dark",
+      event: {
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
     });
     dispatchCustomEvent(target, signal, "test-theme:change", {
       changes: { value: "light", reset: null },
@@ -546,9 +580,11 @@ describe("dispatchCustomEvent", () => {
       ],
     );
     assert.deepEqual(events[0].detail, {
-      event: "test-theme:value",
-      type: "value",
-      detail: "dark",
+      event: {
+        type: "value",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
     });
     assert.equal(events[1].detail, "dark");
     assert.deepEqual(events[2].detail, {
@@ -567,18 +603,22 @@ describe("dispatchCustomEvent", () => {
     observe(target, "test-theme:change", events);
 
     dispatchCustomEvent(target, signal, "test-theme:change", {
-      event: "test-theme:value",
-      type: "reset",
-      detail: "dark",
+      event: {
+        type: "reset",
+        namespacedType: "test-theme:value",
+        detail: "dark",
+      },
     } as unknown as ThemeEventTypes["test-theme:change"]["detail"]);
 
     assert.deepEqual(events, [
       {
         type: "test-theme:change",
         detail: {
-          event: "test-theme:value",
-          type: "value",
-          detail: "dark",
+          event: {
+            type: "value",
+            namespacedType: "test-theme:value",
+            detail: "dark",
+          },
         },
         bubbles: true,
         cancelable: true,
