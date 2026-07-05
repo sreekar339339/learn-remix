@@ -17,7 +17,7 @@ import {
 
 async function fetchBooks(
   query: string,
-  dispatch: ReturnType<typeof dispatchCustomEvent<HTMLDivElement>>,
+  dispatch: dispatchCustomEvent.Dispatcher<HTMLDivElement>,
   signal: AbortSignal,
 ) {
   try {

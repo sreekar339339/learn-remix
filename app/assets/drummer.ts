@@ -28,13 +28,13 @@ export class Drummer extends TypedEventTarget<DrummerEventMap> {
   readonly #lookaheadMs = 25; // how frequently to check (ms)
   readonly #scheduleAheadS = 0.1; // how far ahead to schedule (s)
 
-  dispatch: ReturnType<typeof dispatchCustomEvent<DrummerEventTarget>>
+  dispatch: dispatchCustomEvent.Dispatcher<DrummerEventTarget>
 
   constructor(tempoBpm: number = 90) {
     super();
     this.#tempoBpm = tempoBpm;
     this.dispatch = dispatchCustomEvent(
-      this,
+      this as DrummerEventTarget,
       new AbortController().signal,
     );
   }

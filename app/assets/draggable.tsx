@@ -129,7 +129,7 @@ function readPx(value: string) {
 }
 
 type globalEventNameMap = {
-  [K in keyof DraggableEventMap as K extends "change" ? never : K]: `${DraggableNamespace}:${K}`;
+  [K in Exclude<keyof DraggableEventMap, 'change'>]: `${DraggableNamespace}:${K}`;
 };
 
 type DraggableMixin = typeof baseDraggable & globalEventNameMap;

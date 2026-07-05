@@ -42,6 +42,14 @@ type ReservedChangeEventMap = CustomEventMap<{
   change: { value: string };
 }>;
 
+type NamespacedLocalKeyEventMap = CustomEventMap<{
+  "test-theme:value": "light" | "dark";
+}>;
+
+type RawNamespacedEventTypes = Namespaced<{
+  value: "light" | "dark";
+}, "test-raw">;
+
 declare global {
   interface HTMLElementEventMap
     extends
@@ -100,6 +108,16 @@ describe("dispatchCustomEvent", () => {
     let reservedEvents: ReservedChangeEventMap = {};
 
     assert.deepEqual(reservedEvents, {});
+  });
+
+  it("rejects namespaced local keys and raw maps passed to Namespaced", () => {
+    // @ts-expect-error local event maps cannot define namespaced event keys.
+    let namespacedLocalEvents: NamespacedLocalKeyEventMap = {};
+    // @ts-expect-error Namespaced expects a CustomEventMap, not a raw detail map.
+    let rawNamespacedEvents: RawNamespacedEventTypes = {};
+
+    assert.deepEqual(namespacedLocalEvents, {});
+    assert.deepEqual(rawNamespacedEvents, {});
   });
 
   it("infers globally merged custom event types from the DOM target", () => {
@@ -351,12 +369,6 @@ describe("dispatchCustomEvent", () => {
     assert.equal(result, true);
     assert.deepEqual(events, [
       {
-        type: "test-theme:value",
-        detail: "light",
-        bubbles: true,
-        cancelable: true,
-      },
-      {
         type: "test-theme:change",
         detail: {
           event: {
@@ -365,6 +377,12 @@ describe("dispatchCustomEvent", () => {
             detail: "light",
           },
         },
+        bubbles: true,
+        cancelable: true,
+      },
+      {
+        type: "test-theme:value",
+        detail: "light",
         bubbles: true,
         cancelable: true,
       },
@@ -384,12 +402,6 @@ describe("dispatchCustomEvent", () => {
     assert.equal(result, true);
     assert.deepEqual(events, [
       {
-        type: "test-theme:reset",
-        detail: null,
-        bubbles: true,
-        cancelable: true,
-      },
-      {
         type: "test-theme:change",
         detail: {
           event: {
@@ -400,8 +412,17 @@ describe("dispatchCustomEvent", () => {
         bubbles: true,
         cancelable: true,
       },
+      {
+        type: "test-theme:reset",
+        detail: null,
+        bubbles: true,
+        cancelable: true,
+      },
     ]);
-    assert.equal(Object.hasOwn(events[1].detail as object, "detail"), false);
+    assert.equal(
+      Object.hasOwn((events[0].detail as ThemeEventMap["change"]["detail"]).event!, "detail"),
+      false,
+    );
   });
 
   it("supports the bound dispatcher form used by component refs", () => {
@@ -419,12 +440,6 @@ describe("dispatchCustomEvent", () => {
     assert.equal(result, true);
     assert.deepEqual(events, [
       {
-        type: "test-todo:actionSubmitted",
-        detail: { form },
-        bubbles: true,
-        cancelable: true,
-      },
-      {
         type: "test-todo:change",
         detail: {
           event: {
@@ -433,6 +448,12 @@ describe("dispatchCustomEvent", () => {
             detail: { form },
           },
         },
+        bubbles: true,
+        cancelable: true,
+      },
+      {
+        type: "test-todo:actionSubmitted",
+        detail: { form },
         bubbles: true,
         cancelable: true,
       },
@@ -455,12 +476,6 @@ describe("dispatchCustomEvent", () => {
     assert.equal(result, true);
     assert.deepEqual(events, [
       {
-        type: "test-todo:actionSubmitted",
-        detail: { form },
-        bubbles: true,
-        cancelable: true,
-      },
-      {
         type: "test-todo:change",
         detail: {
           event: {
@@ -469,6 +484,12 @@ describe("dispatchCustomEvent", () => {
             detail: { form },
           },
         },
+        bubbles: true,
+        cancelable: true,
+      },
+      {
+        type: "test-todo:actionSubmitted",
+        detail: { form },
         bubbles: true,
         cancelable: true,
       },
@@ -653,6 +674,6 @@ describe("dispatchCustomEvent", () => {
     );
 
     assert.equal(result, false);
-    assert.deepEqual(observedTypes, ["test-theme:value", "test-theme:change"]);
+    assert.deepEqual(observedTypes, ["test-theme:change", "test-theme:value"]);
   });
 });

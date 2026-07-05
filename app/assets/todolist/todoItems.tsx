@@ -13,43 +13,24 @@ import { _TodoList, type TodoActionEventMap } from "./todoList.tsx";
 import { getInput } from "../utils/dom.ts";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
-export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
+export function TodoItems(handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>) {
+  let actionTarget = new TypedEventTarget<TodoActionEventMap>();
+  handle.context.set(actionTarget)
   let listRef: RefCallback<HTMLUListElement> = (list, signal) => {
-    let actionTarget = new TypedEventTarget<TodoActionEventMap>
+    let dispatch = dispatchCustomEvent(actionTarget, signal);
     addEventListeners(actionTarget, signal, {
       change(evt) {
-        if (!evt.detail.event) return
-        let { type, detail } = evt.detail.event
-        let input = getInput(detail.form)
-        if (input) {
-          if (type === 'actionSubmitted') {
-            input.select();
-            input.classList.add("pending");
-            input.disabled = true
-          } else {
-            if (type === 'actionSucceeded') {
-              const end = input.value.length;
-              input.setSelectionRange(end, end);
-            } 
-            if (type === 'actionErrored') {
-              input.value = input.defaultValue
-            }
-            input.classList.remove("pending");
-            input.disabled = false
-          }
-        }
-        list.parentElement?.dispatchEvent(new CustomEvent(evt.type, evt))
-      }
-    })
+        list.parentElement?.dispatchEvent(new CustomEvent(evt.type, evt));
+      },
+    });
     addEventListeners(list, signal, {
       focusout(evt) {
         if (!(evt.target instanceof HTMLInputElement)) return;
-        let input = evt.target
-        if (input.classList.contains('pending')) return
+        let input = evt.target;
+        if (input.classList.contains("pending")) return;
         input.value = input.defaultValue;
       },
       async submit(evt) {
-        let dispatch = dispatchCustomEvent(actionTarget, signal);
         evt.preventDefault();
         let form = evt.target as HTMLFormElement;
         let formData = new FormData(form, evt.submitter);
@@ -120,40 +101,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             </button>
             <input hidden name="id" value={id} />
           </form>
-          <form method="POST" action={routes.todolist.todos.action.href()}>
-            <button hidden name="intent" value="update" />
-            <input
-              mix={[
-                css({
-                  borderColor: "transparent",
-                  backgroundColor: "transparent",
-                  padding: 2,
-                  font: "inherit",
-                  color: "inherit",
-                  outline: "none",
-                  "&:focus,&:hover": {
-                    backgroundColor: "revert",
-                    outline: "revert",
-                    borderColor: "revert",
-                  },
-                  "&.pending": {
-                    backgroundImage:
-                      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
-                    backgroundSize: "220% 100%",
-                    animation: "glimmer 1.15s linear infinite",
-                  },
-                  "@media (prefers-reduced-motion: reduce)": {
-                    "&.pending": {
-                      animation: "none",
-                    },
-                  },
-                }),
-              ]}
-              defaultValue={text}
-              name="text"
-            />
-            <input hidden name="id" value={id} />
-          </form>
+          <TextForm text={text} id={id} />
           <form method="POST" action={routes.todolist.todos.action.href()}>
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
@@ -183,6 +131,62 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function TextForm(handle: Handle<{ text: string; id: string }>) {
+  let evtType: Exclude<keyof TodoActionEventMap, 'change'>
+  let formRef: RefCallback<HTMLFormElement> = (form, signal) => {
+    let input = getInput(form)!
+    addEventListeners(handle.context.get(TodoItems), signal, {
+      change({detail}) {
+        if (!detail.event) return;
+        if (detail.event.detail.form !== form) return
+        evtType = detail.event.type
+        handle.update()
+        if (evtType === 'actionErrored') {
+          input.value = input.defaultValue;
+        }
+      },
+    })
+  }
+  return () => (
+    <form mix={ref(formRef)} method="POST" action={routes.todolist.todos.action.href()}>
+      <button hidden name="intent" value="update" />
+      <input
+        class={evtType === 'actionSubmitted' ? 'pending' : ''}
+        disabled={evtType === 'actionSubmitted'}
+        mix={[
+          css({
+            borderColor: "transparent",
+            backgroundColor: "transparent",
+            padding: 2,
+            font: "inherit",
+            color: "inherit",
+            outline: "none",
+            "&:focus,&:hover": {
+              backgroundColor: "revert",
+              outline: "revert",
+              borderColor: "revert",
+            },
+            "&.pending": {
+              backgroundImage:
+                "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+              backgroundSize: "220% 100%",
+              animation: "glimmer 1.15s linear infinite",
+            },
+            "@media (prefers-reduced-motion: reduce)": {
+              "&.pending": {
+                animation: "none",
+              },
+            },
+          }),
+        ]}
+        defaultValue={handle.props.text}
+        name="text"
+      />
+      <input hidden name="id" value={handle.props.id} />
+    </form>
   );
 }
 

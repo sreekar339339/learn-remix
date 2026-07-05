@@ -2,17 +2,12 @@ import type { EventMap as RemixEventMap } from "remix/ui";
 
 const CHANGE_EVENT_NAME = "change" as const;
 
-type Namespace = string;
-
 type NamespacedCustomEventName<
   EventName extends string,
-  namespace extends Namespace,
+  namespace extends string,
 > = `${namespace}:${EventName}`;
 
-type CustomEventMapBase = Record<string, unknown | null>;
-
-type ChangeEventChangesFromMap<EventMap extends CustomEventMapBase> =
-  Partial<EventMap>;
+type CustomEventMapBase = Record<string, unknown>;
 
 type UnionKeys<T> = T extends T ? keyof T : never;
 
@@ -22,7 +17,7 @@ type StrictUnion<T, TAll = T> = T extends object
 
 type ChangeEventEventField<
   EventName extends string,
-  namespace extends Namespace,
+  namespace extends string,
   NamespacedTypeRequired extends boolean,
 > = NamespacedTypeRequired extends true
   ? {
@@ -36,7 +31,7 @@ type ChangeEventEventField<
 
 type ChangeEventDetailBranchFromMap<
   EventMap extends CustomEventMapBase,
-  namespace extends Namespace,
+  namespace extends string,
   NamespacedTypeRequired extends boolean,
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
@@ -53,19 +48,17 @@ type ChangeEventDetailBranchFromMap<
         changes?: never;
       };
 }[keyof EventMap & string] | {
-  changes: ChangeEventChangesFromMap<EventMap>;
+  changes: Partial<EventMap>;
   event?: never;
 };
 
 type ChangeEventDetailFromMap<
   EventMap extends CustomEventMapBase,
-  namespace extends Namespace,
+  namespace extends string,
 > = StrictUnion<ChangeEventDetailBranchFromMap<EventMap, namespace, true>>;
 
-type LocalChangeEventDetailFromMap<
-  EventMap extends CustomEventMapBase,
-  namespace extends Namespace,
-> = StrictUnion<ChangeEventDetailBranchFromMap<EventMap, namespace, false>>;
+type LocalChangeEventDetailFromMap<EventMap extends CustomEventMapBase> =
+  StrictUnion<ChangeEventDetailBranchFromMap<EventMap, string, false>>;
 
 type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
 
@@ -80,22 +73,19 @@ type DispatchDetailFor<
   EventTypes extends object,
   T extends keyof EventTypes & string,
 > = T extends `${string}:${typeof CHANGE_EVENT_NAME}`
-  ? ChangeDispatchDetail<DetailFor<EventTypes, T>, "type">
+  ? ChangeDispatchDetail<DetailFor<EventTypes, T>>
   : T extends typeof CHANGE_EVENT_NAME
     ? DetailFor<EventTypes, T>
   : DetailFor<EventTypes, T>;
 
-type ChangeDispatchDetail<
-  Detail,
-  OptionalKey extends "type",
-> = Detail extends {
+type ChangeDispatchDetail<Detail> = Detail extends {
   changes: unknown;
 }
   ? Detail
   : Detail extends { event: infer Event }
     ? Omit<Detail, "event"> & {
-        event: Event extends { [K in OptionalKey]?: infer Value }
-          ? Omit<Event, OptionalKey> & { [K in OptionalKey]?: Value }
+        event: Event extends { type?: infer Value }
+          ? Omit<Event, "type"> & { type?: Value }
           : Event;
       }
     : Detail;
@@ -126,7 +116,7 @@ type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
 
 type NamespacedCustomEventTypes<
   EventMap extends CustomEventMapBase,
-  namespace extends Namespace,
+  namespace extends string,
 > = [namespace] extends [never]
   ? {}
   : {
@@ -139,12 +129,9 @@ type NamespacedCustomEventTypes<
       >;
     };
 
-type LocalCustomEventTypes<
-  EventMap extends CustomEventMapBase,
-  namespace extends Namespace = never,
-> = {
+type LocalCustomEventTypes<EventMap extends CustomEventMapBase> = {
   [K in typeof CHANGE_EVENT_NAME]: CustomEvent<
-    LocalChangeEventDetailFromMap<EventMap, namespace>
+    LocalChangeEventDetailFromMap<EventMap>
   >;
 } & {
   [K in keyof EventMap & string]: CustomEvent<EventMap[K]>;
@@ -167,10 +154,27 @@ type EventMapReservedKeys<EventMap extends CustomEventMapBase> = Extract<
   ReservedCustomEventMapKey
 >;
 
+type EventMapNamespacedKeys<EventMap extends CustomEventMapBase> = Extract<
+  keyof EventMap & string,
+  `${string}:${string}`
+>;
+
 type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
   readonly __customEventMapReservedKeyError: "CustomEventMap event maps cannot define reserved event keys.";
   readonly reservedEventKeys: Keys;
 };
+
+type NamespacedCustomEventMapKeyError<Keys extends PropertyKey> = {
+  readonly __customEventMapNamespacedKeyError: "CustomEventMap event maps cannot define namespaced event keys. Use Namespaced<CustomEventMap<...>, Namespace> for namespaced events.";
+  readonly namespacedEventKeys: Keys;
+};
+
+type CustomEventMapError<EventMap extends CustomEventMapBase> =
+  EventMapReservedKeys<EventMap> extends never
+    ? EventMapNamespacedKeys<EventMap> extends never
+      ? never
+      : NamespacedCustomEventMapKeyError<EventMapNamespacedKeys<EventMap>>
+    : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
 
 export type CustomEventMap<
   EventMap extends CustomEventMapBase,
@@ -178,20 +182,33 @@ export type CustomEventMap<
     EventMap
   >,
 > =
-  EventMapReservedKeys<EventMap> extends never
+  CustomEventMapError<EventMap> extends never
     ? EventTypes
-    : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
+    : CustomEventMapError<EventMap>;
+
+type NonCustomEventKeys<EventTypes extends object> = {
+  [K in keyof EventTypes & string]: EventTypes[K] extends CustomEvent
+    ? never
+    : K;
+}[keyof EventTypes & string];
+
+type NamespacedCustomEventTypesError<Keys extends PropertyKey> = {
+  readonly __namespacedCustomEventTypesError: "Namespaced expects a CustomEventMap. Use Namespaced<CustomEventMap<...>, Namespace>, not Namespaced<raw detail map, Namespace>.";
+  readonly nonCustomEventKeys: Keys;
+};
 
 export type Namespaced<
   EventTypes extends object,
-  namespace extends Namespace,
+  namespace extends string,
   EventMap extends CustomEventMapBase = EventDetailMapFromCustomEventTypes<EventTypes>,
   NamespacedEventTypes extends object = NamespacedCustomEventTypes<
     EventMap,
     namespace
   >,
 > =
-  NamespacedEventTypes;
+  NonCustomEventKeys<EventTypes> extends never
+    ? NamespacedEventTypes
+    : NamespacedCustomEventTypesError<NonCustomEventKeys<EventTypes>>;
 
 function normalizeDispatchArgs(args: RuntimeDispatchArgs) {
   const [detail, evtInit] = args;
@@ -234,13 +251,8 @@ function getChangeEventType(name: string) {
   return name.split(":").at(-1) ?? name;
 }
 
-function getNamespacedEventName(name: string) {
-  return name.includes(":") ? name : undefined;
-}
-
 function isChangeEventName(name: string) {
-  const parts = name.split(":");
-  return parts[parts.length - 1] === CHANGE_EVENT_NAME;
+  return getChangeEventType(name) === CHANGE_EVENT_NAME;
 }
 
 function getEventNameFromChangeEventName(changeEventName: string, eventKey: string) {
@@ -256,17 +268,7 @@ function normalizeChangeEventDetail(detail: unknown) {
     return detail;
   }
 
-  if (!detail.event || typeof detail.event !== "object") {
-    if (typeof detail.event !== "string") return detail;
-
-    return {
-      event: {
-        namespacedType: detail.event,
-        type: getChangeEventType(detail.event),
-        ...("detail" in detail ? { detail: detail.detail } : {}),
-      },
-    };
-  }
+  if (!detail.event || typeof detail.event !== "object") return detail;
 
   const event = detail.event;
   const namespacedType =
@@ -305,6 +307,22 @@ function dispatchSingleCustomEvent(
       ...init,
     }),
   );
+}
+
+function createChangeDetail(
+  name: string,
+  detail: unknown,
+  hasExplicitDetail: boolean,
+) {
+  const namespacedType = name.includes(":") ? name : undefined;
+
+  return {
+    event: {
+      type: getChangeEventType(name),
+      ...(namespacedType ? { namespacedType } : {}),
+      ...(hasExplicitDetail ? { detail } : {}),
+    },
+  };
 }
 
 function dispatchGranularEventFromChangeDetail(
@@ -400,28 +418,7 @@ function dispatchCustomEventImpl(
     return changeResult && granularResult;
   }
 
-  const eventResult = dispatchSingleCustomEvent(
-    target,
-    name,
-    init,
-    detail,
-    hasExplicitDetail,
-  );
-
-  const changeDetail = hasExplicitDetail
-    ? {
-        event: {
-          type: getChangeEventType(name),
-          ...(getNamespacedEventName(name) ? { namespacedType: name } : {}),
-          detail,
-        },
-      }
-    : {
-        event: {
-          type: getChangeEventType(name),
-          ...(getNamespacedEventName(name) ? { namespacedType: name } : {}),
-        },
-      };
+  const changeDetail = createChangeDetail(name, detail, hasExplicitDetail);
 
   const changeResult = dispatchSingleCustomEvent(
     target,
@@ -431,7 +428,15 @@ function dispatchCustomEventImpl(
     true,
   );
 
-  return eventResult && changeResult;
+  const eventResult = dispatchSingleCustomEvent(
+    target,
+    name,
+    init,
+    detail,
+    hasExplicitDetail,
+  );
+
+  return changeResult && eventResult;
 }
 
 function createDispatcher(
