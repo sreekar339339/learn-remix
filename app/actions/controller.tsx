@@ -229,11 +229,11 @@ const todoActionFormData = s.union([
 export const todosCrudController = createController(routes.todolist.todos, {
   actions: {
     async index({ render }) {
-      await delay(200);
+      await delay(2000);
       return render(<TodoItemsClientEntryMarked todos={todos} />);
     },
     async action({ formData }) {
-      await delay(5000);
+      await delay(2000);
       try {
         let input = s.parse(todoActionFormData, formData);
         match(input)

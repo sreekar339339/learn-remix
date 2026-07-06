@@ -279,23 +279,22 @@ function TTT(handle: Handle) {
     position: {},
     winner: null,
   };
-  let gameTarget = new TypedEventTarget<TTTEventMap>
-  let pendingUpdate: Promise<AbortSignal>;
-  addEventListeners(gameTarget, handle.signal, {
-    async change({ detail }) {
-      if (detail.event?.type === 'nextPosition') {
-        nextPosition = detail.event.detail;
-        pendingUpdate = handle.update();
-      } else if (detail.event?.type === 'nextFocus') {
-        await pendingUpdate;
-        nodeIdMap[detail.event.detail.nodeId].focus();
-      }
-    },
-  });
-
   let nodeIdMap = {} as { [cellId: number]: HTMLElement } & {
     reset: HTMLElement;
   };
+  let gameTarget = new TypedEventTarget<TTTEventMap>
+  let pendingUpdate: Promise<AbortSignal>;
+  addEventListeners(gameTarget, handle.signal, {
+    async change({ detail: {event} }) {
+      if (event?.type === 'nextPosition') {
+        nextPosition = event.detail;
+        pendingUpdate = handle.update();
+      } else if (event?.type === 'nextFocus') {
+        await pendingUpdate;
+        nodeIdMap[event.detail.nodeId].focus();
+      }
+    },
+  });
 
   return () => (
     <div

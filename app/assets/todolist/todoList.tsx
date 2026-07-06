@@ -20,6 +20,8 @@ export type TodoActionEventMap = CustomEventMap<{
   actionErrored: { error: Error; form: HTMLFormElement };
 }>;
 
+export let actionTarget = new TypedEventTarget<TodoActionEventMap>();
+
 export const TodoList = clientEntry(
   import.meta.url,
   function TodoList(handle: Handle<{ todos: Todo[] }>) {
@@ -28,14 +30,15 @@ export const TodoList = clientEntry(
 );
 
 export function _TodoList(
-  handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
+  handle: Handle<{ todos: Todo[] }>,
 ) {
+  addEventListeners(actionTarget, handle.signal, {
+    change({detail}) {
+      console.log({...detail})
+    }
+  })
   return () => (
-    <div
-      mix={ref((node, signal) =>
-        node.addEventListener("change", console.log, { signal }),
-      )}
-    >
+    <div>
       <AddTodo />
       <Frame
         name="TodoItems"

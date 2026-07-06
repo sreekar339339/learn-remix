@@ -1,79 +1,77 @@
 import {
   addEventListeners,
   css,
+  on,
   ref,
-  TypedEventTarget,
+  type Dispatched,
   type Handle,
   type Props,
-  type RefCallback,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
-import type { TodoActionEventMap } from "./todoList.tsx";
-import { getInput } from "../utils/dom.ts";
+import { actionTarget, type TodoActionEventMap } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  let actionTarget = new TypedEventTarget<TodoActionEventMap>();
-  addEventListeners(actionTarget, handle.signal, {
-    change(evt) {
-      if (!evt.detail.event) return
-      let { type, detail } = evt.detail.event
-      let input = getInput(detail.form)!
-      if (type === 'actionSubmitted') {
-        input.select();
-        input.classList.add("pending");
-        input.disabled = true
-        return
+  let actionEvt: TodoActionEventMap["change"]["detail"]["event"];
+
+  let onSubmit = async (
+    evt: Dispatched<SubmitEvent, HTMLFormElement>,
+    signal: AbortSignal,
+  ) => {
+    evt.preventDefault();
+    let form = evt.currentTarget;
+    let submitter = evt.submitter as HTMLButtonElement;
+    let formData = new FormData(form, submitter);
+    if (formData.get("text") === "") return;
+    formData.set("redirectTo", "none");
+    let dispatch = dispatchCustomEvent(actionTarget, signal);
+    try {
+      dispatch("actionSubmitted", { form });
+      // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
+      let resp = await fetch(new URL(form.action), {
+        method: "POST",
+        body: formData,
+        signal,
+      });
+      if (!resp.ok) {
+        throw new Error(`${resp.status} ${resp.statusText}`, {
+          cause: await resp.text(),
+        });
       }
-      if (type === 'actionSucceeded') {
-        detail.form.reset();
-      }
-      input.classList.remove("pending");
-      input.disabled = false
+      await handle.frames.get("TodoItems")!.reload();
+      dispatch("actionSucceeded", { form });
+    } catch (error) {
+      dispatch("actionErrored", { error: error as Error, form });
     }
-  });
-  let formRef: RefCallback<HTMLFormElement> = (form, signal) => {
-    addEventListeners(form, signal, {
-      async submit(evt, signal) {
-        evt.preventDefault();
-        let dispatch = dispatchCustomEvent(actionTarget, signal);
-        let form = evt.currentTarget;
-        let formData = new FormData(form, evt.submitter);
-        if (formData.get("text") === "") return;
-        let formAction = new URL(form.action);
-        formData.set("redirectTo", "none");
-        try {
-          dispatch("actionSubmitted", { form });
-          // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
-          let resp = await fetch(formAction, {
-            method: "POST",
-            body: formData,
-            signal,
-          });
-          if (!resp.ok) {
-            throw new Error(`${resp.status} ${resp.statusText}`, {
-              cause: await resp.text(),
-            });
-          }
-          await handle.frames.get("TodoItems")?.reload();
-          dispatch("actionSucceeded", { form });
-        } catch (error) {
-          dispatch("actionErrored", { error: error as Error, form });
-        }
-      },
-    });
   };
 
   return () => (
     <form
       method="POST"
       action={routes.todolist.todos.action.href()}
-      mix={[ref(formRef)]}
+      mix={[
+        on("submit", onSubmit),
+        ref((form, signal) => {
+          addEventListeners(actionTarget, signal, {
+            change({detail: {event}}) {
+              if (form !== event?.detail.form) return
+              actionEvt = event;
+              handle.update();
+            },
+            actionSucceeded({detail}) {
+              if (form !== detail.form) return
+              form.reset();
+            },
+          });
+        }),
+      ]}
     >
       <button hidden name="intent" value="create"></button>
       <label mix={css({ display: "flex", alignItems: "center", gap: 8 })}>
         Enter a todo{" "}
         <input
+          class={actionEvt?.type === "actionSubmitted" ? "pending" : ""}
+          disabled={actionEvt?.type === "actionSubmitted"}
           mix={[
             css({
               padding: 4,
@@ -94,9 +92,17 @@ export function AddTodo(handle: Handle<Props<"form">>) {
                 },
               },
             }),
+            ref((input, signal) => {
+              input.select();
+              addEventListeners(actionTarget, signal, {
+                change({detail: {event}}) {
+                  if (input.form !== event?.detail.form) return
+                  handle.queueTask(() => input.select())
+                }
+              });
+            }),
           ]}
           name="text"
-          autofocus
         />
       </label>
     </form>

@@ -14,7 +14,6 @@ import {
   dispatchCustomEvent,
   type CustomEventMap,
 } from "./utils/customEvent.ts";
-import { getInput } from "./utils/dom.ts";
 
 type SearchEventMap = CustomEventMap<{
   queryEmpty: null;
@@ -26,8 +25,8 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let searchTarget = new TypedEventTarget<SearchEventMap>();
     addEventListeners(searchTarget, handle.signal, {
-      change(evt) {
-        searchEvent = evt.detail.event;
+      change({ detail: { event } }) {
+        searchEvent = event;
         handle.update();
       },
     });
@@ -45,12 +44,12 @@ export const SearchBooksWithFrame = clientEntry(
           action={routes.asyncActions.withFrame.index.href()}
           mix={on("submit", (evt, signal) => {
             evt.preventDefault();
-            let dispatch = dispatchCustomEvent(searchTarget, signal);
-            let form = evt.target as HTMLFormElement;
+            let form = evt.currentTarget;
             let query = (new FormData(form).get("q") as string).trim();
+            if (query === searchEvent?.detail?.query) return;
+            let dispatch = dispatchCustomEvent(searchTarget, signal);
             if (!query) return void dispatch("queryEmpty");
             dispatch("querySubmitted", { query });
-            getInput(form)?.select();
           })}
         >
           <label>
@@ -61,8 +60,12 @@ export const SearchBooksWithFrame = clientEntry(
               defaultValue={initialQuery}
               mix={[
                 css({ padding: 4 }),
-                ref((node) => {
-                  node.select();
+                ref((node, signal) => {
+                  addEventListeners(searchTarget, signal, {
+                    querySubmitted() {
+                      node.select();
+                    },
+                  });
                 }),
               ]}
             />

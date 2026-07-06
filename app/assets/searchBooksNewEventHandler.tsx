@@ -1,11 +1,9 @@
 import {
-  addEventListeners,
   clientEntry,
   css,
   on,
   ref,
   type Handle,
-  type RefCallback,
 } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
@@ -21,7 +19,7 @@ async function fetchBooks(
   signal: AbortSignal,
 ) {
   try {
-    dispatch("search:querySubmitted", { query });
+    dispatch("bookSearch:querySubmitted", { query });
     let resp = await fetch(
       routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
       {
@@ -35,19 +33,19 @@ async function fetchBooks(
     }
     let json = await resp.json();
     if (!("docs" in json)) {
-      return void dispatch("search:booksNotFound", {
+      return void dispatch("bookSearch:booksNotFound", {
         reason: { other: json.detail[0].msg },
       });
     }
     let books = json.docs;
     if (!books.length) {
-      return void dispatch("search:booksNotFound", {
+      return void dispatch("bookSearch:booksNotFound", {
         reason: "emptyList",
       });
     }
-    dispatch("search:booksFound", books);
+    dispatch("bookSearch:booksFound", books);
   } catch (error) {
-    dispatch("search:errorOccurred", error as Error);
+    dispatch("bookSearch:errorOccurred", error as Error);
   }
 }
 
@@ -60,30 +58,16 @@ type SearchEventMap = CustomEventMap<{
 }>;
 
 declare global {
-  interface HTMLElementEventMap extends Namespaced<SearchEventMap, "search"> {}
+  interface HTMLElementEventMap extends Namespaced<
+    SearchEventMap,
+    "bookSearch"
+  > {}
 }
 
 function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
 
-  let searchTargetRef: RefCallback<HTMLInputElement> = (target, signal) => {
-    addEventListeners(target, signal, {
-      "search:change"({ detail }) {
-        searchEvent = detail.event;
-        handle.update();
-      },
-      input(_, signal) {
-        let dispatch = dispatchCustomEvent(target, signal);
-        let query = target.value.trim();
-        if (!query) return void dispatch("search:queryEmpty");
-        fetchBooks(query, dispatch, signal);
-      },
-    });
-    target.select();
-    target.dispatchEvent(new Event("input"));
-  };
-
-  let searchEvent: SearchEventMap["change"]["detail"]["event"] = initialQuery
+  let bookSearchEvt: SearchEventMap["change"]["detail"]["event"] = initialQuery
     ? {
         type: "querySubmitted",
         detail: { query: initialQuery },
@@ -97,7 +81,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
         <input
           type="text"
           defaultValue={initialQuery}
-          class={searchEvent?.type === 'querySubmitted' ? 'pending': ''}
+          class={bookSearchEvt?.type === "querySubmitted" ? "pending" : ""}
           mix={[
             css({
               padding: 4,
@@ -112,12 +96,27 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
                 animation: "none",
               },
             }),
-            ref(searchTargetRef),
+            on("input", (evt, signal) => {
+              let dispatch = dispatchCustomEvent(evt.currentTarget, signal);
+              let query = evt.currentTarget.value.trim();
+              if (!query) return void dispatch("bookSearch:queryEmpty");
+              fetchBooks(query, dispatch, signal);
+            }),
+            on("bookSearch:change", ({ detail: { event }, currentTarget }) => {
+              bookSearchEvt = event;
+              handle.update();
+              if (event?.type !== "querySubmitted") {
+                currentTarget.select();
+              }
+            }),
+            ref((input) => input.dispatchEvent(new Event("input"))),
           ]}
         />
       </label>
-      {match(searchEvent)
-        .with({ type: "queryEmpty" }, undefined, () => <p>Enter the title of any book.</p>)
+      {match(bookSearchEvt)
+        .with({ type: "queryEmpty" }, undefined, () => (
+          <p>Enter the title of any book.</p>
+        ))
         .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
           <p>fetching books with title containing {query}...</p>
         ))
@@ -158,7 +157,7 @@ export const SearchBooksNewEventHandlerParent = clientEntry(
     return () => (
       <div
         mix={[
-          on("search:change", (evt) => {
+          on("bookSearch:change", (evt) => {
             console.log("in parent", evt.detail);
           }),
         ]}

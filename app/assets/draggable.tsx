@@ -128,13 +128,32 @@ function readPx(value: string) {
   return parsed;
 }
 
-type globalEventNameMap = {
-  [K in Exclude<keyof DraggableEventMap, 'change'>]: `${DraggableNamespace}:${K}`;
-};
-
-type DraggableMixin = typeof baseDraggable & globalEventNameMap;
-
-export const draggable: DraggableMixin = Object.assign(baseDraggable, {
+let draggableEventTypes: {
+  [K in Exclude<
+    keyof DraggableEventMap,
+    "change"
+  >]: `${DraggableNamespace}:${K}`
+} = {
   start: "rmx:drag:start",
   end: "rmx:drag:end",
-} satisfies globalEventNameMap);
+}
+
+type DraggableMixin = typeof baseDraggable & typeof draggableEventTypes;
+
+export const draggable: DraggableMixin = Object.assign(baseDraggable, draggableEventTypes);
+
+function DraggableCard() {
+  return () => (
+    <div
+      mix={[
+        draggable(true),
+        on(draggable.start, ({ detail: { left, top } }) => {
+          console.log("draggable start with:", { left }, { top });
+        }),
+        on(draggable.end, ({ detail: { left, top } }) => {
+          console.log("draggable end with:", { left }, { top });
+        }),
+      ]}
+    />
+  );
+}
