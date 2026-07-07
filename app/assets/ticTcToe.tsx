@@ -285,13 +285,13 @@ function TTT(handle: Handle) {
   let gameTarget = new TypedEventTarget<TTTEventMap>
   let pendingUpdate: Promise<AbortSignal>;
   addEventListeners(gameTarget, handle.signal, {
-    async change({ detail: {event} }) {
-      if (event?.type === 'nextPosition') {
-        nextPosition = event.detail;
+    async change({ detail }) {
+      if (detail.type === 'nextPosition') {
+        nextPosition = detail.detail;
         pendingUpdate = handle.update();
-      } else if (event?.type === 'nextFocus') {
+      } else if (detail.type === 'nextFocus') {
         await pendingUpdate;
-        nodeIdMap[event.detail.nodeId].focus();
+        nodeIdMap[detail.detail.nodeId].focus();
       }
     },
   });

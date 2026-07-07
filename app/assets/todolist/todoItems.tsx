@@ -7,7 +7,6 @@ import {
   TypedEventTarget,
   type Dispatched,
   type Handle,
-  type RefCallback,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
@@ -29,9 +28,13 @@ export function TodoItems(
     let submitter = evt.submitter as HTMLButtonElement;
     let formData = new FormData(form, submitter);
     formData.set("redirectTo", "none");
-    let dispatch = dispatchCustomEvent(actionTarget, handle.signal);
+    let dispatch = dispatchCustomEvent.bind(null, {
+      target: actionTarget,
+      signal: handle.signal,
+      source: form,
+    });
     try {
-      dispatch("actionSubmitted", { form });
+      dispatch({ actionSubmitted: null });
       // await new Promise((res, rej) => setTimeout(rej, 25000, new Error('laude lag gaye')));
       let resp = await fetch(form.action, {
         method: "POST",
@@ -44,9 +47,9 @@ export function TodoItems(
         });
       }
       await handle.frame.reload();
-      dispatch("actionSucceeded", { form });
+      dispatch({ actionSucceeded: null });
     } catch (error) {
-      dispatch("actionErrored", { error: error as Error, form });
+      dispatch({ actionErrored: { error: error as Error } });
     }
   };
 
@@ -128,20 +131,19 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
-  let actionEvent: TodoActionEventMap["change"]["detail"]["event"];
+  let actionEvent: TodoActionEventMap["change"]["detail"];
   return () => (
     <form
       mix={[
         ref((form, signal) => {
           addEventListeners(actionTarget, signal, {
-            async change({ detail: { event } }) {
-              if (event?.detail.form !== form) return;
-              actionEvent = event;
+            async change({ detail }) {
+              if (detail.source !== form) return;
+              actionEvent = detail;
+              if (detail.type === "actionErrored") {
+                form.reset();
+              }
               handle.update();
-            },
-            actionErrored({ detail }) {
-              if (detail.form !== form) return;
-              form.reset();
             },
           });
         }),

@@ -2,6 +2,7 @@ import { createMixin, on } from "remix/ui";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
+  type DispatchCustomEvent,
   type Namespaced,
 } from "./utils/customEvent.ts";
 
@@ -9,24 +10,32 @@ type DragReleaseEventMap = CustomEventMap<{
   release: { velocityX: number; velocityY: number };
 }>;
 
+type DraggableNamespace = "rmx:drag";
+
 declare global {
   interface HTMLElementEventMap extends Namespaced<
     DragReleaseEventMap,
-    "rmx:drag"
+    DraggableNamespace
   > {}
 }
 
 export let dragRelease = createMixin<HTMLElement>((handle) => {
-  let node: HTMLElement | undefined;
+  let target: HTMLElement | undefined;
   let tracking = false;
   let velocityX = 0;
   let velocityY = 0;
   let lastX = 0;
   let lastY = 0;
   let lastT = 0;
+  let dispatch: DispatchCustomEvent<HTMLElement, DraggableNamespace>;
 
   handle.addEventListener("insert", (event) => {
-    node = event.node;
+    target = event.node;
+    dispatch = dispatchCustomEvent.bind(null, {
+      target,
+      signal: handle.signal,
+      namespace: "rmx:drag",
+    });
   });
 
   return () => (
@@ -40,7 +49,7 @@ export let dragRelease = createMixin<HTMLElement>((handle) => {
           lastT = event.timeStamp;
           velocityX = 0;
           velocityY = 0;
-          node?.setPointerCapture(event.pointerId);
+          target?.setPointerCapture(event.pointerId);
         }),
         on("pointermove", (event) => {
           if (!tracking) return;
@@ -54,9 +63,11 @@ export let dragRelease = createMixin<HTMLElement>((handle) => {
         on("pointerup", () => {
           if (!tracking) return;
           tracking = false;
-          dispatchCustomEvent(node!, handle.signal, "rmx:drag:release", {
-            velocityX,
-            velocityY,
+          dispatch({
+            release: {
+              velocityX,
+              velocityY,
+            },
           });
         }),
       ]}

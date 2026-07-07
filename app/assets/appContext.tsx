@@ -17,31 +17,29 @@ type AppContext = {
   };
 };
 
-type AppContextEventMap = CustomEventMap<AppContext>
+type AppContextEventMap = CustomEventMap<AppContext>;
 
-function AppProvider(
-  handle: Handle<
-    { children?: RemixNode },
-    { target: TypedEventTarget<AppContextEventMap>; appContext: AppContext }
-  >,
-) {
+type CompContext = {
+  target: TypedEventTarget<AppContextEventMap>;
+  appContext: AppContext;
+};
+function AppProvider(handle: Handle<{ children?: RemixNode }, CompContext>) {
+  let target = new TypedEventTarget<AppContextEventMap>();
   let appContext: AppContext = {
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
-  let target = new TypedEventTarget<AppContextEventMap>;
-
-  handle.context.set({
+  let context: CompContext = {
     appContext,
     target,
-  });
-
+  };
+  handle.context.set(context);
   addEventListeners(target, handle.signal, {
     change({ detail }) {
-      if (detail.event) {
-        Object.assign(appContext, { [detail.event.type]: detail.event.detail });
+      if (Array.isArray(detail.type)) {
+        Object.assign(appContext, detail.detail);
       } else {
-        Object.assign(appContext, detail.changes);
+        Object.assign(appContext, { [detail.type]: detail.detail });
       }
     },
   });
@@ -49,17 +47,16 @@ function AppProvider(
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
     await Promise.resolve();
-    dispatchCustomEvent(target, signal, "change", {
-      changes: {
+    dispatchCustomEvent(
+      { target, signal },
+      {
         user: { age: 23, name: "Bob Lazar" },
         settings: { layout: "zen", theme: "light" },
       },
-    });
-  })
+    );
+  });
 
-  return () => (
-    <body>{handle.props.children}</body>
-  );
+  return () => <body>{handle.props.children}</body>;
 }
 
 // Components can subscribe to only the events they care about
@@ -88,7 +85,9 @@ function SettingsDisplay(handle: Handle) {
 
   return () => (
     <div>
-      <pre>Layout: {context.settings.layout}, Theme: {context.settings.theme}</pre>
+      <pre>
+        Layout: {context.settings.layout}, Theme: {context.settings.theme}
+      </pre>
     </div>
   );
 }

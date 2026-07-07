@@ -12,7 +12,7 @@ import { actionTarget, type TodoActionEventMap } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  let actionEvt: TodoActionEventMap["change"]["detail"]["event"];
+  let actionEvt: TodoActionEventMap["change"]["detail"]
 
   let onSubmit = async (
     evt: Dispatched<SubmitEvent, HTMLFormElement>,
@@ -24,9 +24,13 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     let formData = new FormData(form, submitter);
     if (formData.get("text") === "") return;
     formData.set("redirectTo", "none");
-    let dispatch = dispatchCustomEvent(actionTarget, signal);
+    let dispatch = dispatchCustomEvent.bind(null, {
+      target: actionTarget,
+      signal,
+      source: form,
+    });
     try {
-      dispatch("actionSubmitted", { form });
+      dispatch({ actionSubmitted: null });
       // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
       let resp = await fetch(new URL(form.action), {
         method: "POST",
@@ -39,9 +43,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         });
       }
       await handle.frames.get("TodoItems")!.reload();
-      dispatch("actionSucceeded", { form });
+      dispatch({ actionSucceeded: null });
     } catch (error) {
-      dispatch("actionErrored", { error: error as Error, form });
+      dispatch({ actionErrored: { error: error as Error } });
     }
   };
 
@@ -53,14 +57,13 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         on("submit", onSubmit),
         ref((form, signal) => {
           addEventListeners(actionTarget, signal, {
-            change({detail: {event}}) {
-              if (form !== event?.detail.form) return
-              actionEvt = event;
+            change({detail}) {
+              if (form !== detail.source) return
+              actionEvt = detail;
+              if (detail.type === "actionSucceeded") {
+                form.reset();
+              }
               handle.update();
-            },
-            actionSucceeded({detail}) {
-              if (form !== detail.form) return
-              form.reset();
             },
           });
         }),
@@ -95,8 +98,8 @@ export function AddTodo(handle: Handle<Props<"form">>) {
             ref((input, signal) => {
               input.select();
               addEventListeners(actionTarget, signal, {
-                change({detail: {event}}) {
-                  if (input.form !== event?.detail.form) return
+                change({detail}) {
+                  if (input.form !== detail.source) return
                   handle.queueTask(() => input.select())
                 }
               });

@@ -9,7 +9,7 @@ import {
   on,
 } from "remix/ui";
 import { routes } from "../routes.ts";
-import { match } from "ts-pattern";
+import { match, P } from "ts-pattern";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
@@ -25,13 +25,13 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let searchTarget = new TypedEventTarget<SearchEventMap>();
     addEventListeners(searchTarget, handle.signal, {
-      change({ detail: { event } }) {
-        searchEvent = event;
+      change({ detail }) {
+        searchEvent = detail;
         handle.update();
       },
     });
     let initialQuery = handle.props.initialQuery?.trim() || "";
-    let searchEvent: SearchEventMap["change"]["detail"]["event"] = initialQuery
+    let searchEvent: SearchEventMap["change"]["detail"] = initialQuery
       ? {
           type: "querySubmitted",
           detail: { query: initialQuery },
@@ -46,10 +46,16 @@ export const SearchBooksWithFrame = clientEntry(
             evt.preventDefault();
             let form = evt.currentTarget;
             let query = (new FormData(form).get("q") as string).trim();
-            if (query === searchEvent?.detail?.query) return;
-            let dispatch = dispatchCustomEvent(searchTarget, signal);
-            if (!query) return void dispatch("queryEmpty");
-            dispatch("querySubmitted", { query });
+            let currentQuery = searchEvent.type === "querySubmitted"
+              ? searchEvent.detail.query
+              : "";
+            if (query === currentQuery) return;
+            let opts = {
+              target: searchTarget,
+              signal,
+            };
+            if (!query) return void dispatchCustomEvent(opts, { queryEmpty: null });
+            dispatchCustomEvent(opts, { querySubmitted: { query } });
           })}
         >
           <label>
@@ -72,7 +78,7 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         {match(searchEvent)
-          .with({ type: "queryEmpty" }, undefined, () => (
+          .with({ type: "queryEmpty" }, () => (
             <p>Enter the title of any book.</p>
           ))
           .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
@@ -86,6 +92,7 @@ export const SearchBooksWithFrame = clientEntry(
               })}
             />
           ))
+          .with({ type: P.array() }, () => null)
           .exhaustive()}
       </>
     );

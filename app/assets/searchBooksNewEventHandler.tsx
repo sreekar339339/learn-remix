@@ -9,21 +9,23 @@ import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
 import {
   type CustomEventMap,
+  type DispatchCustomEvent,
+  type DispatchCustomEventOptions,
   type Namespaced,
   dispatchCustomEvent,
 } from "./utils/customEvent.ts";
 
 async function fetchBooks(
   query: string,
-  dispatch: dispatchCustomEvent.Dispatcher<HTMLDivElement>,
-  signal: AbortSignal,
+  dispatch: DispatchCustomEvent<HTMLInputElement, "bookSearch">,
+  signal: AbortSignal
 ) {
   try {
-    dispatch("bookSearch:querySubmitted", { query });
+    dispatch({ querySubmitted: { query } });
     let resp = await fetch(
       routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
       {
-        signal,
+        signal
       },
     );
     if (!resp.ok) {
@@ -33,19 +35,19 @@ async function fetchBooks(
     }
     let json = await resp.json();
     if (!("docs" in json)) {
-      return void dispatch("bookSearch:booksNotFound", {
-        reason: { other: json.detail[0].msg },
-      });
+      return void dispatch(
+        { booksNotFound: { reason: { other: json.detail[0].msg } } },
+      );
     }
     let books = json.docs;
     if (!books.length) {
-      return void dispatch("bookSearch:booksNotFound", {
-        reason: "emptyList",
-      });
+      return void dispatch(
+        { booksNotFound: { reason: "emptyList" } },
+      );
     }
-    dispatch("bookSearch:booksFound", books);
+    dispatch({ booksFound: books });
   } catch (error) {
-    dispatch("bookSearch:errorOccurred", error as Error);
+    dispatch({ errorOccurred: error as Error });
   }
 }
 
@@ -57,17 +59,19 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }>;
 
+const namespace = "bookSearch"
+
 declare global {
   interface HTMLElementEventMap extends Namespaced<
     SearchEventMap,
-    "bookSearch"
+    typeof namespace
   > {}
 }
 
 function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
 
-  let bookSearchEvt: SearchEventMap["change"]["detail"]["event"] = initialQuery
+  let bookSearchEvt: SearchEventMap["change"]["detail"] = initialQuery
     ? {
         type: "querySubmitted",
         detail: { query: initialQuery },
@@ -97,15 +101,21 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
               },
             }),
             on("input", (evt, signal) => {
-              let dispatch = dispatchCustomEvent(evt.currentTarget, signal);
               let query = evt.currentTarget.value.trim();
-              if (!query) return void dispatch("bookSearch:queryEmpty");
+              let dispatch = dispatchCustomEvent.bind(null, {
+                target: evt.currentTarget,
+                signal,
+                namespace: "bookSearch",
+              });
+              if (!query) {
+                return void dispatch({ queryEmpty: null });
+              }
               fetchBooks(query, dispatch, signal);
             }),
-            on("bookSearch:change", ({ detail: { event }, currentTarget }) => {
-              bookSearchEvt = event;
+            on('bookSearch:change', ({ detail, currentTarget }) => {
+              bookSearchEvt = detail;
               handle.update();
-              if (event?.type !== "querySubmitted") {
+              if (detail.type !== "querySubmitted") {
                 currentTarget.select();
               }
             }),
@@ -114,7 +124,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
         />
       </label>
       {match(bookSearchEvt)
-        .with({ type: "queryEmpty" }, undefined, () => (
+        .with({ type: "queryEmpty" }, () => (
           <p>Enter the title of any book.</p>
         ))
         .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
@@ -144,6 +154,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
             {error.cause as string}.
           </p>
         ))
+        .with({ type: P.array(P._) }, () => null)
         .exhaustive()}
     </>
   );

@@ -15,9 +15,9 @@ import type { CustomEventMap } from "../utils/customEvent.ts";
 import { routes } from "../../routes.ts";
 
 export type TodoActionEventMap = CustomEventMap<{
-  actionSubmitted: { form: HTMLFormElement };
-  actionSucceeded: { form: HTMLFormElement };
-  actionErrored: { error: Error; form: HTMLFormElement };
+  actionSubmitted: null;
+  actionSucceeded: null;
+  actionErrored: { error: Error };
 }>;
 
 export let actionTarget = new TypedEventTarget<TodoActionEventMap>();
@@ -34,7 +34,7 @@ export function _TodoList(
 ) {
   addEventListeners(actionTarget, handle.signal, {
     change({detail}) {
-      console.log({...detail})
+      console.log(detail)
     }
   })
   return () => (

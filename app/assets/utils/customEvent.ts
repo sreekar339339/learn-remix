@@ -9,109 +9,144 @@ type NamespacedCustomEventName<
 
 type CustomEventMapBase = Record<string, unknown>;
 
-type UnionKeys<T> = T extends T ? keyof T : never;
-
-type StrictUnion<T, TAll = T> = T extends object
-  ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
-  : T;
-
-type ChangeEventEventField<
+type ChangeEventDetailField<
   EventName extends string,
   namespace extends string,
-  NamespacedTypeRequired extends boolean,
-> = NamespacedTypeRequired extends true
+  NameRequired extends boolean,
+  Source,
+> = NameRequired extends true
   ? {
       type: EventName;
-      namespacedType: NamespacedCustomEventName<EventName, namespace>;
+      name: NamespacedCustomEventName<EventName, namespace>;
+      source?: Source;
     }
   : {
       type: EventName;
-      namespacedType?: NamespacedCustomEventName<EventName, string>;
+      source?: Source;
     };
 
 type ChangeEventDetailBranchFromMap<
   EventMap extends CustomEventMapBase,
   namespace extends string,
-  NamespacedTypeRequired extends boolean,
+  NameRequired extends boolean,
+  Source = unknown,
 > = {
   [K in keyof EventMap & string]: EventMap[K] extends null | undefined
-    ? {
-        event: ChangeEventEventField<K, namespace, NamespacedTypeRequired> & {
-          detail?: never;
-        };
-        changes?: never;
+    ? ChangeEventDetailField<K, namespace, NameRequired, Source> & {
+        detail?: never;
       }
-    : {
-        event: ChangeEventEventField<K, namespace, NamespacedTypeRequired> & {
-          detail: EventMap[K];
-        };
-        changes?: never;
+    : ChangeEventDetailField<K, namespace, NameRequired, Source> & {
+        detail: EventMap[K];
       };
-}[keyof EventMap & string] | {
-  changes: Partial<EventMap>;
-  event?: never;
-};
+}[keyof EventMap & string];
+
+type ChangeEventBatchDetailFromMap<
+  EventMap extends CustomEventMapBase,
+  namespace extends string,
+  NameRequired extends boolean,
+  Source = unknown,
+> = NameRequired extends true
+  ? {
+      type: Array<keyof EventMap & string>;
+      name: Array<NamespacedCustomEventName<keyof EventMap & string, namespace>>;
+      detail: Partial<EventMap>;
+      source?: Source;
+    }
+  : {
+      type: Array<keyof EventMap & string>;
+      detail: Partial<EventMap>;
+      source?: Source;
+    };
 
 type ChangeEventDetailFromMap<
   EventMap extends CustomEventMapBase,
   namespace extends string,
-> = StrictUnion<ChangeEventDetailBranchFromMap<EventMap, namespace, true>>;
+> =
+  | ChangeEventDetailBranchFromMap<EventMap, namespace, true>
+  | ChangeEventBatchDetailFromMap<EventMap, namespace, true>;
 
 type LocalChangeEventDetailFromMap<EventMap extends CustomEventMapBase> =
-  StrictUnion<ChangeEventDetailBranchFromMap<EventMap, string, false>>;
+  | ChangeEventDetailBranchFromMap<EventMap, string, false>
+  | ChangeEventBatchDetailFromMap<EventMap, string, false>;
 
-type NoDetailArgs = [] | [detail: null | undefined, evtInit?: EventInit];
-
-type WithDetailArgs<Detail> = [detail: Detail, evtInit?: EventInit];
-
-type RuntimeDispatchArgs = NoDetailArgs | WithDetailArgs<unknown>;
+export type DispatchCustomEventOptions<
+  Target extends EventTarget = EventTarget,
+  Namespace extends string | undefined = undefined,
+  Source = unknown,
+> = EventInit & {
+  target: Target;
+  signal: AbortSignal;
+  namespace?: Namespace;
+  source?: Source;
+};
 
 type DetailFor<EventTypes extends object, T extends keyof EventTypes & string> =
   EventTypes[T] extends CustomEvent<infer Detail> ? Detail : never;
 
-type DispatchDetailFor<
-  EventTypes extends object,
-  T extends keyof EventTypes & string,
-> = T extends `${string}:${typeof CHANGE_EVENT_NAME}`
-  ? ChangeDispatchDetail<DetailFor<EventTypes, T>>
-  : T extends typeof CHANGE_EVENT_NAME
-    ? DetailFor<EventTypes, T>
-  : DetailFor<EventTypes, T>;
+type DispatchEventMap<
+  Target extends EventTarget,
+  Namespace extends string | undefined,
+  EventTypes extends object = CustomEventsOfTarget<Target>,
+> = Namespace extends string
+  ? {
+      [K in keyof EventTypes & string as K extends NamespacedCustomEventName<
+        infer EventName,
+        Namespace
+      >
+        ? EventName extends typeof CHANGE_EVENT_NAME
+          ? never
+          : EventName
+        : never]: DetailFor<EventTypes, K>;
+    }
+  : {
+      [K in keyof EventTypes & string as K extends typeof CHANGE_EVENT_NAME
+        ? never
+        : K extends `${string}:${string}`
+          ? never
+          : K]: DetailFor<EventTypes, K>;
+    };
 
-type ChangeDispatchDetail<Detail> = Detail extends {
-  changes: unknown;
-}
-  ? Detail
-  : Detail extends { event: infer Event }
-    ? Omit<Detail, "event"> & {
-        event: Event extends { type?: infer Value }
-          ? Omit<Event, "type"> & { type?: Value }
-          : Event;
-      }
-    : Detail;
+export type DispatchCustomEventEvents<
+  Target extends EventTarget,
+  Namespace extends string | undefined = undefined,
+> = Partial<DispatchEventMap<Target, Namespace>>;
 
-type DispatchCustomEventArgs<
-  EventTypes extends object,
-  T extends keyof EventTypes & string,
-> =
-  DetailFor<EventTypes, T> extends null | undefined
-    ? NoDetailArgs
-    : WithDetailArgs<DispatchDetailFor<EventTypes, T>>;
+export type DispatchCustomEventArgs<
+  Target extends EventTarget,
+  Namespace extends string | undefined = undefined,
+> = [events: DispatchCustomEventEvents<Target, Namespace>];
 
-type DispatchCustomEvent<EventTypes extends object> = <
-  T extends keyof EventTypes & string,
->(
-  name: T,
-  ...args: DispatchCustomEventArgs<EventTypes, T>
+export type DispatchCustomEvent<
+  Target extends EventTarget,
+  Namespace extends string | undefined = undefined,
+> = (
+  events: DispatchCustomEventEvents<Target, Namespace>
 ) => boolean;
 
-type DispatchCustomEventWithoutSignal<EventTypes extends object> = {
-  (signal: AbortSignal): DispatchCustomEvent<EventTypes>;
-  <T extends keyof EventTypes & string>(
-    signal: AbortSignal,
-    name: T,
-    ...args: DispatchCustomEventArgs<EventTypes, T>
+type DispatchCustomEventCallArgs<
+  Target extends EventTarget,
+  Namespace extends string | undefined = undefined,
+> = [
+  options: DispatchCustomEventOptions<Target, Namespace>,
+  events: DispatchCustomEventEvents<Target, Namespace>,
+];
+
+type DispatchCustomEventFunction = {
+  <
+    Target extends EventTarget,
+    Namespace extends string | undefined = undefined,
+  >(
+    ...args: DispatchCustomEventCallArgs<Target, Namespace>
   ): boolean;
+
+  bind<
+    Target extends EventTarget,
+    Namespace extends string | undefined = undefined,
+  >(
+    this: DispatchCustomEventFunction,
+    thisArg: null | undefined,
+    options: DispatchCustomEventOptions<Target, Namespace>,
+  ): DispatchCustomEvent<Target, Namespace>;
 };
 
 type NamespacedCustomEventTypes<
@@ -210,21 +245,8 @@ export type Namespaced<
     ? NamespacedEventTypes
     : NamespacedCustomEventTypesError<NonCustomEventKeys<EventTypes>>;
 
-function normalizeDispatchArgs(args: RuntimeDispatchArgs) {
-  const [detail, evtInit] = args;
-
-  if (args.length === 0 || detail == null) {
-    return {
-      evtInit,
-      hasExplicitDetail: false,
-    };
-  }
-
-  return {
-    detail,
-    evtInit,
-    hasExplicitDetail: true,
-  };
+function hasDispatchSource(options: { source?: unknown }) {
+  return Object.hasOwn(options, "source");
 }
 
 type CustomEventsOfTarget<Target> = Target extends {
@@ -243,57 +265,6 @@ type OnlyCustomEvents<EventTypes> = EventTypes extends object
     }
   : never;
 
-function getChangeEventName(name: string) {
-  return name.split(":").slice(0, -1).concat(CHANGE_EVENT_NAME).join(":");
-}
-
-function getChangeEventType(name: string) {
-  return name.split(":").at(-1) ?? name;
-}
-
-function isChangeEventName(name: string) {
-  return getChangeEventType(name) === CHANGE_EVENT_NAME;
-}
-
-function getEventNameFromChangeEventName(changeEventName: string, eventKey: string) {
-  return changeEventName.split(":").slice(0, -1).concat(eventKey).join(":");
-}
-
-function normalizeChangeEventDetail(detail: unknown) {
-  if (
-    !detail ||
-    typeof detail !== "object" ||
-    !("event" in detail)
-  ) {
-    return detail;
-  }
-
-  if (!detail.event || typeof detail.event !== "object") return detail;
-
-  const event = detail.event;
-  const namespacedType =
-    "namespacedType" in event && typeof event.namespacedType === "string"
-      ? event.namespacedType
-      : undefined;
-  const type =
-    namespacedType
-      ? getChangeEventType(namespacedType)
-      : "type" in event && typeof event.type === "string"
-        ? event.type
-        : undefined;
-
-  if (!type) return detail;
-
-  return {
-    ...detail,
-    event: {
-      ...event,
-      type,
-      ...(namespacedType ? { namespacedType } : {}),
-    },
-  };
-}
-
 function dispatchSingleCustomEvent(
   target: EventTarget,
   name: string,
@@ -309,196 +280,108 @@ function dispatchSingleCustomEvent(
   );
 }
 
+function getEventInit(options: EventInit): EventInit {
+  return {
+    bubbles: options.bubbles ?? true,
+    cancelable: options.cancelable ?? true,
+    ...(options.composed === undefined ? {} : { composed: options.composed }),
+  };
+}
+
 function createChangeDetail(
+  type: string,
   name: string,
   detail: unknown,
   hasExplicitDetail: boolean,
+  options: DispatchCustomEventOptions<EventTarget, string | undefined>,
 ) {
-  const namespacedType = name.includes(":") ? name : undefined;
+  return {
+    type,
+    ...(options.namespace ? { name } : {}),
+    ...(hasExplicitDetail ? { detail } : {}),
+    ...(hasDispatchSource(options) ? { source: options.source } : {}),
+  };
+}
+
+function getNamespacedEventName(
+  options: DispatchCustomEventOptions<EventTarget, string | undefined>,
+  type: string,
+) {
+  return options.namespace ? `${options.namespace}:${type}` : type;
+}
+
+function getChangeDetail(
+  entries: Array<[string, unknown]>,
+  eventNames: string[],
+  options: DispatchCustomEventOptions<EventTarget, string | undefined>,
+) {
+  if (entries.length === 1) {
+    const [[type, detail]] = entries;
+    return createChangeDetail(
+      type,
+      eventNames[0],
+      detail,
+      detail != null,
+      options,
+    );
+  }
 
   return {
-    event: {
-      type: getChangeEventType(name),
-      ...(namespacedType ? { namespacedType } : {}),
-      ...(hasExplicitDetail ? { detail } : {}),
-    },
+    type: entries.map(([type]) => type),
+    ...(options.namespace ? { name: eventNames } : {}),
+    detail: Object.fromEntries(entries),
+    ...(hasDispatchSource(options) ? { source: options.source } : {}),
   };
 }
 
-function dispatchGranularEventFromChangeDetail(
-  target: EventTarget,
-  changeEventName: string,
-  detail: unknown,
-  init: EventInit,
-) {
-  if (!detail || typeof detail !== "object") return true;
-
-  if ("changes" in detail) {
-    let result = true;
-    let changes = detail.changes;
-
-    if (!changes || typeof changes !== "object") return true;
-
-    for (let [eventKey, eventDetail] of Object.entries(changes)) {
-      result = dispatchSingleCustomEvent(
-        target,
-        getEventNameFromChangeEventName(changeEventName, eventKey),
-        init,
-        eventDetail,
-        eventDetail != null,
-      ) && result;
-    }
-
-    return result;
-  }
-
-  if (
-    !("event" in detail) ||
-    !detail.event ||
-    typeof detail.event !== "object"
-  ) {
-    return true;
-  }
-
-  const event = detail.event;
-  const type = "type" in event && typeof event.type === "string"
-    ? event.type
-    : undefined;
-  const eventName =
-    "namespacedType" in event && typeof event.namespacedType === "string"
-      ? event.namespacedType
-      : type
-        ? getEventNameFromChangeEventName(changeEventName, type)
-        : undefined;
-
-  if (!eventName) return true;
-
-  return dispatchSingleCustomEvent(
-    target,
-    eventName,
-    init,
-    "detail" in event ? event.detail : undefined,
-    "detail" in event,
-  );
-}
-
-function dispatchCustomEventImpl(
-  target: EventTarget,
-  eventSignal: AbortSignal,
-  name: string,
-  args: RuntimeDispatchArgs,
+function dispatchEventObject(
+  options: DispatchCustomEventOptions<EventTarget, string | undefined>,
+  events: object,
 ): boolean {
-  const { detail, evtInit, hasExplicitDetail } = normalizeDispatchArgs(args);
+  if (options.signal.aborted) return true;
 
-  if (eventSignal.aborted) return true;
-
-  const init: EventInit = {
-    bubbles: true,
-    cancelable: true,
-    ...evtInit,
-  };
-
-  if (isChangeEventName(name)) {
-    const changeDetail = hasExplicitDetail
-      ? normalizeChangeEventDetail(detail)
-      : detail;
-
-    const changeResult = dispatchSingleCustomEvent(
-      target,
-      name,
-      init,
-      changeDetail,
-      hasExplicitDetail,
-    );
-
-    const granularResult = hasExplicitDetail
-      ? dispatchGranularEventFromChangeDetail(target, name, changeDetail, init)
-      : true;
-
-    return changeResult && granularResult;
+  const entries = Object.entries(events);
+  if (!entries.length) return true;
+  if (entries.some(([type]) => type === CHANGE_EVENT_NAME)) {
+    throw new TypeError('dispatchCustomEvent does not dispatch "change" directly.');
   }
 
-  const changeDetail = createChangeDetail(name, detail, hasExplicitDetail);
-
+  const init = getEventInit(options);
+  const eventNames = entries.map(([type]) => getNamespacedEventName(options, type));
+  const changeEventName = getNamespacedEventName(options, CHANGE_EVENT_NAME);
   const changeResult = dispatchSingleCustomEvent(
-    target,
-    getChangeEventName(name),
+    options.target,
+    changeEventName,
     init,
-    changeDetail,
+    getChangeDetail(entries, eventNames, options),
     true,
   );
 
-  const eventResult = dispatchSingleCustomEvent(
-    target,
-    name,
-    init,
-    detail,
-    hasExplicitDetail,
-  );
+  let eventsResult = true;
+  for (let index = 0; index < entries.length; index++) {
+    if (options.signal.aborted) break;
 
-  return changeResult && eventResult;
+    const [, detail] = entries[index];
+    eventsResult = dispatchSingleCustomEvent(
+      options.target,
+      eventNames[index],
+      init,
+      detail,
+      detail != null,
+    ) && eventsResult;
+  }
+
+  return changeResult && eventsResult;
 }
 
-function createDispatcher(
-  target: EventTarget,
-  signal: AbortSignal,
-): DispatchCustomEvent<object> {
-  return (eventName: string, ...eventArgs: RuntimeDispatchArgs) => {
-    return dispatchCustomEventImpl(target, signal, eventName, eventArgs);
-  };
-}
-
-export function dispatchCustomEvent<Target extends EventTarget>(
-  target: Target,
-): DispatchCustomEventWithoutSignal<CustomEventsOfTarget<Target>>;
-
-export function dispatchCustomEvent<Target extends EventTarget>(
-  target: Target,
-  signal: AbortSignal,
-): DispatchCustomEvent<CustomEventsOfTarget<Target>>;
-
-export function dispatchCustomEvent<
+export const dispatchCustomEvent = function <
   Target extends EventTarget,
-  T extends keyof CustomEventsOfTarget<Target> & string,
+  Namespace extends string | undefined = undefined,
 >(
-  target: Target,
-  signal: AbortSignal,
-  name: T,
-  ...args: DispatchCustomEventArgs<CustomEventsOfTarget<Target>, T>
-): boolean;
+  ...args: DispatchCustomEventCallArgs<Target, Namespace>
+): boolean {
+  const options = args[0] as DispatchCustomEventOptions<Target, Namespace>;
+  const events = args[1] as object;
 
-export function dispatchCustomEvent(
-  target: EventTarget,
-  signal?: AbortSignal,
-  ...args: [] | [name: string, ...args: RuntimeDispatchArgs]
-): unknown {
-  if (!signal) {
-    return (
-      nextSignal: AbortSignal,
-      eventName?: string,
-      ...eventArgs: RuntimeDispatchArgs
-    ) => {
-      if (eventName === undefined) {
-        return createDispatcher(target, nextSignal);
-      }
-
-      return dispatchCustomEventImpl(target, nextSignal, eventName, eventArgs);
-    };
-  }
-
-  if (args.length === 0) {
-    return createDispatcher(target, signal);
-  }
-
-  const [name, ...eventArgs] = args;
-
-  return dispatchCustomEventImpl(target, signal, name, eventArgs);
-}
-
-export namespace dispatchCustomEvent {
-  export type Dispatcher<Target extends EventTarget> =
-    DispatchCustomEvent<CustomEventsOfTarget<Target>>;
-
-  export type DispatcherWithoutSignal<Target extends EventTarget> =
-    DispatchCustomEventWithoutSignal<CustomEventsOfTarget<Target>>;
-}
+  return dispatchEventObject(options, events);
+} as DispatchCustomEventFunction;
