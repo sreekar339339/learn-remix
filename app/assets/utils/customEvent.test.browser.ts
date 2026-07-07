@@ -49,6 +49,7 @@ declare global {
 type ObservedEvent = {
   type: string;
   detail: unknown;
+  source?: unknown;
   bubbles: boolean;
   cancelable: boolean;
 };
@@ -59,6 +60,9 @@ function observe(target: EventTarget, name: string, events: ObservedEvent[]) {
     events.push({
       type: customEvent.type,
       detail: customEvent.detail,
+      ...(Object.hasOwn(customEvent, "source")
+        ? { source: (customEvent as typeof customEvent & { source: unknown }).source }
+        : {}),
       bubbles: customEvent.bubbles,
       cancelable: customEvent.cancelable,
     });
@@ -201,14 +205,15 @@ describe("dispatchCustomEvent", () => {
         detail: {
           type: "actionSubmitted",
           name: "test-todo:actionSubmitted",
-          source,
         },
+        source,
         bubbles: true,
         cancelable: true,
       },
       {
         type: "test-todo:actionSubmitted",
         detail: null,
+        source,
         bubbles: true,
         cancelable: true,
       },
@@ -218,14 +223,15 @@ describe("dispatchCustomEvent", () => {
           type: "actionErrored",
           name: "test-todo:actionErrored",
           detail: { error: new Error("Nope") },
-          source,
         },
+        source,
         bubbles: true,
         cancelable: true,
       },
       {
         type: "test-todo:actionErrored",
         detail: { error: new Error("Nope") },
+        source,
         bubbles: true,
         cancelable: true,
       },

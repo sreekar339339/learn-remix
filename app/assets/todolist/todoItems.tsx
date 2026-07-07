@@ -16,6 +16,7 @@ import {
   type TodoActionEventMap,
 } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
+import { onTarget } from "../utils/onTarget.ts";
 
 export function TodoItems(
   handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
@@ -115,16 +116,11 @@ export function TodoItems(
                     },
                   },
                 }),
-                ref((button, signal) => {
-                  addEventListeners(actionTarget, signal, {
-                    change({ detail }) {
-                      if (detail.source !== button.form) return;
-                      button.classList.toggle(
-                        "pending",
-                        detail.type === "actionSubmitted",
-                      );
-                    },
-                  });
+                onTarget(actionTarget, 'change', (event, button) => {
+                  if (event.source !== button.form) return;
+                  let isActionSubmitted = event.detail.type === 'actionSubmitted'
+                  button.classList.toggle('pending', isActionSubmitted)
+                  button.toggleAttribute('disabled', isActionSubmitted)
                 }),
               ]}
               name="intent"
@@ -171,16 +167,11 @@ export function TodoItems(
                     },
                   },
                 }),
-                ref((button, signal) => {
-                  addEventListeners(actionTarget, signal, {
-                    change({ detail }) {
-                      if (detail.source !== button.form) return;
-                      button.classList.toggle(
-                        "pending",
-                        detail.type === "actionSubmitted",
-                      );
-                    },
-                  });
+                onTarget(actionTarget, 'change', (event, button) => {
+                  if (event.source !== button.form) return;
+                  let isActionSubmitted = event.detail.type === 'actionSubmitted'
+                  button.classList.toggle('pending', isActionSubmitted)
+                  button.toggleAttribute('disabled', isActionSubmitted)
                 }),
               ]}
               name="intent"
@@ -196,26 +187,17 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
+  let isActionSubmitted: boolean = false
   return () => (
     <form
       mix={[
-        ref((form, signal) => {
-          let actionEvt: TodoActionEventMap['change']['detail'] | undefined
-          addEventListeners(actionTarget, signal, {
-            async change({ detail }) {
-              if (detail.source !== form) return;
-              actionEvt = detail;
-              if (detail.type === "actionErrored") {
-                form.reset();
-              }
-            },
-          });
-          addEventListeners(form, signal, {
-            focusout() {
-              if (actionEvt?.type === "actionSubmitted") return;
-              form.reset()
-            }
-          })
+        onTarget(actionTarget, 'actionErrored', (event, form) => {
+          if (event.source !== form) return;
+          form.reset();
+        }),
+        on('focusout', ({currentTarget}) => {
+          if (isActionSubmitted) return;
+          currentTarget.reset()
         }),
       ]}
       method="POST"
@@ -225,14 +207,11 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
       <input hidden name="id" value={handle.props.id} />
       <input
         mix={[
-          ref((input, signal) => {
-            addEventListeners(actionTarget, signal, {
-              change({detail}) {
-                if (detail.source !== input.form) return;
-                input.classList.toggle('pending')
-                input.toggleAttribute('disabled')
-              }
-            })
+          onTarget(actionTarget, 'change', (event, input) => {
+            if (event.source !== input.form) return;
+            isActionSubmitted = event.detail.type === 'actionSubmitted'
+            input.classList.toggle('pending', isActionSubmitted)
+            input.toggleAttribute('disabled', isActionSubmitted)
           }),
           css({
             borderColor: "transparent",

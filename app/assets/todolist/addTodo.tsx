@@ -8,12 +8,11 @@ import {
   type Props,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
-import { actionTarget, type TodoActionEventMap } from "./todoList.tsx";
+import { actionTarget } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
+import { onTarget } from "../utils/onTarget.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  let actionEvt: TodoActionEventMap["change"]["detail"]
-
   let onSubmit = async (
     evt: Dispatched<SubmitEvent, HTMLFormElement>,
     signal: AbortSignal,
@@ -55,17 +54,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       action={routes.todolist.todos.action.href()}
       mix={[
         on("submit", onSubmit),
-        ref((form, signal) => {
-          addEventListeners(actionTarget, signal, {
-            change({detail}) {
-              if (form !== detail.source) return
-              actionEvt = detail;
-              if (detail.type === "actionSucceeded") {
-                form.reset();
-              }
-              handle.update();
-            },
-          });
+        onTarget(actionTarget, "actionSucceeded", (event, form) => {
+          if (event.source !== form) return;
+          form.reset();
         }),
       ]}
     >
@@ -73,9 +64,14 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       <label mix={css({ display: "flex", alignItems: "center", gap: 8 })}>
         Enter a todo{" "}
         <input
-          class={actionEvt?.type === "actionSubmitted" ? "pending" : ""}
-          disabled={actionEvt?.type === "actionSubmitted"}
           mix={[
+            onTarget(actionTarget, 'change', (event, input) => {
+              if (event.source !== input.form) return;
+              let isActionSubmitted = event.detail.type === 'actionSubmitted'
+              input.classList.toggle('pending', isActionSubmitted)
+              input.toggleAttribute('disabled', isActionSubmitted)
+              input.select()
+            }),
             css({
               padding: 4,
               font: "inherit",
@@ -94,15 +90,6 @@ export function AddTodo(handle: Handle<Props<"form">>) {
                   animation: "none",
                 },
               },
-            }),
-            ref((input, signal) => {
-              input.select();
-              addEventListeners(actionTarget, signal, {
-                change({detail}) {
-                  if (input.form !== detail.source) return
-                  handle.queueTask(() => input.select())
-                }
-              });
             }),
           ]}
           name="text"

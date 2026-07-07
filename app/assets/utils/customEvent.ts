@@ -9,6 +9,11 @@ type NamespacedCustomEventName<
 
 type CustomEventMapBase = Record<string, unknown>;
 
+export type CustomEventWithSource<Detail, Source = unknown> =
+  CustomEvent<Detail> & {
+    source?: Source;
+  };
+
 type ChangeDetailName<
   EventName extends string,
   Namespace extends string | undefined,
@@ -19,11 +24,9 @@ type ChangeDetailName<
 type ChangeEventDetailFromMap<
   EventMap extends CustomEventMapBase,
   Namespace extends string | undefined = undefined,
-  Source = unknown,
 > = {
   [K in keyof EventMap & string]: {
     type: K;
-    source?: Source;
   } & ChangeDetailName<K, Namespace> & (
     EventMap[K] extends null | undefined
       ? { detail?: never }
@@ -32,7 +35,6 @@ type ChangeEventDetailFromMap<
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;
   detail: Partial<EventMap>;
-  source?: Source;
 } & (
   Namespace extends string
     ? {
@@ -155,21 +157,21 @@ type NamespacedCustomEventTypes<
 > = [namespace] extends [never]
   ? {}
   : {
-      [K in typeof CHANGE_EVENT_NAME as NamespacedCustomEventName<K, namespace>]: CustomEvent<
+      [K in typeof CHANGE_EVENT_NAME as NamespacedCustomEventName<K, namespace>]: CustomEventWithSource<
         ChangeEventDetailFromMap<EventMap, namespace>
       >;
     } & {
-      [K in keyof EventMap & string as NamespacedCustomEventName<K, namespace>]: CustomEvent<
+      [K in keyof EventMap & string as NamespacedCustomEventName<K, namespace>]: CustomEventWithSource<
         EventMap[K]
       >;
     };
 
 type LocalCustomEventTypes<EventMap extends CustomEventMapBase> = {
-  [K in typeof CHANGE_EVENT_NAME]: CustomEvent<
+  [K in typeof CHANGE_EVENT_NAME]: CustomEventWithSource<
     ChangeEventDetailFromMap<EventMap>
   >;
 } & {
-  [K in keyof EventMap & string]: CustomEvent<EventMap[K]>;
+  [K in keyof EventMap & string]: CustomEventWithSource<EventMap[K]>;
 };
 
 type EventDetailMapFromCustomEventTypes<EventTypes extends object> = {
@@ -266,13 +268,23 @@ function dispatchSingleCustomEvent(
   init: EventInit,
   detail?: unknown,
   hasExplicitDetail = false,
+  source?: unknown,
+  hasExplicitSource = false,
 ) {
-  return target.dispatchEvent(
-    new CustomEvent(name, {
-      ...(hasExplicitDetail ? { detail } : {}),
-      ...init,
-    }),
-  );
+  let event = new CustomEvent(name, {
+    ...(hasExplicitDetail ? { detail } : {}),
+    ...init,
+  });
+
+  if (hasExplicitSource) {
+    Object.defineProperty(event, "source", {
+      configurable: true,
+      enumerable: true,
+      value: source,
+    });
+  }
+
+  return target.dispatchEvent(event);
 }
 
 function getEventInit(options: EventInit): EventInit {
@@ -308,7 +320,6 @@ function getChangeDetail(
       type,
       ...(options.namespace ? { name: eventNames[0] } : {}),
       ...(detail != null ? { detail } : {}),
-      ...(hasDispatchSource(options) ? { source: options.source } : {}),
     };
   }
 
@@ -316,7 +327,6 @@ function getChangeDetail(
     type: entries.map(([type]) => type),
     ...(options.namespace ? { name: eventNames } : {}),
     detail: Object.fromEntries(entries),
-    ...(hasDispatchSource(options) ? { source: options.source } : {}),
   };
 }
 
@@ -335,12 +345,15 @@ function dispatchEventObject(
   const init = getEventInit(options);
   const eventNames = entries.map(([type]) => getNamespacedEventName(options, type));
   const changeEventName = getNamespacedEventName(options, CHANGE_EVENT_NAME);
+  const hasSource = hasDispatchSource(options);
   const changeResult = dispatchSingleCustomEvent(
     options.target,
     changeEventName,
     init,
     getChangeDetail(entries, eventNames, options),
     true,
+    options.source,
+    hasSource,
   );
 
   let eventsResult = true;
@@ -354,6 +367,8 @@ function dispatchEventObject(
       init,
       detail,
       detail != null,
+      options.source,
+      hasSource,
     ) && eventsResult;
   }
 

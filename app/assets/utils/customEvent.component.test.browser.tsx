@@ -194,8 +194,9 @@ function ScopedActionForms(handle: Handle) {
     (statusFor: "first" | "second") =>
     (form: HTMLFormElement, signal: AbortSignal) => {
       addEventListeners(target, signal, {
-        change({ detail }) {
-          if (detail.source !== form) return;
+        change(event) {
+          if (event.source !== form) return;
+          let { detail } = event;
           if (Array.isArray(detail.type)) return;
 
           if (statusFor === "first") {
