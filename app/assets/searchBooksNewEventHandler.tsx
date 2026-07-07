@@ -10,7 +10,6 @@ import { match, P } from "ts-pattern";
 import {
   type CustomEventMap,
   type DispatchCustomEvent,
-  type DispatchCustomEventOptions,
   type Namespaced,
   dispatchCustomEvent,
 } from "./utils/customEvent.ts";
@@ -59,12 +58,10 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }>;
 
-const namespace = "bookSearch"
-
 declare global {
   interface HTMLElementEventMap extends Namespaced<
     SearchEventMap,
-    typeof namespace
+    "bookSearch"
   > {}
 }
 
@@ -105,7 +102,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
               let dispatch = dispatchCustomEvent.bind(null, {
                 target: evt.currentTarget,
                 signal,
-                namespace: "bookSearch",
+                namespace: 'bookSearch',
               });
               if (!query) {
                 return void dispatch({ queryEmpty: null });

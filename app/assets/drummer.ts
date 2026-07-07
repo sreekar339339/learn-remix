@@ -34,7 +34,7 @@ export class Drummer extends TypedEventTarget<DrummerEventMap> {
     super();
     this.#tempoBpm = tempoBpm;
     this.dispatch = dispatchCustomEvent.bind(null, {
-      target: this,
+      target: this as Drummer,
       signal,
     });
   }

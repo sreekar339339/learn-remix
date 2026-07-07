@@ -29,11 +29,10 @@ function AppProvider(handle: Handle<{ children?: RemixNode }, CompContext>) {
     user: null,
     settings: { layout: "normal", theme: "dark" },
   };
-  let context: CompContext = {
+  handle.context.set({
     appContext,
     target,
-  };
-  handle.context.set(context);
+  });
   addEventListeners(target, handle.signal, {
     change({ detail }) {
       if (Array.isArray(detail.type)) {

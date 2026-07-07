@@ -127,7 +127,7 @@ class TestPlayer extends TypedEventTarget<PlayerEventMap> {
   constructor(signal: AbortSignal) {
     super();
     this.dispatch = dispatchCustomEvent.bind(null, {
-      target: this,
+      target: this as TestPlayer,
       signal,
     });
   }

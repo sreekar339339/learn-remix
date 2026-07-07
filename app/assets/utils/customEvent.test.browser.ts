@@ -7,6 +7,7 @@ import {
   type CustomEventMap,
   type DispatchCustomEvent,
   type DispatchCustomEventArgs,
+  type DispatchCustomEventOptions,
   type Namespaced,
 } from "./customEvent.ts";
 
@@ -94,6 +95,19 @@ describe("dispatchCustomEvent", () => {
       // @ts-expect-error users cannot dispatch generated change events directly.
       { change: null },
     ];
+    // @ts-expect-error DOM targets require a namespace for dispatchCustomEvent.
+    let domOptionsWithoutNamespace: DispatchCustomEventOptions<HTMLDivElement> = {
+      target: document.createElement("div"),
+      signal: new AbortController().signal,
+    };
+    // @ts-expect-error namespace must be present on the target's custom events.
+    let invalidNamespaceArgs: DispatchCustomEventArgs<HTMLDivElement, "wrong"> = [
+      { value: "dark" },
+    ];
+    // @ts-expect-error local event targets do not accept namespaced dispatchers.
+    let localNamespaceArgs: DispatchCustomEventArgs<TypedEventTarget<WorkerEventMap>, "test-theme"> = [
+      { ready: { source: "worker" } },
+    ];
     // @ts-expect-error event maps cannot define the reserved "change" key.
     let reservedEvents: ReservedChangeEventMap = {};
     // @ts-expect-error local event maps cannot define namespaced event keys.
@@ -115,6 +129,9 @@ describe("dispatchCustomEvent", () => {
     assert.deepEqual(dispatchArgs, [{ value: "dark" }]);
     assert.deepEqual(nativeEventArgs, [{ click: null }]);
     assert.deepEqual(changeEventArgs, [{ change: null }]);
+    assert.equal(domOptionsWithoutNamespace.target.tagName, "DIV");
+    assert.deepEqual(invalidNamespaceArgs, [{ value: "dark" }]);
+    assert.deepEqual(localNamespaceArgs, [{ ready: { source: "worker" } }]);
     assert.deepEqual(reservedEvents, {});
     assert.deepEqual(namespacedLocalEvents, {});
     assert.deepEqual(rawNamespacedEvents, {});
