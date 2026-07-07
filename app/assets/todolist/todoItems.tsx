@@ -196,26 +196,27 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
-  let actionEvent: TodoActionEventMap["change"]["detail"];
   return () => (
     <form
       mix={[
         ref((form, signal) => {
+          let actionEvt: TodoActionEventMap['change']['detail'] | undefined
           addEventListeners(actionTarget, signal, {
             async change({ detail }) {
               if (detail.source !== form) return;
-              actionEvent = detail;
+              actionEvt = detail;
               if (detail.type === "actionErrored") {
                 form.reset();
               }
-              handle.update();
             },
           });
+          addEventListeners(form, signal, {
+            focusout() {
+              if (actionEvt?.type === "actionSubmitted") return;
+              form.reset()
+            }
+          })
         }),
-        on("focusout", (evt => {
-          if (actionEvent?.type === "actionSubmitted") return;
-          evt.currentTarget.reset()
-        })),
       ]}
       method="POST"
       action={routes.todolist.todos.action.href()}
@@ -223,9 +224,16 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
       <button hidden name="intent" value="update" />
       <input hidden name="id" value={handle.props.id} />
       <input
-        class={actionEvent?.type === "actionSubmitted" ? "pending" : ""}
-        disabled={actionEvent?.type === "actionSubmitted"}
         mix={[
+          ref((input, signal) => {
+            addEventListeners(actionTarget, signal, {
+              change({detail}) {
+                if (detail.source !== input.form) return;
+                input.classList.toggle('pending')
+                input.toggleAttribute('disabled')
+              }
+            })
+          }),
           css({
             borderColor: "transparent",
             backgroundColor: "transparent",
