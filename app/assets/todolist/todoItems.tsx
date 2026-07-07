@@ -84,10 +84,47 @@ export function TodoItems(
             <button
               mix={[
                 css({
+                  position: "relative",
+                  width: 28,
+                  height: 28,
                   border: "none",
+                  borderRadius: "9999px",
                   backgroundColor: "transparent",
                   cursor: "pointer",
-                  paddingRight: 6,
+                  padding: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  "&.pending": {
+                    color: "var(--text-primary)",
+                  },
+                  "&.pending::before": {
+                    content: '""',
+                    position: "absolute",
+                    inset: -3,
+                    borderRadius: "9999px",
+                    border: "2px solid transparent",
+                    borderTopColor: "var(--brand-blue)",
+                    borderRightColor: "rgba(45, 172, 249, 0.35)",
+                    animation: "todoActionSpin 0.75s linear infinite",
+                    pointerEvents: "none",
+                  },
+                  "@media (prefers-reduced-motion: reduce)": {
+                    "&.pending::before": {
+                      animation: "none",
+                    },
+                  },
+                }),
+                ref((button, signal) => {
+                  addEventListeners(actionTarget, signal, {
+                    change({ detail }) {
+                      if (detail.source !== button.form) return;
+                      button.classList.toggle(
+                        "pending",
+                        detail.type === "actionSubmitted",
+                      );
+                    },
+                  });
                 }),
               ]}
               name="intent"
@@ -104,6 +141,7 @@ export function TodoItems(
             <button
               mix={[
                 css({
+                  position: "relative",
                   width: "20px",
                   height: "20px",
                   borderRadius: "9999px",
@@ -116,6 +154,33 @@ export function TodoItems(
                   fontSize: "18px",
                   cursor: "pointer",
                   padding: 0,
+                  "&.pending::before": {
+                    content: '""',
+                    position: "absolute",
+                    inset: -4,
+                    borderRadius: "9999px",
+                    border: "2px solid transparent",
+                    borderTopColor: "var(--brand-blue)",
+                    borderRightColor: "rgba(45, 172, 249, 0.35)",
+                    animation: "todoActionSpin 0.75s linear infinite",
+                    pointerEvents: "none",
+                  },
+                  "@media (prefers-reduced-motion: reduce)": {
+                    "&.pending::before": {
+                      animation: "none",
+                    },
+                  },
+                }),
+                ref((button, signal) => {
+                  addEventListeners(actionTarget, signal, {
+                    change({ detail }) {
+                      if (detail.source !== button.form) return;
+                      button.classList.toggle(
+                        "pending",
+                        detail.type === "actionSubmitted",
+                      );
+                    },
+                  });
                 }),
               ]}
               name="intent"

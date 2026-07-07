@@ -27,6 +27,11 @@ export function Document(handle: Handle<DocumentProps>) {
         background-position: -60% 0;
       }
     }
+    @keyframes todoActionSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
     `
     return (
       <html lang="en">
