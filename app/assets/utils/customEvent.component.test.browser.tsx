@@ -253,6 +253,7 @@ function ScopedActionForms(handle: Handle) {
 function SearchForm(handle: Handle<Props<"div">>) {
   let event: SearchEventMap["change"]["detail"] = {
     type: "idle",
+    detail: null,
   };
 
   let searchTargetRef = (target: HTMLDivElement) => {
@@ -523,7 +524,7 @@ describe("dispatchCustomEvent component usage", () => {
             name: "test-gesture:moved",
             detail: { x: 20, y: 35 },
           },
-          { type: "released", name: "test-gesture:released" },
+          { type: "released", name: "test-gesture:released", detail: null },
         ],
         null,
         2,
@@ -607,7 +608,7 @@ describe("dispatchCustomEvent component usage", () => {
             type: "played",
             detail: { track: "North Star" },
           },
-          { type: "stopped" },
+          { type: "stopped", detail: null },
         ],
         null,
         2,
@@ -698,6 +699,7 @@ describe("dispatchCustomEvent component usage", () => {
         {
           type: "idle",
           name: "test-search:idle",
+          detail: null,
         },
         null,
         2,

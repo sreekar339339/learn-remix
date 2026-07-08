@@ -14,6 +14,7 @@ import {
   dispatchCustomEvent,
   type CustomEventMap,
 } from "./utils/customEvent.ts";
+import { onTarget } from "./utils/onTarget.ts";
 
 type SearchEventMap = CustomEventMap<{
   queryEmpty: null;
@@ -30,13 +31,14 @@ export const SearchBooksWithFrame = clientEntry(
         handle.update();
       },
     });
+    let onSearch = onTarget.with({target: searchTarget})
     let initialQuery = handle.props.initialQuery?.trim() || "";
     let searchEvent: SearchEventMap["change"]["detail"] = initialQuery
       ? {
           type: "querySubmitted",
           detail: { query: initialQuery },
         }
-      : { type: "queryEmpty" };
+      : { type: "queryEmpty", detail: null };
 
     return () => (
       <>
@@ -66,13 +68,9 @@ export const SearchBooksWithFrame = clientEntry(
               defaultValue={initialQuery}
               mix={[
                 css({ padding: 4 }),
-                ref((node, signal) => {
-                  addEventListeners(searchTarget, signal, {
-                    querySubmitted() {
-                      node.select();
-                    },
-                  });
-                }),
+                onSearch('querySubmitted', (_, input) => {
+                  input.select()
+                })
               ]}
             />
           </label>

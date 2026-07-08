@@ -77,6 +77,7 @@ describe("dispatchCustomEvent", () => {
     };
     let localNoDetailChange: ThemeEventMap["change"]["detail"] = {
       type: "reset",
+      detail: null,
     };
     let namespacedChange: ThemeEventTypes["test-theme:change"]["detail"] = {
       type: "value",
@@ -120,7 +121,7 @@ describe("dispatchCustomEvent", () => {
     let rawNamespacedEvents: RawNamespacedEventTypes = {};
 
     assert.deepEqual(localChange, { type: "value", detail: "dark" });
-    assert.deepEqual(localNoDetailChange, { type: "reset" });
+    assert.deepEqual(localNoDetailChange, { type: "reset", detail: null });
     assert.deepEqual(namespacedChange, {
       type: "value",
       name: "test-theme:value",
@@ -205,6 +206,7 @@ describe("dispatchCustomEvent", () => {
         detail: {
           type: "actionSubmitted",
           name: "test-todo:actionSubmitted",
+          detail: null,
         },
         source,
         bubbles: true,
@@ -284,7 +286,7 @@ describe("dispatchCustomEvent", () => {
       },
       {
         type: "change",
-        detail: { type: "stopped" },
+        detail: { type: "stopped", detail: null },
         bubbles: true,
         cancelable: true,
       },

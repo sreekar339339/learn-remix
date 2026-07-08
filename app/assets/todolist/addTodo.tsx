@@ -1,8 +1,6 @@
 import {
-  addEventListeners,
   css,
   on,
-  ref,
   type Dispatched,
   type Handle,
   type Props,
@@ -10,9 +8,13 @@ import {
 import { routes } from "../../routes.ts";
 import { actionTarget } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onTarget } from "../utils/onTarget.ts";
+import { onTarget, sourceContainsElement } from "../utils/onTarget.ts";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
+  const onActionTarget = onTarget.with({
+    target: actionTarget,
+    guard: sourceContainsElement,
+  });
   let onSubmit = async (
     evt: Dispatched<SubmitEvent, HTMLFormElement>,
     signal: AbortSignal,
@@ -54,8 +56,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       action={routes.todolist.todos.action.href()}
       mix={[
         on("submit", onSubmit),
-        onTarget(actionTarget, "actionSucceeded", (event, form) => {
-          if (event.source !== form) return;
+        onActionTarget("actionSucceeded", (_event, form) => {
           form.reset();
         }),
       ]}
@@ -65,12 +66,11 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         Enter a todo{" "}
         <input
           mix={[
-            onTarget(actionTarget, 'change', (event, input) => {
-              if (event.source !== input.form) return;
-              let isActionSubmitted = event.detail.type === 'actionSubmitted'
-              input.classList.toggle('pending', isActionSubmitted)
-              input.toggleAttribute('disabled', isActionSubmitted)
-              input.select()
+            onActionTarget("change", (event, input) => {
+              let isActionSubmitted = event.detail.type === "actionSubmitted";
+              input.classList.toggle("pending", isActionSubmitted);
+              input.toggleAttribute("disabled", isActionSubmitted);
+              input.select();
             }),
             css({
               padding: 4,

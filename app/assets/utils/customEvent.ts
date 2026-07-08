@@ -27,11 +27,8 @@ type ChangeEventDetailFromMap<
 > = {
   [K in keyof EventMap & string]: {
     type: K;
-  } & ChangeDetailName<K, Namespace> & (
-    EventMap[K] extends null | undefined
-      ? { detail?: never }
-      : { detail: EventMap[K] }
-  );
+    detail: EventMap[K];
+  } & ChangeDetailName<K, Namespace>;
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;
   detail: Partial<EventMap>;
@@ -319,7 +316,7 @@ function getChangeDetail(
     return {
       type,
       ...(options.namespace ? { name: eventNames[0] } : {}),
-      ...(detail != null ? { detail } : {}),
+      detail,
     };
   }
 
@@ -366,7 +363,7 @@ function dispatchEventObject(
       eventNames[index],
       init,
       detail,
-      detail != null,
+      true,
       options.source,
       hasSource,
     ) && eventsResult;

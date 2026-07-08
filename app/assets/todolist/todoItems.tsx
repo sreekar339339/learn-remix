@@ -1,9 +1,7 @@
 import {
-  addEventListeners,
   clientEntry,
   css,
   on,
-  ref,
   TypedEventTarget,
   type Dispatched,
   type Handle,
@@ -16,11 +14,17 @@ import {
   type TodoActionEventMap,
 } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onTarget } from "../utils/onTarget.ts";
+import { onTarget, sourceContainsElement } from "../utils/onTarget.ts";
+
 
 export function TodoItems(
   handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
 ) {
+  const onActionTarget = onTarget.with({
+    target: actionTarget,
+    guard: sourceContainsElement,
+  });
+
   let onSubmit = async (
     evt: Dispatched<SubmitEvent, HTMLUListElement>,
   ) => {
@@ -116,11 +120,10 @@ export function TodoItems(
                     },
                   },
                 }),
-                onTarget(actionTarget, 'change', (event, button) => {
-                  if (event.source !== button.form) return;
-                  let isActionSubmitted = event.detail.type === 'actionSubmitted'
-                  button.classList.toggle('pending', isActionSubmitted)
-                  button.toggleAttribute('disabled', isActionSubmitted)
+                onActionTarget("change", (event, button) => {
+                  let isActionSubmitted = event.detail.type === "actionSubmitted";
+                  button.classList.toggle("pending", isActionSubmitted);
+                  button.toggleAttribute("disabled", isActionSubmitted);
                 }),
               ]}
               name="intent"
@@ -167,11 +170,10 @@ export function TodoItems(
                     },
                   },
                 }),
-                onTarget(actionTarget, 'change', (event, button) => {
-                  if (event.source !== button.form) return;
-                  let isActionSubmitted = event.detail.type === 'actionSubmitted'
-                  button.classList.toggle('pending', isActionSubmitted)
-                  button.toggleAttribute('disabled', isActionSubmitted)
+                onActionTarget("change", (event, button) => {
+                  let isActionSubmitted = event.detail.type === "actionSubmitted";
+                  button.classList.toggle("pending", isActionSubmitted);
+                  button.toggleAttribute("disabled", isActionSubmitted);
                 }),
               ]}
               name="intent"
@@ -187,17 +189,20 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
+  const onActionTarget = onTarget.with({
+    target: actionTarget,
+    guard: sourceContainsElement,
+  });
   let isActionSubmitted: boolean = false
   return () => (
     <form
       mix={[
-        onTarget(actionTarget, 'actionErrored', (event, form) => {
-          if (event.source !== form) return;
+        onActionTarget("actionErrored", (_, form) => {
           form.reset();
         }),
-        on('focusout', ({currentTarget}) => {
+        on("focusout", ({currentTarget}) => {
           if (isActionSubmitted) return;
-          currentTarget.reset()
+          currentTarget.reset();
         }),
       ]}
       method="POST"
@@ -207,11 +212,10 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
       <input hidden name="id" value={handle.props.id} />
       <input
         mix={[
-          onTarget(actionTarget, 'change', (event, input) => {
-            if (event.source !== input.form) return;
-            isActionSubmitted = event.detail.type === 'actionSubmitted'
-            input.classList.toggle('pending', isActionSubmitted)
-            input.toggleAttribute('disabled', isActionSubmitted)
+          onActionTarget("change", (event, input) => {
+            isActionSubmitted = event.detail.type === "actionSubmitted";
+            input.classList.toggle("pending", isActionSubmitted);
+            input.toggleAttribute("disabled", isActionSubmitted);
           }),
           css({
             borderColor: "transparent",

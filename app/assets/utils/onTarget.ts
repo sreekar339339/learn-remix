@@ -1,6 +1,6 @@
 import {
   addEventListeners,
-  createMixin,
+  ref,
   type MixinDescriptor,
 } from "remix/ui";
 
@@ -34,10 +34,35 @@ export type OnTargetListeners<
   >;
 };
 
-type OnTargetDescriptor<ObservedElement extends Element> = MixinDescriptor<
-  ObservedElement,
-  unknown[]
->;
+export type OnTargetGuard<ObservedElement extends Element = Element> = (
+  event: Event,
+  element: ObservedElement,
+  signal: AbortSignal,
+) => boolean;
+
+export type OnTargetOptions<ObservedElement extends Element = Element> = {
+  guard?: OnTargetGuard<ObservedElement>;
+};
+
+export type OnTargetScope<Target extends EventTarget> = OnTargetOptions & {
+  target: Target;
+};
+
+type ScopedOnTarget<Target extends EventTarget> = {
+  <ObservedElement extends Element = Element>(
+    listeners: OnTargetListeners<ObservedElement, Target>,
+    options?: OnTargetOptions<ObservedElement>,
+  ): MixinDescriptor<ObservedElement, unknown[]>;
+
+  <
+    Type extends OnTargetEventType<Target>,
+    ObservedElement extends Element = Element,
+  >(
+    type: Type,
+    listener: OnTargetListener<ObservedElement, Target, Type>,
+    options?: OnTargetOptions<ObservedElement>,
+  ): MixinDescriptor<ObservedElement, unknown[]>;
+};
 
 type OnTarget = {
   <
@@ -46,7 +71,8 @@ type OnTarget = {
   >(
     target: Target,
     listeners: OnTargetListeners<ObservedElement, Target>,
-  ): OnTargetDescriptor<ObservedElement>;
+    options?: OnTargetOptions<ObservedElement>,
+  ): MixinDescriptor<ObservedElement, unknown[]>;
 
   <
     Target extends EventTarget,
@@ -56,45 +82,99 @@ type OnTarget = {
     target: Target,
     type: Type,
     listener: OnTargetListener<ObservedElement, Target, Type>,
-  ): OnTargetDescriptor<ObservedElement>;
+    options?: OnTargetOptions<ObservedElement>,
+  ): MixinDescriptor<ObservedElement, unknown[]>;
+
+  with<Target extends EventTarget>(
+    scope: OnTargetScope<Target>,
+  ): ScopedOnTarget<Target>;
 };
 
-const onTargetMixin = createMixin<
-  Element,
-  [
-    target: EventTarget,
-    listenersOrType: OnTargetListeners<Element, EventTarget> | string,
-    listener?: OnTargetListener<
-      Element,
-      EventTarget,
-      OnTargetEventType<EventTarget>
-    >,
-  ]
->((handle) => {
-  return (target, listenersOrType, listener) => {
-    handle.queueTask((element, signal) => {
-      let observedListeners: Record<string, (event: Event) => void> = {};
-      let listeners =
-        typeof listenersOrType === "string"
-          ? { [listenersOrType]: listener }
-          : listenersOrType;
+type AnyListener = (
+  event: Event,
+  element: Element,
+  signal: AbortSignal,
+) => void | Promise<void>;
+type AnyListeners = Record<string, AnyListener | undefined>;
+type AnyOptions = OnTargetOptions;
 
-      for (let type of Object.keys(listeners) as Array<keyof typeof listeners>) {
-        let listener = listeners[type];
-        if (!listener) continue;
+function getListeners(
+  listenersOrType: AnyListeners | string,
+  listener?: AnyListener | AnyOptions,
+) {
+  return typeof listenersOrType === "string"
+    ? { [listenersOrType]: listener as AnyListener }
+    : listenersOrType;
+}
 
-        observedListeners[type as string] = (event) => {
-          listener(event as never, element, signal);
-        };
-      }
+function mergeOptions(scope: AnyOptions, options: AnyOptions | undefined) {
+  return options ? { ...scope, ...options } : scope;
+}
 
-      addEventListeners(
-        target,
-        signal,
-        observedListeners as EventListeners<typeof target>,
+export function sourceContainsElement(event: Event, element: Element) {
+  let source = (event as Event & { source?: unknown }).source;
+  return source instanceof Node && source.contains(element);
+}
+
+function createOnTargetMixin(
+  target: EventTarget,
+  listenersOrType: AnyListeners | string,
+  listenerOrOptions?: AnyListener | AnyOptions,
+  options?: AnyOptions,
+) {
+  let listenersToObserve = getListeners(listenersOrType, listenerOrOptions);
+  let listenerOptions =
+    typeof listenersOrType === "string"
+      ? options
+      : listenerOrOptions as AnyOptions | undefined;
+
+  return ref((element, signal) => {
+    let listeners: Record<string, (event: Event) => void> = {};
+
+    for (let type of Object.keys(listenersToObserve)) {
+      listeners[type] = (event) => {
+        let listener = listenersToObserve[type];
+        if (!listener) return;
+        if (listenerOptions?.guard?.(event, element, signal) === false) return;
+        listener(event, element, signal);
+      };
+    }
+
+    addEventListeners(
+      target,
+      signal,
+      listeners as EventListeners<typeof target>,
+    );
+  });
+}
+
+function scopeOnTarget<Target extends EventTarget>(
+  scope: OnTargetScope<Target>,
+): ScopedOnTarget<Target> {
+  let scopeOptions = { guard: scope.guard };
+
+  return ((
+    listenersOrType: AnyListeners | string,
+    listenerOrOptions?: AnyListener | AnyOptions,
+    options?: AnyOptions,
+  ) => {
+    if (typeof listenersOrType === "string") {
+      return createOnTargetMixin(
+        scope.target,
+        listenersOrType,
+        listenerOrOptions as AnyListener,
+        mergeOptions(scopeOptions, options),
       );
-    });
-  };
-});
+    }
 
-export const onTarget = onTargetMixin as OnTarget;
+    return createOnTargetMixin(
+      scope.target,
+      listenersOrType,
+      mergeOptions(scopeOptions, listenerOrOptions as AnyOptions | undefined),
+    );
+  }) as ScopedOnTarget<Target>;
+}
+
+export const onTarget = Object.assign(createOnTargetMixin, {
+  with: scopeOnTarget,
+}) as OnTarget;
