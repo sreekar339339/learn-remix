@@ -72,8 +72,9 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
     ? {
         type: "querySubmitted",
         detail: { query: initialQuery },
+        details: { querySubmitted: { query: initialQuery } },
       }
-    : { type: "queryEmpty", detail: null };
+    : { type: "queryEmpty", detail: null, details: { queryEmpty: null } };
 
   return () => (
     <>

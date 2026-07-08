@@ -35,11 +35,7 @@ function AppProvider(handle: Handle<{ children?: RemixNode }, CompContext>) {
   });
   addEventListeners(target, handle.signal, {
     change({ detail }) {
-      if (Array.isArray(detail.type)) {
-        Object.assign(appContext, detail.detail);
-      } else {
-        Object.assign(appContext, { [detail.type]: detail.detail });
-      }
+      Object.assign(appContext, detail.details);
     },
   });
 

@@ -20,7 +20,7 @@ import { onTarget, sourceContainsElement } from "../utils/onTarget.ts";
 export function TodoItems(
   handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
 ) {
-  const onActionTarget = onTarget.with({
+  const onAction = onTarget.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
@@ -120,7 +120,7 @@ export function TodoItems(
                     },
                   },
                 }),
-                onActionTarget("change", (event, button) => {
+                onAction("change", (event, button) => {
                   let isActionSubmitted = event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
@@ -170,7 +170,7 @@ export function TodoItems(
                     },
                   },
                 }),
-                onActionTarget("change", (event, button) => {
+                onAction("change", (event, button) => {
                   let isActionSubmitted = event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
@@ -189,7 +189,7 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
-  const onActionTarget = onTarget.with({
+  const onAction = onTarget.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
@@ -197,7 +197,7 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
   return () => (
     <form
       mix={[
-        onActionTarget("actionErrored", (_, form) => {
+        onAction("actionErrored", (_, form) => {
           form.reset();
         }),
         on("focusout", ({currentTarget}) => {
@@ -212,7 +212,7 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
       <input hidden name="id" value={handle.props.id} />
       <input
         mix={[
-          onActionTarget("change", (event, input) => {
+          onAction("change", (event, input) => {
             isActionSubmitted = event.detail.type === "actionSubmitted";
             input.classList.toggle("pending", isActionSubmitted);
             input.toggleAttribute("disabled", isActionSubmitted);

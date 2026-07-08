@@ -37,8 +37,9 @@ export const SearchBooksWithFrame = clientEntry(
       ? {
           type: "querySubmitted",
           detail: { query: initialQuery },
+          details: { querySubmitted: { query: initialQuery } },
         }
-      : { type: "queryEmpty", detail: null };
+      : { type: "queryEmpty", detail: null, details: { queryEmpty: null } };
 
     return () => (
       <>

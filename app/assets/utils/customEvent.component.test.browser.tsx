@@ -254,6 +254,7 @@ function SearchForm(handle: Handle<Props<"div">>) {
   let event: SearchEventMap["change"]["detail"] = {
     type: "idle",
     detail: null,
+    details: { idle: null },
   };
 
   let searchTargetRef = (target: HTMLDivElement) => {
@@ -329,11 +330,7 @@ function TestAppProvider(
   let dispatch = dispatchCustomEvent.bind(null, {target, signal: handle.signal});
   addEventListeners(target, handle.signal, {
     change({ detail }) {
-      if (Array.isArray(detail.type)) {
-        Object.assign(appContext, detail.detail);
-      } else {
-        Object.assign(appContext, { [detail.type]: detail.detail });
-      }
+      Object.assign(appContext, detail.details);
     },
   });
   handle.context.set({
@@ -469,6 +466,7 @@ describe("dispatchCustomEvent component usage", () => {
             type: "activated",
             name: "test-gesture:activated",
             detail: { pointerId: 7 },
+            details: { activated: { pointerId: 7 } },
           },
         ],
         null,
@@ -494,11 +492,13 @@ describe("dispatchCustomEvent component usage", () => {
             type: "activated",
             name: "test-gesture:activated",
             detail: { pointerId: 7 },
+            details: { activated: { pointerId: 7 } },
           },
           {
             type: "moved",
             name: "test-gesture:moved",
             detail: { x: 20, y: 35 },
+            details: { moved: { x: 20, y: 35 } },
           },
         ],
         null,
@@ -518,13 +518,20 @@ describe("dispatchCustomEvent component usage", () => {
             type: "activated",
             name: "test-gesture:activated",
             detail: { pointerId: 7 },
+            details: { activated: { pointerId: 7 } },
           },
           {
             type: "moved",
             name: "test-gesture:moved",
             detail: { x: 20, y: 35 },
+            details: { moved: { x: 20, y: 35 } },
           },
-          { type: "released", name: "test-gesture:released", detail: null },
+          {
+            type: "released",
+            name: "test-gesture:released",
+            detail: null,
+            details: { released: null },
+          },
         ],
         null,
         2,
@@ -561,6 +568,10 @@ describe("dispatchCustomEvent component usage", () => {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
+            details: {
+              loaded: { track: "North Star" },
+              played: { track: "North Star" },
+            },
           },
         ],
         null,
@@ -580,10 +591,15 @@ describe("dispatchCustomEvent component usage", () => {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
+            details: {
+              loaded: { track: "North Star" },
+              played: { track: "North Star" },
+            },
           },
           {
             type: "played",
             detail: { track: "North Star" },
+            details: { played: { track: "North Star" } },
           },
         ],
         null,
@@ -603,12 +619,17 @@ describe("dispatchCustomEvent component usage", () => {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
+            details: {
+              loaded: { track: "North Star" },
+              played: { track: "North Star" },
+            },
           },
           {
             type: "played",
             detail: { track: "North Star" },
+            details: { played: { track: "North Star" } },
           },
-          { type: "stopped", detail: null },
+          { type: "stopped", detail: null, details: { stopped: null } },
         ],
         null,
         2,
@@ -684,6 +705,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "dune" },
+          details: { querySubmitted: { query: "dune" } },
         },
         null,
         2,
@@ -700,6 +722,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "idle",
           name: "test-search:idle",
           detail: null,
+          details: { idle: null },
         },
         null,
         2,
@@ -716,6 +739,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "errorOccurred",
           name: "test-search:errorOccurred",
           detail: new Error("Network response was not ok"),
+          details: { errorOccurred: new Error("Network response was not ok") },
         },
         null,
         2,
@@ -735,6 +759,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "booksNotFound",
           name: "test-search:booksNotFound",
           detail: { reason: "emptyList" },
+          details: { booksNotFound: { reason: "emptyList" } },
         },
         null,
         2,
@@ -818,6 +843,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "d" },
+          details: { querySubmitted: { query: "d" } },
         },
         null,
         2,
@@ -836,6 +862,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "du" },
+          details: { querySubmitted: { query: "du" } },
         },
         null,
         2,
@@ -854,6 +881,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "dun" },
+          details: { querySubmitted: { query: "dun" } },
         },
         null,
         2,
@@ -872,6 +900,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "dune" },
+          details: { querySubmitted: { query: "dune" } },
         },
         null,
         2,
@@ -892,6 +921,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "querySubmitted",
           name: "test-search:querySubmitted",
           detail: { query: "dune" },
+          details: { querySubmitted: { query: "dune" } },
         },
         null,
         2,
@@ -910,6 +940,7 @@ describe("dispatchCustomEvent component usage", () => {
           type: "booksFound",
           name: "test-search:booksFound",
           detail: { books: ["Dune", "Dune Messiah"] },
+          details: { booksFound: { books: ["Dune", "Dune Messiah"] } },
         },
         null,
         2,
@@ -917,7 +948,7 @@ describe("dispatchCustomEvent component usage", () => {
     );
   });
 
-  it("supports AppContext-style providers with granular and batch patch events", async (t) => {
+  it("supports AppContext-style providers with granular and batch details events", async (t) => {
     let result = render(
       <TestAppProvider>
         <UserDisplay />

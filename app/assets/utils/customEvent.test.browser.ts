@@ -74,19 +74,23 @@ describe("dispatchCustomEvent", () => {
     let localChange: ThemeEventMap["change"]["detail"] = {
       type: "value",
       detail: "dark",
+      details: { value: "dark" },
     };
     let localNoDetailChange: ThemeEventMap["change"]["detail"] = {
       type: "reset",
       detail: null,
+      details: { reset: null },
     };
     let namespacedChange: ThemeEventTypes["test-theme:change"]["detail"] = {
       type: "value",
       name: "test-theme:value",
       detail: "light",
+      details: { value: "light" },
     };
     let batchChange: ThemeEventMap["change"]["detail"] = {
       type: ["value", "reset"],
       detail: { value: "dark", reset: null },
+      details: { value: "dark", reset: null },
     };
     let dispatchArgs: DispatchCustomEventArgs<HTMLDivElement, "test-theme"> = [
       { value: "dark" },
@@ -120,16 +124,26 @@ describe("dispatchCustomEvent", () => {
     // @ts-expect-error Namespaced expects a CustomEventMap, not a raw detail map.
     let rawNamespacedEvents: RawNamespacedEventTypes = {};
 
-    assert.deepEqual(localChange, { type: "value", detail: "dark" });
-    assert.deepEqual(localNoDetailChange, { type: "reset", detail: null });
+    assert.deepEqual(localChange, {
+      type: "value",
+      detail: "dark",
+      details: { value: "dark" },
+    });
+    assert.deepEqual(localNoDetailChange, {
+      type: "reset",
+      detail: null,
+      details: { reset: null },
+    });
     assert.deepEqual(namespacedChange, {
       type: "value",
       name: "test-theme:value",
       detail: "light",
+      details: { value: "light" },
     });
     assert.deepEqual(batchChange, {
       type: ["value", "reset"],
       detail: { value: "dark", reset: null },
+      details: { value: "dark", reset: null },
     });
     assert.deepEqual(dispatchArgs, [{ value: "dark" }]);
     assert.deepEqual(nativeEventArgs, [{ click: null }]);
@@ -163,6 +177,7 @@ describe("dispatchCustomEvent", () => {
           type: "value",
           name: "test-theme:value",
           detail: "light",
+          details: { value: "light" },
         },
         bubbles: true,
         cancelable: true,
@@ -207,6 +222,7 @@ describe("dispatchCustomEvent", () => {
           type: "actionSubmitted",
           name: "test-todo:actionSubmitted",
           detail: null,
+          details: { actionSubmitted: null },
         },
         source,
         bubbles: true,
@@ -225,6 +241,7 @@ describe("dispatchCustomEvent", () => {
           type: "actionErrored",
           name: "test-todo:actionErrored",
           detail: { error: new Error("Nope") },
+          details: { actionErrored: { error: new Error("Nope") } },
         },
         source,
         bubbles: true,
@@ -274,6 +291,7 @@ describe("dispatchCustomEvent", () => {
         detail: {
           type: "ready",
           detail: { source: "worker" },
+          details: { ready: { source: "worker" } },
         },
         bubbles: true,
         cancelable: true,
@@ -286,7 +304,7 @@ describe("dispatchCustomEvent", () => {
       },
       {
         type: "change",
-        detail: { type: "stopped", detail: null },
+        detail: { type: "stopped", detail: null, details: { stopped: null } },
         bubbles: true,
         cancelable: true,
       },
@@ -336,6 +354,7 @@ describe("dispatchCustomEvent", () => {
           type: "value",
           name: "test-theme:value",
           detail: "dark",
+          details: { value: "dark" },
         },
         bubbles: false,
         cancelable: true,

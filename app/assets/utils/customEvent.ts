@@ -28,10 +28,12 @@ type ChangeEventDetailFromMap<
   [K in keyof EventMap & string]: {
     type: K;
     detail: EventMap[K];
+    details: Pick<EventMap, K>;
   } & ChangeDetailName<K, Namespace>;
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;
   detail: Partial<EventMap>;
+  details: Partial<EventMap>;
 } & (
   Namespace extends string
     ? {
@@ -311,19 +313,23 @@ function getChangeDetail(
   eventNames: string[],
   options: DispatchCustomEventRuntimeOptions,
 ) {
+  const details = Object.fromEntries(entries);
+
   if (entries.length === 1) {
     const [[type, detail]] = entries;
     return {
       type,
       ...(options.namespace ? { name: eventNames[0] } : {}),
       detail,
+      details,
     };
   }
 
   return {
     type: entries.map(([type]) => type),
     ...(options.namespace ? { name: eventNames } : {}),
-    detail: Object.fromEntries(entries),
+    detail: details,
+    details,
   };
 }
 

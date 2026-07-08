@@ -61,7 +61,7 @@ export const TicTacToe = clientEntry(
       signal: handle.signal,
     });
     let onGameEvt = onTarget.with({ target: gameTarget });
-    let currentGameEvt: TicTacToeEventMap["change"]["detail"]["detail"] = {
+    let currentGameEvt: TicTacToeEventMap["change"]["detail"]["details"] = {
       status: {
         result: "Pending",
         position: new Map<number, Player>(),
@@ -84,11 +84,7 @@ export const TicTacToe = clientEntry(
             gap: "36px",
           }),
           onGameEvt("change", ({ detail }) => {
-            if (typeof detail.type == "string") {
-              Object.assign(currentGameEvt, { [detail.type]: detail.detail });
-            } else {
-              Object.assign(currentGameEvt, detail.detail);
-            }
+            Object.assign(currentGameEvt, detail.details);
           }),
         ]}
       >
