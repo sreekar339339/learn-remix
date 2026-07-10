@@ -1,14 +1,20 @@
-import { clientEntry, css, on, TypedEventTarget, type Handle } from "remix/ui";
+import {
+  clientEntry,
+  css,
+  on,
+  TypedEventTarget,
+  type Handle,
+} from "remix/ui";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
 } from "./utils/customEvent.ts";
-import { onTarget } from "./utils/onTarget.ts";
+import { onCustomEvent } from "./utils/onCustomEvent.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw" | "Pending";
 type TicTacToeEventMap = CustomEventMap<{
-  status: { result: Result; position: Map<number, Player>; nextPlayer: Player };
+  turn: { result: Result; position: Map<number, Player>; nextPlayer: Player };
   focus: { cellId: number };
 }>;
 
@@ -39,7 +45,7 @@ let deriveResult = (position: Map<number, Player>): Result => {
   return "Pending";
 };
 
-let keyToIdxIncrementMap = {
+let arrowKeyIdxIncrementMap = {
   ArrowUp: -3,
   ArrowDown: 3,
   ArrowLeft: -1,
@@ -48,29 +54,29 @@ let keyToIdxIncrementMap = {
 
 let isArrowKey = (
   eventKey: unknown,
-): eventKey is keyof typeof keyToIdxIncrementMap => {
-  return Object.hasOwn(keyToIdxIncrementMap, eventKey as string);
+): eventKey is keyof typeof arrowKeyIdxIncrementMap => {
+  return Object.hasOwn(arrowKeyIdxIncrementMap, eventKey as string);
 };
 
 export const TicTacToe = clientEntry(
   import.meta.url,
   function TicTacToe(handle: Handle) {
-    let gameTarget = new TypedEventTarget<TicTacToeEventMap>();
-    let dispatch = dispatchCustomEvent.bind(null, {
-      target: gameTarget,
-      signal: handle.signal,
-    });
-    let onGameEvt = onTarget.with({ target: gameTarget });
     let currentGameEvt: TicTacToeEventMap["change"]["detail"]["details"] = {
-      status: {
+      turn: {
         result: "Pending",
         position: new Map<number, Player>(),
         nextPlayer: "X",
       },
       focus: { cellId: 0 },
     };
-    handle.queueTask(() => {
-      dispatch(currentGameEvt);
+    let gameTarget = new TypedEventTarget<TicTacToeEventMap>();
+    let dispatch = dispatchCustomEvent.bind(null, {
+      target: gameTarget,
+      signal: handle.signal,
+    });
+    let onGame = onCustomEvent.with({
+      target: gameTarget,
+      initial: currentGameEvt
     });
 
     return () => (
@@ -83,7 +89,7 @@ export const TicTacToe = clientEntry(
             flexDirection: "column",
             gap: "36px",
           }),
-          onGameEvt("change", ({ detail }) => {
+          onGame("change", ({ detail }) => {
             Object.assign(currentGameEvt, detail.details);
           }),
         ]}
@@ -99,7 +105,7 @@ export const TicTacToe = clientEntry(
             }),
             on("click", (evt) => {
               let cellId = Number((evt.target as HTMLButtonElement).value);
-              let { position, nextPlayer } = currentGameEvt.status!;
+              let { position, nextPlayer } = currentGameEvt.turn!;
               let nextPosition = position.set(cellId, nextPlayer);
               let nextFreeCellIdx = cellId;
               while (nextPosition.has(nextFreeCellIdx)) {
@@ -110,7 +116,7 @@ export const TicTacToe = clientEntry(
                 }
               }
               dispatch({
-                status: {
+                turn: {
                   position: nextPosition,
                   nextPlayer: nextPlayer === "X" ? "O" : "X",
                   result: deriveResult(nextPosition),
@@ -121,10 +127,10 @@ export const TicTacToe = clientEntry(
             on("keydown", ({ key, target }) => {
               if (!isArrowKey(key)) return;
               let cellId = Number((target as HTMLButtonElement).value);
-              let idxIncrement = keyToIdxIncrementMap[key];
+              let idxIncrement = arrowKeyIdxIncrementMap[key];
               let nextFreeCellIdx = cellId;
               let boundIdx = idxIncrement < 0 ? 0 : 8;
-              let { position } = currentGameEvt.status!;
+              let { position } = currentGameEvt.turn!;
               while (
                 nextFreeCellIdx === cellId ||
                 position.has(nextFreeCellIdx)
@@ -147,20 +153,20 @@ export const TicTacToe = clientEntry(
               key={index}
               value={index}
               mix={[
-                onGameEvt("status", (evt, button) => {
-                  let { position } = evt.detail;
+                onGame("turn", (evt, button) => {
+                  let { position, result } = evt.detail;
                   let cellId = Number(button.value);
-                  if (position.has(cellId)) {
-                    button.textContent = position.get(cellId)!;
-                    button.setAttribute("disabled", "true");
-                    button.classList.add(position.get(cellId)!);
-                  } else {
-                    button.textContent = "";
-                    button.removeAttribute("disabled");
-                    button.classList.remove("X", "O");
-                  }
+                  let isGameEnded = result !== "Pending";
+                  button.toggleAttribute(
+                    "disabled",
+                    position.has(cellId) || isGameEnded,
+                  );
+                  button.classList.toggle(
+                    position.get(cellId)!,
+                    position.has(cellId),
+                  );
                 }),
-                onGameEvt("focus", ({ detail }, button) => {
+                onGame("focus", ({ detail }, button) => {
                   if (detail.cellId !== Number(button.value)) return;
                   button.focus();
                 }),
@@ -178,21 +184,25 @@ export const TicTacToe = clientEntry(
                   },
                 }),
               ]}
-            />
+            >
+              <onGame.turn
+                render={({ detail }) => detail.position.get(index)}
+              />
+            </button>
           ))}
         </div>
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            onGameEvt("status", ({ detail }, button) => {
+            onGame("turn", ({ detail }, button) => {
               if (detail.result === "Pending") return;
               button.focus();
             }),
             on("click", () => {
-              let { position } = currentGameEvt.status!;
+              let { position } = currentGameEvt.turn!;
               position.clear();
               dispatch({
-                status: {
+                turn: {
                   position,
                   nextPlayer: "X",
                   result: "Pending",
@@ -210,14 +220,16 @@ export const TicTacToe = clientEntry(
               fontSize: 18,
               textAlign: "center",
             }),
-            onGameEvt("status", ({ detail: { result } }, el) => {
-              if (result === "Pending") return;
-              let content =
-                result === "Draw" ? "Game is drawn." : `${result} has won!`;
-              el.textContent = content;
-            }),
           ]}
-        ></p>
+        >
+          <onGame.turn
+            render={({ detail: { result } }) => {
+              if (result === "Pending") return;
+              if (result === "Draw") return "Game is drawn.";
+              return `${result} has won!`;
+            }}
+          />
+        </p>
       </div>
     );
   },

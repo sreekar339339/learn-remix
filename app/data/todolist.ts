@@ -14,17 +14,17 @@ export function addTodos(text: string) {
 }
 
 export function updateTodos(id: string, field: {text: string} | { completed: boolean}) {
-  for (let _todo of todos) {
-    if (_todo.id === id) {
-      return Object.assign(_todo, field)
+  for (let todo of todos) {
+    if (todo.id === id) {
+      return Object.assign(todo, field)
     }
   }
   throw new Error('given id is not found in db')
 }
 
 export function deleteTodos(id: string) {
-  for (let [idx, _todo] of todos.entries()) {
-    if (_todo.id === id) {
+  for (let [idx, todo] of todos.entries()) {
+    if (todo.id === id) {
       return todos.splice(idx, 1)
     }
   }

@@ -1,10 +1,4 @@
-import {
-  clientEntry,
-  css,
-  on,
-  ref,
-  type Handle,
-} from "remix/ui";
+import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { match, P } from "ts-pattern";
 import {
@@ -17,14 +11,14 @@ import {
 async function fetchBooks(
   query: string,
   dispatch: DispatchCustomEvent<HTMLInputElement, "bookSearch">,
-  signal: AbortSignal
+  signal: AbortSignal,
 ) {
   try {
     dispatch({ querySubmitted: { query } });
     let resp = await fetch(
       routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
       {
-        signal
+        signal,
       },
     );
     if (!resp.ok) {
@@ -34,15 +28,13 @@ async function fetchBooks(
     }
     let json = await resp.json();
     if (!("docs" in json)) {
-      return void dispatch(
-        { booksNotFound: { reason: { other: json.detail[0].msg } } },
-      );
+      return void dispatch({
+        booksNotFound: { reason: { other: json.detail[0].msg } },
+      });
     }
     let books = json.docs;
     if (!books.length) {
-      return void dispatch(
-        { booksNotFound: { reason: "emptyList" } },
-      );
+      return void dispatch({ booksNotFound: { reason: "emptyList" } });
     }
     dispatch({ booksFound: books });
   } catch (error) {
@@ -103,14 +95,14 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
               let dispatch = dispatchCustomEvent.bind(null, {
                 target: evt.currentTarget,
                 signal,
-                namespace: 'bookSearch',
+                namespace: "bookSearch",
               });
               if (!query) {
                 return void dispatch({ queryEmpty: null });
               }
               fetchBooks(query, dispatch, signal);
             }),
-            on('bookSearch:change', ({ detail, currentTarget }) => {
+            on("bookSearch:change", ({ detail, currentTarget }) => {
               bookSearchEvt = detail;
               handle.update();
               if (detail.type !== "querySubmitted") {
@@ -122,9 +114,7 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
         />
       </label>
       {match(bookSearchEvt)
-        .with({ type: "queryEmpty" }, () => (
-          <p>Enter the title of any book.</p>
-        ))
+        .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
         .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
           <p>fetching books with title containing {query}...</p>
         ))

@@ -62,13 +62,14 @@ export const asyncActionsWithFrameController = createController(
   routes.asyncActions.withFrame,
   {
     actions: {
-      index({ render, url }) {
+      async index({ render, url }) {
         const initialQuery = (url.searchParams.get("q") || "").trim();
         return render(
           <AsyncActionsPageWithFrame initialQuery={initialQuery} />,
         );
       },
       async frame({ render, url }) {
+        await delay(2000)
         const openLibraryUrl = new URL("https://openlibrary.org/search.json");
         openLibraryUrl.searchParams.set(
           "q",

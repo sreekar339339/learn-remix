@@ -14,13 +14,20 @@ import {
   type TodoActionEventMap,
 } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onTarget, sourceContainsElement } from "../utils/onTarget.ts";
+import { onCustomEvent, sourceContainsElement } from "../utils/onCustomEvent.tsx";
 
+function initialTodoActionChange(): TodoActionEventMap["change"]["detail"] {
+  return {
+    type: "actionSucceeded",
+    detail: null,
+    details: { actionSucceeded: null },
+  };
+}
 
 export function TodoItems(
   handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
 ) {
-  const onAction = onTarget.with({
+  const onTodo = onCustomEvent.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
@@ -120,7 +127,7 @@ export function TodoItems(
                     },
                   },
                 }),
-                onAction("change", (event, button) => {
+                onTodo("change", (event, button) => {
                   let isActionSubmitted = event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
@@ -170,7 +177,7 @@ export function TodoItems(
                     },
                   },
                 }),
-                onAction("change", (event, button) => {
+                onTodo("change", (event, button) => {
                   let isActionSubmitted = event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
@@ -179,7 +186,17 @@ export function TodoItems(
               name="intent"
               value="update"
             >
-              {completed ? "✓" : " "}
+              <onTodo.change
+                initial={{ change: initialTodoActionChange() }}
+                render={({ detail }) => {
+                  if (detail.type === "actionSubmitted") {
+                    // optimistic update while network api call is pending
+                    let optimisticCompleted = !completed;
+                    return optimisticCompleted ? "✓" : " ";
+                  }
+                  return completed ? "✓" : " ";
+                }}
+              />
             </button>
           </form>
         </li>
@@ -189,7 +206,7 @@ export function TodoItems(
 }
 
 function TextForm(handle: Handle<{ text: string; id: string }>) {
-  const onAction = onTarget.with({
+  const onTodo = onCustomEvent.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
@@ -197,7 +214,7 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
   return () => (
     <form
       mix={[
-        onAction("actionErrored", (_, form) => {
+        onTodo("actionErrored", (_, form) => {
           form.reset();
         }),
         on("focusout", ({currentTarget}) => {
@@ -212,7 +229,7 @@ function TextForm(handle: Handle<{ text: string; id: string }>) {
       <input hidden name="id" value={handle.props.id} />
       <input
         mix={[
-          onAction("change", (event, input) => {
+          onTodo("change", (event, input) => {
             isActionSubmitted = event.detail.type === "actionSubmitted";
             input.classList.toggle("pending", isActionSubmitted);
             input.toggleAttribute("disabled", isActionSubmitted);

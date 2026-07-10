@@ -8,10 +8,10 @@ import {
 import { routes } from "../../routes.ts";
 import { actionTarget } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onTarget, sourceContainsElement } from "../utils/onTarget.ts";
+import { onCustomEvent, sourceContainsElement } from "../utils/onCustomEvent.tsx";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  const onActionTarget = onTarget.with({
+  const onTodo = onCustomEvent.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
@@ -56,7 +56,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       action={routes.todolist.todos.action.href()}
       mix={[
         on("submit", onSubmit),
-        onActionTarget("actionSucceeded", (_event, form) => {
+        onTodo("actionSucceeded", (_event, form) => {
           form.reset();
         }),
       ]}
@@ -66,7 +66,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         Enter a todo{" "}
         <input
           mix={[
-            onActionTarget("change", (event, input) => {
+            onTodo("change", (event, input) => {
               let isActionSubmitted = event.detail.type === "actionSubmitted";
               input.classList.toggle("pending", isActionSubmitted);
               input.toggleAttribute("disabled", isActionSubmitted);
