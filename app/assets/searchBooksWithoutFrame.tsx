@@ -16,9 +16,12 @@ async function fetchBooks(
   try {
     dispatch({ querySubmitted: { query } });
     let resp = await fetch(
-      routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
+      routes.searchBooks.books.href(undefined, { q: query }),
       {
         signal,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       },
     );
     if (!resp.ok) {
@@ -57,7 +60,7 @@ declare global {
   > {}
 }
 
-function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
+function SearchBooksWithoutFrame_(handle: Handle<{ initialQuery: string }>) {
   let { initialQuery } = handle.props;
 
   let bookSearchEvt: SearchEventMap["change"]["detail"] = initialQuery
@@ -148,9 +151,9 @@ function SearchBooksNewEventHandler(handle: Handle<{ initialQuery: string }>) {
   );
 }
 
-export const SearchBooksNewEventHandlerParent = clientEntry(
+export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
-  function SearchBooksNewEventHandlerParent(
+  function SearchBooksWithoutFrame(
     handle: Handle<{ initialQuery: string }>,
   ) {
     return () => (
@@ -161,7 +164,7 @@ export const SearchBooksNewEventHandlerParent = clientEntry(
           }),
         ]}
       >
-        <SearchBooksNewEventHandler initialQuery={handle.props.initialQuery} />
+        <SearchBooksWithoutFrame_ initialQuery={handle.props.initialQuery} />
       </div>
     );
   },

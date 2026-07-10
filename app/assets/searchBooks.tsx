@@ -10,7 +10,7 @@ async function fetchBooks(
 ) {
   try {
     let resp = await fetch(
-      routes.asyncActions.withoutFrame.api.books.href(undefined, { q: query }),
+      routes.searchBooks.books.href(undefined, { q: query }),
       {
         signal,
       },

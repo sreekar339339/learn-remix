@@ -2,7 +2,6 @@ import {
   clientEntry,
   css,
   on,
-  TypedEventTarget,
   type Dispatched,
   type Handle,
 } from "remix/ui";
@@ -11,30 +10,22 @@ import type { Todo } from "../../data/todolist.ts";
 import {
   _TodoList,
   actionTarget,
-  type TodoActionEventMap,
 } from "./todoList.tsx";
 import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onCustomEvent, sourceContainsElement } from "../utils/onCustomEvent.tsx";
-
-function initialTodoActionChange(): TodoActionEventMap["change"]["detail"] {
-  return {
-    type: "actionSucceeded",
-    detail: null,
-    details: { actionSucceeded: null },
-  };
-}
+import {
+  onCustomEvent,
+  sourceContainsElement,
+} from "../utils/onCustomEvent.tsx";
 
 export function TodoItems(
-  handle: Handle<{ todos: Todo[] }, TypedEventTarget<TodoActionEventMap>>,
+  handle: Handle<{ todos: Todo[] }>,
 ) {
   const onTodo = onCustomEvent.with({
     target: actionTarget,
     guard: sourceContainsElement,
   });
 
-  let onSubmit = async (
-    evt: Dispatched<SubmitEvent, HTMLUListElement>,
-  ) => {
+  let onSubmit = async (evt: Dispatched<SubmitEvent, HTMLUListElement>) => {
     evt.preventDefault();
     let form = evt.target as HTMLFormElement;
     let submitter = evt.submitter as HTMLButtonElement;
@@ -51,7 +42,7 @@ export function TodoItems(
       let resp = await fetch(form.action, {
         method: "POST",
         body: formData,
-        signal: handle.signal
+        signal: handle.signal,
       });
       if (!resp.ok) {
         throw new Error(`${resp.status} ${resp.statusText}`, {
@@ -128,7 +119,8 @@ export function TodoItems(
                   },
                 }),
                 onTodo("change", (event, button) => {
-                  let isActionSubmitted = event.detail.type === "actionSubmitted";
+                  let isActionSubmitted =
+                    event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
                 }),
@@ -140,7 +132,61 @@ export function TodoItems(
             </button>
             <input hidden name="id" value={id} />
           </form>
-          <TextForm text={text} id={id} />
+          <form
+            mix={[
+              onTodo("actionErrored", (_, form) => {
+                form.reset();
+              }),
+              on("focusout", ({ currentTarget }) => {
+                if (currentTarget.dataset.eventType === "actionSubmitted")
+                  return;
+                currentTarget.reset();
+              }),
+            ]}
+            method="POST"
+            action={routes.todolist.todos.action.href()}
+          >
+            <button hidden name="intent" value="update" />
+            <input hidden name="id" value={id} />
+            <input
+              mix={[
+                onTodo("change", (event, input) => {
+                  input.form!.dataset.eventType = event.detail.type as string;
+                  let isActionSubmitted =
+                    event.detail.type === "actionSubmitted";
+                  input.classList.toggle("pending", isActionSubmitted);
+                  input.toggleAttribute("disabled", isActionSubmitted);
+                  input.focus()
+                }),
+                css({
+                  borderColor: "transparent",
+                  backgroundColor: "transparent",
+                  padding: 2,
+                  font: "inherit",
+                  color: "inherit",
+                  outline: "none",
+                  "&:focus,&:hover": {
+                    backgroundColor: "revert",
+                    outline: "revert",
+                    borderColor: "revert",
+                  },
+                  "&.pending": {
+                    backgroundImage:
+                      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+                    backgroundSize: "220% 100%",
+                    animation: "glimmer 1.15s linear infinite",
+                  },
+                  "@media (prefers-reduced-motion: reduce)": {
+                    "&.pending": {
+                      animation: "none",
+                    },
+                  },
+                }),
+              ]}
+              defaultValue={text}
+              name="text"
+            />
+          </form>
           <form method="POST" action={routes.todolist.todos.action.href()}>
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
@@ -178,23 +224,24 @@ export function TodoItems(
                   },
                 }),
                 onTodo("change", (event, button) => {
-                  let isActionSubmitted = event.detail.type === "actionSubmitted";
+                  let isActionSubmitted =
+                    event.detail.type === "actionSubmitted";
                   button.classList.toggle("pending", isActionSubmitted);
                   button.toggleAttribute("disabled", isActionSubmitted);
+                  button.focus()
                 }),
               ]}
               name="intent"
               value="update"
             >
               <onTodo.change
-                initial={{ change: initialTodoActionChange() }}
+                initial={{ actionSucceeded: null }}
                 render={({ detail }) => {
+                  let isCompleted = completed;
                   if (detail.type === "actionSubmitted") {
-                    // optimistic update while network api call is pending
-                    let optimisticCompleted = !completed;
-                    return optimisticCompleted ? "✓" : " ";
+                    isCompleted = !completed; // optimistic update while network api call is pending
                   }
-                  return completed ? "✓" : " ";
+                  return isCompleted ? "✓" : " ";
                 }}
               />
             </button>
@@ -202,67 +249,6 @@ export function TodoItems(
         </li>
       ))}
     </ul>
-  );
-}
-
-function TextForm(handle: Handle<{ text: string; id: string }>) {
-  const onTodo = onCustomEvent.with({
-    target: actionTarget,
-    guard: sourceContainsElement,
-  });
-  let isActionSubmitted: boolean = false
-  return () => (
-    <form
-      mix={[
-        onTodo("actionErrored", (_, form) => {
-          form.reset();
-        }),
-        on("focusout", ({currentTarget}) => {
-          if (isActionSubmitted) return;
-          currentTarget.reset();
-        }),
-      ]}
-      method="POST"
-      action={routes.todolist.todos.action.href()}
-    >
-      <button hidden name="intent" value="update" />
-      <input hidden name="id" value={handle.props.id} />
-      <input
-        mix={[
-          onTodo("change", (event, input) => {
-            isActionSubmitted = event.detail.type === "actionSubmitted";
-            input.classList.toggle("pending", isActionSubmitted);
-            input.toggleAttribute("disabled", isActionSubmitted);
-          }),
-          css({
-            borderColor: "transparent",
-            backgroundColor: "transparent",
-            padding: 2,
-            font: "inherit",
-            color: "inherit",
-            outline: "none",
-            "&:focus,&:hover": {
-              backgroundColor: "revert",
-              outline: "revert",
-              borderColor: "revert",
-            },
-            "&.pending": {
-              backgroundImage:
-                "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
-              backgroundSize: "220% 100%",
-              animation: "glimmer 1.15s linear infinite",
-            },
-            "@media (prefers-reduced-motion: reduce)": {
-              "&.pending": {
-                animation: "none",
-              },
-            },
-          }),
-        ]}
-        defaultValue={handle.props.text}
-        name="text"
-      />
-    </form>
   );
 }
 

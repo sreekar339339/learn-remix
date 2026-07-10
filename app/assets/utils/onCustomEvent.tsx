@@ -6,6 +6,14 @@ import {
   type MixinDescriptor,
   type RemixNode,
 } from "remix/ui";
+import {
+  dispatchCustomEvent,
+  type DispatchCustomEventEvents,
+} from "./customEvent.ts";
+import {
+  CHANGE_EVENT_NAME,
+  createCustomEventChangeDetail,
+} from "./customEventChange.ts";
 
 type Listeners<Target extends EventTarget> = Parameters<
   typeof addEventListeners<Target>
@@ -24,9 +32,8 @@ type EventFor<
 type DetailFor<Target extends EventTarget, Type extends EventType<Target>> =
   EventFor<Target, Type> extends CustomEvent<infer Detail> ? Detail : never;
 
-type InitialEventMap<Target extends EventTarget> = Partial<{
-  [Type in EventType<Target>]: DetailFor<Target, Type>;
-}>;
+type InitialEventMap<Target extends EventTarget> =
+  DispatchCustomEventEvents<Target>;
 
 export type OnCustomEventListener<
   Element extends HTMLElement,
@@ -55,7 +62,7 @@ type OnCustomEventElement<
   Type extends EventType<Target>,
 > = (
   handle: Handle<{
-    initial?: Pick<InitialEventMap<Target>, Type>;
+    initial?: InitialEventMap<Target>;
     render: (event: EventFor<Target, Type>) => RemixNode;
   }>,
 ) => () => RemixNode;
@@ -104,13 +111,88 @@ type RuntimeListener = (
   signal: AbortSignal,
 ) => void | Promise<void>;
 
+type TaskQueue = {
+  queueTask(task: (...args: unknown[]) => void): void;
+};
+
+type RuntimeDispatchCustomEvent = (
+  options: { target: EventTarget; signal: AbortSignal },
+  events: object,
+) => boolean;
+
+let dispatchRuntimeCustomEvent =
+  dispatchCustomEvent as unknown as RuntimeDispatchCustomEvent;
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "aborted" in value &&
+    "addEventListener" in value
+  );
+}
+
 function createInitialEvent(type: string, initial: unknown) {
   if (!initial || typeof initial !== "object") return undefined;
-  return Object.hasOwn(initial, type)
-    ? new CustomEvent(type, {
-        detail: (initial as Record<string, unknown>)[type],
-      })
+  let initialMap = initial as Record<string, unknown>;
+  if (Object.hasOwn(initialMap, type)) {
+    return new CustomEvent(type, {
+      detail: initialMap[type],
+    });
+  }
+
+  return isChangeEventName(type)
+    ? createInitialChangeEvent(type, initialMap)
     : undefined;
+}
+
+function isChangeEventName(type: string) {
+  return type === CHANGE_EVENT_NAME || type.endsWith(`:${CHANGE_EVENT_NAME}`);
+}
+
+function createInitialChangeEvent(
+  type: string,
+  initialMap: Record<string, unknown>,
+) {
+  let namespace = type.endsWith(`:${CHANGE_EVENT_NAME}`)
+    ? type.slice(0, -`:${CHANGE_EVENT_NAME}`.length)
+    : undefined;
+  let entries = Object.entries(initialMap).filter(
+    ([eventType]) => !isChangeEventName(eventType),
+  );
+  if (!entries.length) return undefined;
+
+  return new CustomEvent(type, {
+    detail: createCustomEventChangeDetail(entries, namespace),
+  });
+}
+
+let queuedInitialDispatches = new WeakSet<RuntimeScope>();
+let completedInitialDispatches = new WeakSet<RuntimeScope>();
+
+function queueInitialDispatch(
+  scope: RuntimeScope,
+  handle: TaskQueue,
+) {
+  if (!scope.initial) return;
+  if (queuedInitialDispatches.has(scope) || completedInitialDispatches.has(scope))
+    return;
+
+  queuedInitialDispatches.add(scope);
+  handle.queueTask((...args) => {
+    let signal = args.find(isAbortSignal);
+    if (!signal) return;
+    if (signal.aborted || completedInitialDispatches.has(scope) || !scope.initial)
+      return;
+    completedInitialDispatches.add(scope);
+    dispatchRuntimeCustomEvent(
+      {
+        target: scope.target,
+        signal,
+      },
+      scope.initial,
+    );
+  });
 }
 
 export function sourceContainsElement(event: Event, element: Element) {
@@ -150,11 +232,8 @@ const onCustomEventMixin = createMixin<
   }
 
   function reactToInitial() {
-    let initial = currentScope?.initial
-      ? createInitialEvent(currentType, currentScope.initial)
-      : undefined;
-    if (!initial) return;
-    handle.queueTask((_, signal) => react(initial, signal));
+    if (!currentScope?.initial) return;
+    queueInitialDispatch(currentScope, handle);
   }
 
   function mount(element: HTMLElement) {

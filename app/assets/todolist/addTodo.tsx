@@ -1,6 +1,7 @@
 import {
   css,
   on,
+  ref,
   type Dispatched,
   type Handle,
   type Props,
@@ -70,8 +71,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
               let isActionSubmitted = event.detail.type === "actionSubmitted";
               input.classList.toggle("pending", isActionSubmitted);
               input.toggleAttribute("disabled", isActionSubmitted);
-              input.select();
+              event.detail.type === 'actionErrored' && input.select()
             }),
+            ref((input) => input.select()),
             css({
               padding: 4,
               font: "inherit",

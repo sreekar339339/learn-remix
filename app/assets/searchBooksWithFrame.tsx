@@ -3,12 +3,10 @@ import {
   css,
   Frame,
   type Handle,
-  type RemixNode,
   TypedEventTarget,
   on,
 } from "remix/ui";
 import { routes } from "../routes.ts";
-import { match, P } from "ts-pattern";
 import {
   dispatchCustomEvent,
   type CustomEventMap,
@@ -20,42 +18,23 @@ type SearchEventMap = CustomEventMap<{
   querySubmitted: { query: string };
 }>;
 
-function getInitialSearchDetail(
-  initialQuery: string,
-): SearchEventMap["change"]["detail"] {
-  let detail: SearchEventMap["change"]["detail"];
-  if (initialQuery) {
-    detail = {
-      type: "querySubmitted",
-      detail: { query: initialQuery },
-      details: { querySubmitted: { query: initialQuery } },
-    };
-  } else {
-    detail = {
-      type: "queryEmpty",
-      detail: null,
-      details: { queryEmpty: null },
-    };
-  }
-
-  return detail;
-}
-
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() || "";
-    let initialDetail = getInitialSearchDetail(initialQuery);
     let searchTarget = new TypedEventTarget<SearchEventMap>();
     let onSearch = onCustomEvent.with({
       target: searchTarget,
-      initial: { change: initialDetail },
+      initial: initialQuery
+        ? { querySubmitted: { query: initialQuery } }
+        : { queryEmpty: null },
     });
 
     return () => (
       <>
         <form
-          action={routes.asyncActions.withFrame.index.href()}
+          action={routes.searchBooks.books.href()}
+          target="response"
           mix={[
             on("submit", (evt, signal) => {
               evt.preventDefault();
@@ -65,8 +44,9 @@ export const SearchBooksWithFrame = clientEntry(
                 target: searchTarget,
                 signal,
               };
-              if (!query)
+              if (!query) {
                 return void dispatchCustomEvent(opts, { queryEmpty: null });
+              }
               dispatchCustomEvent(opts, { querySubmitted: { query } });
             }),
           ]}
@@ -96,26 +76,35 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         <onSearch.change
-          render={({ detail }) =>
-            match(detail)
-              .with({ type: "queryEmpty" }, () => (
-                <p>Enter the title of any book.</p>
-              ))
-              .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
-                <Frame
-                  key={query}
-                  fallback={
-                    <p>fetching books with title containing "{query}"...</p>
-                  }
-                  src={routes.asyncActions.withFrame.frame.href(undefined, {
-                    q: query,
-                  })}
-                />
-              ))
-              .with({ type: P.array() }, () => null)
-              .exhaustive()
-          }
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            if (detail.type === "queryEmpty") {
+              return <p>Enter the title of any book.</p>;
+            }
+            if (detail.type !== "querySubmitted") return null;
+
+            let { query } = detail.detail;
+            return (
+              <Frame
+                key={query}
+                fallback={
+                  <p>fetching books with title containing "{query}"...</p>
+                }
+                src={routes.searchBooks.books.href(undefined, {
+                  q: query,
+                })}
+              />
+            );
+          }}
         />
+        {/* <noscript>
+          <iframe
+            name="response"
+            src={routes.searchBooks.books.href(undefined, {
+              q: initialQuery,
+            })}
+          />
+        </noscript>  */}
       </>
     );
   },

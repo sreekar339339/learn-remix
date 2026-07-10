@@ -29,11 +29,11 @@ export function Layout(
         >
           <a href={routes.index.href()}>Home</a>
           <a href={routes.ticTacToe.href()}>Tic Tac Toe</a>
-          <a href={routes.asyncActions.withoutFrame.index.href()}>
-            Async actions without Frame
+          <a href={routes.searchBooks.withoutFrame.href()}>
+            Search books without Frame
           </a>
-          <a href={routes.asyncActions.withFrame.index.href()}>
-            Async actions with Frame
+          <a href={routes.searchBooks.withFrame.href()}>
+            Search books with Frame
           </a>
           <a href={routes.todolist.index.href()}>Todo list</a>
         </nav>

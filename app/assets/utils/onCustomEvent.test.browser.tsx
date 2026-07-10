@@ -29,6 +29,31 @@ type UploadEventMap = CustomEventMap<{
   uploadProgress: number;
 }>;
 
+function assertInitialEventTypes() {
+  let cartTarget = new TypedEventTarget<CartEventMap>();
+
+  onCustomEvent.with({
+    target: cartTarget,
+    initial: {
+      itemCount: 2,
+    },
+  });
+
+  onCustomEvent.with({
+    target: cartTarget,
+    initial: {
+      // @ts-expect-error initial mirrors dispatchCustomEvent events, so users cannot pass change directly.
+      change: {
+        type: "itemCount",
+        detail: 2,
+        details: { itemCount: 2 },
+      },
+    },
+  });
+}
+
+void assertInitialEventTypes;
+
 function CheckoutPaymentButton(handle: Handle) {
   let checkoutTarget = new TypedEventTarget<CheckoutEventMap>();
   let onCheckout = onCustomEvent.with({ target: checkoutTarget });
@@ -36,13 +61,18 @@ function CheckoutPaymentButton(handle: Handle) {
     target: checkoutTarget,
     signal: handle.signal,
   });
+  let previousListenerSignal: AbortSignal | undefined;
 
   return () => (
     <>
       <button
         type="button"
         data-testid="pay-button"
-        mix={onCheckout("paymentStatus", ({ detail }, button) => {
+        mix={onCheckout("paymentStatus", ({ detail }, button, signal) => {
+          button.dataset.previousSignalAborted = previousListenerSignal
+            ? String(previousListenerSignal.aborted)
+            : "none";
+          previousListenerSignal = signal;
           button.dataset.status = detail;
           button.toggleAttribute("aria-busy", detail === "pending");
         })}
@@ -57,6 +87,15 @@ function CheckoutPaymentButton(handle: Handle) {
         })}
       >
         Submit payment
+      </button>
+      <button
+        type="button"
+        data-action="complete-payment"
+        mix={on("click", () => {
+          dispatch({ paymentStatus: "paid" });
+        })}
+      >
+        Complete payment
       </button>
     </>
   );
@@ -78,6 +117,25 @@ function CartBadge(handle: Handle) {
       <output data-testid="cart-badge">
         <onCart.itemCount render={({ detail }) => <span>{detail} items</span>} />
       </output>
+      <output data-testid="cart-summary">
+        <onCart.change
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) {
+              return <span>{Object.keys(detail.details).join(",")}</span>;
+            }
+            return <span>{detail.type}:{String(detail.detail)}</span>;
+          }}
+        />
+      </output>
+      <input
+        data-testid="cart-search"
+        mix={onCart("change", ({ detail }, input) => {
+          input.dataset.changeType = Array.isArray(detail.type)
+            ? detail.type.join(",")
+            : detail.type;
+          input.dataset.itemCount = String(detail.details.itemCount);
+        })}
+      />
       <button
         type="button"
         data-action="add-cart-item"
@@ -120,6 +178,7 @@ function OrderQuantityRows(handle: Handle) {
   });
   let firstRow: HTMLElement | undefined;
   let secondRow: HTMLElement | undefined;
+  let toolbar: HTMLElement | undefined;
 
   let dispatch = (source: HTMLElement | undefined, selectedQuantity: number) => {
     if (!source) return;
@@ -169,6 +228,20 @@ function OrderQuantityRows(handle: Handle) {
       >
         Select second row
       </button>
+      <div
+        data-testid="order-toolbar"
+        mix={ref((element) => {
+          toolbar = element;
+        })}
+      >
+        <button
+          type="button"
+          data-action="select-from-toolbar"
+          mix={on("click", () => dispatch(toolbar, 3))}
+        >
+          Select from toolbar
+        </button>
+      </div>
     </>
   );
 }
@@ -208,7 +281,7 @@ function UploadProgressMeter(handle: Handle) {
 }
 
 describe("onCustomEvent", () => {
-  it("updates button attributes from checkout payment events", async (t) => {
+  it("gives effect listeners a fresh signal for each checkout payment event", async (t) => {
     let result = render(<CheckoutPaymentButton />);
     t.after(() => result.cleanup());
 
@@ -216,28 +289,49 @@ describe("onCustomEvent", () => {
     let submitButton = result.$(
       '[data-action="submit-payment"]',
     ) as HTMLButtonElement;
+    let completeButton = result.$(
+      '[data-action="complete-payment"]',
+    ) as HTMLButtonElement;
 
     assert.equal(payButton.dataset.status, undefined);
+    assert.equal(payButton.dataset.previousSignalAborted, undefined);
     assert.equal(payButton.hasAttribute("aria-busy"), false);
 
     await result.act(() => submitButton.click());
 
     assert.equal(payButton.dataset.status, "pending");
+    assert.equal(payButton.dataset.previousSignalAborted, "none");
     assert.equal(payButton.hasAttribute("aria-busy"), true);
+
+    await result.act(() => completeButton.click());
+
+    assert.equal(payButton.dataset.status, "paid");
+    assert.equal(payButton.dataset.previousSignalAborted, "true");
+    assert.equal(payButton.hasAttribute("aria-busy"), false);
   });
 
-  it("renders a cart badge from initial and later cart events", async (t) => {
+  it("derives change rendering from granular initial and later cart events", async (t) => {
     let result = render(<CartBadge />);
     t.after(() => result.cleanup());
 
     let badge = result.$('[data-testid="cart-badge"]') as HTMLOutputElement;
+    let summary = result.$('[data-testid="cart-summary"]') as HTMLOutputElement;
+    let search = result.$('[data-testid="cart-search"]') as HTMLInputElement;
     let addButton = result.$('[data-action="add-cart-item"]') as HTMLButtonElement;
 
     assert.equal(badge.textContent, "2 items");
+    assert.equal(summary.textContent, "itemCount:2");
+    assert.equal(search.dataset.changeType, "itemCount");
+    assert.equal(search.dataset.itemCount, "2");
+    assert.equal(badge.querySelectorAll("span:not([hidden])").length, 1);
 
     await result.act(() => addButton.click());
 
     assert.equal(badge.textContent, "3 items");
+    assert.equal(summary.textContent, "itemCount:3");
+    assert.equal(search.dataset.changeType, "itemCount");
+    assert.equal(search.dataset.itemCount, "3");
+    assert.equal(badge.querySelectorAll("span:not([hidden])").length, 1);
   });
 
   it("renders notification count events dispatched from setup tasks", async (t) => {
@@ -257,6 +351,9 @@ describe("onCustomEvent", () => {
     let secondRow = result.$('[data-testid="order-row-b"]') as HTMLElement;
     let firstButton = result.$('[data-action="select-row-a"]') as HTMLButtonElement;
     let secondButton = result.$('[data-action="select-row-b"]') as HTMLButtonElement;
+    let toolbarButton = result.$(
+      '[data-action="select-from-toolbar"]',
+    ) as HTMLButtonElement;
 
     await result.act(() => firstButton.click());
 
@@ -264,6 +361,11 @@ describe("onCustomEvent", () => {
     assert.equal(secondRow.textContent, "");
 
     await result.act(() => secondButton.click());
+
+    assert.equal(firstRow.textContent, "1 selected");
+    assert.equal(secondRow.textContent, "2 selected");
+
+    await result.act(() => toolbarButton.click());
 
     assert.equal(firstRow.textContent, "1 selected");
     assert.equal(secondRow.textContent, "2 selected");

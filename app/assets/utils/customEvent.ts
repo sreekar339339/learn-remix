@@ -1,6 +1,8 @@
 import type { EventMap as RemixEventMap } from "remix/ui";
-
-const CHANGE_EVENT_NAME = "change" as const;
+import {
+  CHANGE_EVENT_NAME,
+  createCustomEventChangeDetail,
+} from "./customEventChange.ts";
 
 type NamespacedCustomEventName<
   EventName extends string,
@@ -308,31 +310,6 @@ function getNamespacedEventName(
   return options.namespace ? `${options.namespace}:${type}` : type;
 }
 
-function getChangeDetail(
-  entries: Array<[string, unknown]>,
-  eventNames: string[],
-  options: DispatchCustomEventRuntimeOptions,
-) {
-  const details = Object.fromEntries(entries);
-
-  if (entries.length === 1) {
-    const [[type, detail]] = entries;
-    return {
-      type,
-      ...(options.namespace ? { name: eventNames[0] } : {}),
-      detail,
-      details,
-    };
-  }
-
-  return {
-    type: entries.map(([type]) => type),
-    ...(options.namespace ? { name: eventNames } : {}),
-    detail: details,
-    details,
-  };
-}
-
 function dispatchEventObject(
   options: DispatchCustomEventRuntimeOptions,
   events: object,
@@ -353,7 +330,7 @@ function dispatchEventObject(
     options.target,
     changeEventName,
     init,
-    getChangeDetail(entries, eventNames, options),
+    createCustomEventChangeDetail(entries, options.namespace),
     true,
     options.source,
     hasSource,

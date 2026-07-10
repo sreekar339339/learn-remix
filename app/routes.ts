@@ -4,20 +4,14 @@ export const routes = route({
   assets: get('/assets/*path'),
   index: get('/'),
   ticTacToe: get('ticTacToe'),
-  asyncActions: route('asyncActions', {
-    withoutFrame: route('withoutFrame', {
-      index: get('/'),
-      api: route('api', {
-        books: get('books')
-      }),
-    }),
-    withFrame: route('withFrame', {
-      index: get('/'),
-      frame: get('books')
-    })
+  searchBooks: route('searchBooks', {
+    withoutFrame: get('withoutFrame'),
+    withFrame: get('withFrame'),
+    books: get('books')
   }),
   todolist: route('todolist', {
-    index: get(''),
+    index: get('/'),
     todos: form('todos')
   })
 })
+
