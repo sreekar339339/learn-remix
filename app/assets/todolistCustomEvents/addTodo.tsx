@@ -22,7 +22,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     formData.set("redirectTo", "none");
     let opts = { composed: true, signal };
     try {
-      form.dispatchEvent(todoEvents.actionSubmitted(opts));
+      form.dispatchEvent(todoEvents.actionSubmitted(null, opts));
       // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
       let resp = await fetch(new URL(form.action), {
         method: "POST",
@@ -35,7 +35,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         });
       }
       await handle.frames.get("TodoItems")!.reload();
-      form.dispatchEvent(todoEvents.actionSucceeded(opts));
+      form.dispatchEvent(todoEvents.actionSucceeded(null, opts));
     } catch (error) {
       form.dispatchEvent(
         todoEvents.actionErrored({ error: error as Error }, opts),

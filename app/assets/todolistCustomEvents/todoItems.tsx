@@ -1,7 +1,7 @@
 import { clientEntry, css, on, type Dispatched, type Handle } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
-import { todoEvents } from "./todoList.tsx";
+import { todoEvents, type TodoActionDetail } from "./todoList.tsx";
 
 const todoListCss = css({
   listStyleType: "none",
@@ -96,6 +96,14 @@ const completeTodoButtonCss = css({
   fontSize: "18px",
 });
 
+function getTodoActionDetail(formData: FormData): TodoActionDetail {
+  let completed = formData.get("completed");
+
+  return typeof completed === "string"
+    ? { completed: completed === "true" }
+    : {};
+}
+
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   let onSubmit = async (evt: Dispatched<SubmitEvent, HTMLUListElement>) => {
     evt.preventDefault();
@@ -103,15 +111,14 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
     let submitter = evt.submitter as HTMLButtonElement;
     let formData = new FormData(form, submitter);
     formData.set("redirectTo", "none");
-    let signal = handle.signal;
-    let opts = { composed: true, signal };
+    let opts = { composed: true };
+    let actionDetail = getTodoActionDetail(formData);
     try {
-      form.dispatchEvent(todoEvents.actionSubmitted(opts));
+      form.dispatchEvent(todoEvents.actionSubmitted(actionDetail, opts));
       // await new Promise((res, rej) => setTimeout(rej, 25000, new Error('laude lag gaye')));
       let resp = await fetch(form.action, {
         method: "POST",
         body: formData,
-        signal,
       });
       if (!resp.ok) {
         throw new Error(`${resp.status} ${resp.statusText}`, {
@@ -119,7 +126,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
         });
       }
       await handle.frame.reload();
-      form.dispatchEvent(todoEvents.actionSucceeded(opts));
+      form.dispatchEvent(todoEvents.actionSucceeded(actionDetail, opts));
     } catch (error) {
       form.dispatchEvent(
         todoEvents.actionErrored({ error: error as Error }, opts),
@@ -128,17 +135,9 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
   };
 
   return () => (
-    <ul
-      mix={[
-        todoListCss,
-        on("submit", onSubmit),
-      ]}
-    >
+    <ul mix={[todoListCss, on("submit", onSubmit)]}>
       {handle.props.todos.map(({ id, completed, text }) => (
-        <li
-          key={id}
-          mix={todoItemCss}
-        >
+        <li key={id} mix={todoItemCss}>
           <form
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
@@ -182,7 +181,6 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
                   return;
                 currentTarget.reset();
               }),
-              // on('')
             ]}
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
@@ -193,18 +191,14 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[
                 todoEvents.listen(
                   on("change", ({ currentTarget, detail }) => {
-                    currentTarget.form!.dataset.eventType =
-                      detail.type as string;
-                    let isActionSubmitted = detail.type === "actionSubmitted";
                     currentTarget.classList.toggle(
                       "pending",
-                      isActionSubmitted,
+                      detail.type === "actionSubmitted",
                     );
                     currentTarget.toggleAttribute(
                       "disabled",
-                      isActionSubmitted,
+                      detail.type === "actionSubmitted",
                     );
-                    currentTarget.focus();
                   }),
                 ),
                 editTodoInputCss,
@@ -244,11 +238,15 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             >
               <todoEvents.change
                 render={({ detail }) => {
-                  let isCompleted =
-                    detail.type === "actionSubmitted" ? !completed : completed;
-                  return isCompleted ? "✓" : " ";
+                  return (detail.details.actionSubmitted?.completed ??
+                    detail.details.actionSucceeded?.completed ??
+                    completed)
+                    ? "✓"
+                    : " ";
                 }}
-                initial={{ actionSucceeded: null }}
+                initial={{
+                  actionSucceeded: { completed },
+                }}
               />
             </button>
           </form>

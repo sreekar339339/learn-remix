@@ -50,7 +50,7 @@ type ChangeEventDetailFromMap<
   [K in keyof EventMap & string]: {
     type: K;
     detail: EventMap[K];
-    details: Pick<EventMap, K>;
+    details: Partial<EventMap>;
   } & ChangeDetailName<K, Namespace>;
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;
@@ -88,6 +88,7 @@ type EventMapReservedKeys<EventMap extends EventDetails> = Extract<
   | typeof CHANGE_EVENT_NAME
   | "listen"
   | "host"
+  | "initial"
   | "eventMap"
   | "namespacedEventMap"
 >;
@@ -103,7 +104,7 @@ type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
 };
 
 type NamespacedCustomEventMapKeyError<Keys extends PropertyKey> = {
-  readonly __customEventMapNamespacedKeyError: "CustomEventMap event maps cannot define namespaced event keys. Use customEvents(\"namespace\") for namespaced DOM/global events.";
+  readonly __customEventMapNamespacedKeyError: "CustomEventMap event maps cannot define namespaced event keys. Use customEvents({ namespace }) for namespaced DOM/global events.";
   readonly namespacedEventKeys: Keys;
 };
 
@@ -135,15 +136,53 @@ type CustomEventsInit<Source = unknown> = EventInit & {
 };
 
 type CustomEventsDispatchDetail<Events extends EventDetails> = {
-  events: EventObject<Events>;
+  events: CustomEventsDispatchInput<Events>;
   init?: CustomEventsInit;
   namespace?: string;
   owner?: symbol;
 };
+type CustomEventsEventDetailBuilder<
+  Events extends EventDetails,
+  Detail,
+> = (details: Partial<Events>) => Detail;
+type CustomEventsDispatchEvents<Events extends EventDetails> = {
+  [K in keyof Events]?: Events[K];
+};
+type CustomEventsDispatchBuilder<Events extends EventDetails> = (
+  details: Partial<Events>,
+) => CustomEventsDispatchEvents<Events>;
+type CustomEventsDispatchInput<Events extends EventDetails> =
+  | CustomEventsDispatchEvents<Events>
+  | CustomEventsDispatchBuilder<Events>;
 
 type CustomEventsRuntime = {
   namespace: string | undefined;
   owner: symbol;
+  initial?: CustomEventsInitial<EventDetails>;
+};
+
+type CustomEventsInitial<Events extends EventDetails> =
+  | {
+      /** Initial product event used by descriptor render components. */
+      event: CustomEventsDispatchInput<Events> | Event;
+      /**
+       * When true, the nearest `host()` boundary dispatches this event once
+       * after mount. Without a host boundary, it is dispatched once on
+       * `window`.
+       */
+      dispatch?: boolean;
+    }
+  | {
+      event?: undefined;
+      dispatch?: false | undefined;
+    };
+
+type CustomEventsOptions<Namespace extends string | undefined = undefined> = {
+  /**
+   * Optional DOM/global event namespace. Product code still uses local event
+   * names through `events.listen(on("name", ...))` and `<events.name />`.
+   */
+  namespace?: Namespace;
 };
 
 type CustomEventsEventType<Events extends EventDetails> = Extract<
@@ -231,6 +270,19 @@ type CustomEventsEventMember<
        * form.dispatchEvent(todoEvents.actionSubmitted({ signal }));
        */
       (init?: CustomEventsInit): Event;
+      /**
+       * Creates this event from the nearest host's latest event details.
+       * Without a host, this uses the descriptor's shared latest details.
+       *
+       * @example
+       * button.dispatchEvent(gameEvents.focus((details) => ({
+       *   cellId: details.turn.nextCell,
+       * })));
+       */
+      (
+        detail: CustomEventsEventDetailBuilder<Events, Events[Type]>,
+        init?: CustomEventsInit,
+      ): Event;
     }
   : {}) & {
   /**
@@ -244,6 +296,20 @@ type CustomEventsEventMember<
    */
   <Detail extends Events[Type]>(
     detail: ExactEventDetail<Events[Type], Detail>,
+    init?: CustomEventsInit,
+  ): Event;
+  /**
+   * Creates this event from the nearest host's latest event details.
+   * Without a host, this uses the descriptor's shared latest details.
+   *
+   * @example
+   * button.dispatchEvent(gameEvents.turn((details) => ({
+   *   position: new Map(details.turn.position),
+   *   nextPlayer: details.turn.nextPlayer === "X" ? "O" : "X",
+   * })));
+   */
+  (
+    detail: CustomEventsEventDetailBuilder<Events, Events[Type]>,
     init?: CustomEventsInit,
   ): Event;
   /**
@@ -428,7 +494,7 @@ type CustomEventsDescriptor<
    * form.dispatchEvent(todoEvents({ actionSubmitted: null }));
    */
   <Source = unknown>(
-    events: EventObject<Events>,
+    events: CustomEventsDispatchInput<Events>,
     init?: CustomEventsInit<Source>,
   ): Event;
 
@@ -457,11 +523,43 @@ type CustomEventsDescriptor<
   listen: CustomEventsListenFunction<Events, Namespace>;
 
   /**
+   * Descriptor-level initial event for event-render components and, when
+   * explicitly requested, `.listen(...)` hosts.
+   *
+   * Assign this in component setup when the initial UI depends on props, route
+   * data, or other values only available there. By default the event seeds
+   * render components and the descriptor's shared event details memory. Set
+   * `dispatch: true` when the component is intentionally event-modeled and the
+   * initial event should run the same DOM effects as later product events.
+   * A nearby `events.host()` dispatches it once for that boundary; without a
+   * host, the descriptor dispatches it once on `window` so sibling branches can
+   * react without each listener becoming its own producer.
+   *
+   * `dispatch: true` is only valid when `event` is defined. Component-level
+   * `<events.change initial={...} />` props remain render-only and do not run
+   * `.listen(...)` effects.
+   *
+   * @example
+   * searchEvents.initial = {
+   *   event: props.query
+   *     ? searchEvents.querySubmitted({ query: props.query })
+   *     : searchEvents.queryEmpty(),
+   *   dispatch: true,
+   * };
+   */
+  initial?: CustomEventsInitial<Events>;
+
+  /**
    * Makes a DOM element the boundary for this event definition.
    *
    * Use `host()` at the root of a widget when all branches inside should share
    * one event stream. Use it at each repeated form or row when each instance
    * should stay independent.
+   *
+   * The host also owns the "latest details" used by event-detail builders like
+   * `gameEvents.turn((details) => ...)`. Without a host, those builders use
+   * descriptor-level shared details, which is convenient for singleton widgets
+   * but is not isolated between repeated component instances.
    *
    * A host contains its events by default: listeners and render components
    * inside the host can react, while ancestors outside the host do not. This is
@@ -519,7 +617,7 @@ type CustomEventsDescriptor<
   /**
    * Namespaced DOM event map for TypeScript DOM event-map augmentation.
    *
-   * Only available when `customEvents("namespace")` is used.
+   * Only available when `customEvents({ namespace })` is used.
    *
    * @example
    * declare global {
@@ -535,7 +633,16 @@ type CustomEventsDescriptor<
 let enabledTargets = new WeakSet<EventTarget>();
 let didEnableWindowTarget = false;
 let customEventHosts = new WeakMap<Element, Map<symbol, number>>();
+let customEventDetails = new WeakMap<
+  EventTarget,
+  Map<symbol, EventObject<EventDetails>>
+>();
+let customEventDescriptorDetails = new Map<
+  symbol,
+  EventObject<EventDetails>
+>();
 let customEventHostListeners = new Map<symbol, Set<() => void>>();
+let customEventInitialDispatches = new WeakMap<EventTarget, Set<symbol>>();
 
 function hasDispatchSource(options: { source?: unknown }) {
   return Object.hasOwn(options, "source");
@@ -554,6 +661,10 @@ function ownsEvent(event: Event, owner: symbol) {
 
 function isForwardedCustomEvent(event: Event) {
   return (event as OwnedEvent)[CUSTOM_EVENT_FORWARDED] === true;
+}
+
+function isElement(value: unknown): value is Element {
+  return typeof Element !== "undefined" && value instanceof Element;
 }
 
 function eventPathIncludes(event: Event, target: EventTarget) {
@@ -622,6 +733,59 @@ function getDefaultHostTarget(element: Element | undefined, owner: symbol) {
   );
 }
 
+function getCustomEventsDetailsTarget(
+  target: EventTarget | undefined,
+  owner: symbol,
+) {
+  if (isElement(target)) {
+    return findCustomEventsHost(target, owner);
+  }
+  return target;
+}
+
+function getCustomEventsDetails(
+  target: EventTarget | undefined,
+  owner: symbol,
+) {
+  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
+  if (!detailsTarget) return customEventDescriptorDetails.get(owner) ?? {};
+
+  return customEventDetails.get(detailsTarget)?.get(owner) ?? {};
+}
+
+function setCustomEventsDetails(
+  target: EventTarget | undefined,
+  owner: symbol,
+  details: EventObject<EventDetails>,
+) {
+  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
+  if (!detailsTarget) {
+    customEventDescriptorDetails.set(owner, details);
+    return;
+  }
+
+  let detailsByOwner = customEventDetails.get(detailsTarget);
+  if (!detailsByOwner) {
+    detailsByOwner = new Map();
+    customEventDetails.set(detailsTarget, detailsByOwner);
+  }
+  detailsByOwner.set(owner, details);
+}
+
+function updateCustomEventsDetails(
+  target: EventTarget | undefined,
+  owner: symbol | undefined,
+  entries: Array<[string, unknown]>,
+) {
+  if (!owner) return;
+
+  let current = getCustomEventsDetails(target, owner);
+  setCustomEventsDetails(target, owner, {
+    ...current,
+    ...Object.fromEntries(entries),
+  });
+}
+
 function notifyCustomEventsHost(owner: symbol) {
   for (let listener of customEventHostListeners.get(owner) ?? []) {
     listener();
@@ -636,6 +800,29 @@ function subscribeCustomEventsHost(owner: symbol, listener: () => void) {
   }
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function claimInitialCustomEventsDispatch(target: EventTarget, owner: symbol) {
+  let dispatches = customEventInitialDispatches.get(target);
+  if (dispatches?.has(owner)) return false;
+
+  if (!dispatches) {
+    dispatches = new Set();
+    customEventInitialDispatches.set(target, dispatches);
+  }
+  dispatches.add(owner);
+  return true;
+}
+
+function dispatchInitialCustomEvents(
+  runtime: CustomEventsRuntime,
+  target: EventTarget,
+) {
+  let event = createInitialDispatchEvent(runtime);
+  if (!event) return;
+  if (!claimInitialCustomEventsDispatch(target, runtime.owner)) return;
+
+  target.dispatchEvent(event);
 }
 
 function getEventName(type: string, namespace: string | undefined) {
@@ -678,6 +865,39 @@ function createCustomEventChangeDetail(
     detail: details,
     details,
   };
+}
+
+function isCustomEventsBuilder(
+  value: unknown,
+): value is CustomEventsEventDetailBuilder<EventDetails, unknown> {
+  return typeof value === "function";
+}
+
+function resolveCustomEventsDispatchEvents(
+  target: EventTarget | undefined,
+  owner: symbol | undefined,
+  events: CustomEventsDispatchInput<EventDetails>,
+) {
+  if (!isCustomEventsBuilder(events)) return events;
+
+  let details = owner ? getCustomEventsDetails(target, owner) : {};
+  return events(details);
+}
+
+function resolveCustomEventsDispatchEntries(
+  target: EventTarget | undefined,
+  owner: symbol | undefined,
+  events: CustomEventsDispatchInput<EventDetails>,
+) {
+  let resolvedEvents = resolveCustomEventsDispatchEvents(
+    target,
+    owner,
+    events,
+  );
+  return Object.entries(resolvedEvents).map(([type, detail]) => [
+    type,
+    detail,
+  ] satisfies [string, unknown]);
 }
 
 function getEventInit(init: EventInit | undefined): EventInit {
@@ -738,6 +958,28 @@ function dispatchSingleCustomEvent(
   );
 }
 
+function createCustomEventsDispatchEvent<Events extends EventDetails>(
+  events: CustomEventsDispatchInput<Events>,
+  init: CustomEventsInit | undefined,
+  namespace: string | undefined,
+  owner: symbol,
+) {
+  return new CustomEvent<CustomEventsDispatchDetail<Events>>(
+    CUSTOM_EVENTS_DISPATCH,
+    {
+      bubbles: init?.bubbles ?? true,
+      cancelable: true,
+      ...(init?.composed === undefined ? {} : { composed: init.composed }),
+      detail: {
+        events,
+        init,
+        namespace,
+        owner,
+      },
+    },
+  );
+}
+
 function dispatchEventObject(
   target: EventTarget,
   namespace: string | undefined,
@@ -747,12 +989,18 @@ function dispatchEventObject(
 ) {
   if (init?.signal?.aborted) return true;
 
-  let entries = Object.entries(events);
+  let entries = resolveCustomEventsDispatchEntries(
+    target,
+    metadata.owner,
+    events,
+  );
   if (!entries.length) return true;
 
   if (entries.some(([type]) => type === CHANGE_EVENT_NAME)) {
     throw new TypeError('customEvents() does not dispatch "change" directly.');
   }
+
+  updateCustomEventsDetails(target, metadata.owner, entries);
 
   let eventInit = getEventInit(init);
   let changeResult = dispatchSingleCustomEvent(
@@ -823,6 +1071,85 @@ function createInitialEvent(
   return new CustomEvent(getEventName(type, namespace), {
     detail: createCustomEventChangeDetail(entries, namespace),
   });
+}
+
+function getInitialCustomEventsDispatch(
+  runtime: CustomEventsRuntime,
+) {
+  if (!runtime.initial?.event) return undefined;
+
+  let initial = runtime.initial.event;
+  if (
+    !initial ||
+    (typeof initial !== "object" && typeof initial !== "function")
+  ) {
+    return undefined;
+  }
+
+  if (initial instanceof CustomEvent) {
+    if (initial.type !== CUSTOM_EVENTS_DISPATCH) return undefined;
+
+    let detail =
+      initial.detail as Partial<CustomEventsDispatchDetail<EventDetails>>;
+    if (!detail.events) return undefined;
+
+    return {
+      events: detail.events,
+      init: detail.init,
+      namespace: detail.namespace ?? runtime.namespace,
+      owner: detail.owner ?? runtime.owner,
+    };
+  }
+
+  if (initial instanceof Event) return undefined;
+
+  return {
+    events: initial,
+    namespace: runtime.namespace,
+    owner: runtime.owner,
+  };
+}
+
+function createInitialDispatchEvent(runtime: CustomEventsRuntime) {
+  if (!runtime.initial?.dispatch) return undefined;
+
+  let detail = getInitialCustomEventsDispatch(runtime);
+  if (!detail) return undefined;
+
+  return createCustomEventsDispatchEvent(
+    detail.events,
+    detail.init,
+    detail.namespace,
+    detail.owner,
+  );
+}
+
+function getInitialEventEntries(
+  target: EventTarget | undefined,
+  runtime: CustomEventsRuntime,
+) {
+  if (!runtime.initial?.event) return undefined;
+
+  let detail = getInitialCustomEventsDispatch(runtime);
+  if (!detail) return undefined;
+  return resolveCustomEventsDispatchEntries(
+    target,
+    detail.owner,
+    detail.events,
+  );
+}
+
+function seedInitialCustomEventsDetails(
+  target: EventTarget | undefined,
+  runtime: CustomEventsRuntime,
+) {
+  let entries = getInitialEventEntries(target, runtime);
+  if (!entries?.length) return;
+  updateCustomEventsDetails(target, runtime.owner, entries);
+}
+
+function seedInitialCustomEventsDescriptorDetails(runtime: CustomEventsRuntime) {
+  seedInitialCustomEventsDetails(undefined, runtime);
 }
 
 function expandCustomEventsDispatch(
@@ -1010,7 +1337,6 @@ const forwardTargetEventsMixin = createMixin<
   let currentElement: Element | undefined;
   let currentExplicitTarget: EventTarget | undefined;
   let currentOwner: symbol | undefined;
-  let listeningTarget: EventTarget | undefined;
   let currentEventName = "";
   let currentGuard: OnCustomEventGuard | undefined;
   let controller: AbortController | undefined;
@@ -1028,17 +1354,17 @@ const forwardTargetEventsMixin = createMixin<
   function listen() {
     controller?.abort();
     controller = undefined;
-    listeningTarget =
+    let target =
       currentExplicitTarget ??
       (currentOwner
         ? getDefaultHostTarget(currentElement, currentOwner)
         : undefined);
 
-    if (!currentElement || !listeningTarget || !currentEventName) return;
+    if (!currentElement || !target || !currentEventName) return;
 
     controller = new AbortController();
     let signal = controller.signal;
-    listeningTarget.addEventListener(
+    target.addEventListener(
       currentEventName,
       (event) => {
         let element = currentElement;
@@ -1089,54 +1415,116 @@ const forwardTargetEventsMixin = createMixin<
   };
 });
 
+const initialWindowDispatchMixin = createMixin<
+  Element,
+  [runtime: CustomEventsRuntime, target: EventTarget | undefined]
+>((handle) => {
+  let currentRuntime: CustomEventsRuntime | undefined;
+  let currentTarget: EventTarget | undefined;
+  let didQueue = false;
+
+  function scheduleDispatch() {
+    if (didQueue) return;
+
+    didQueue = true;
+    handle.queueTask((element, signal) => {
+      didQueue = false;
+      if (!currentRuntime || signal.aborted) return;
+
+      if (!currentTarget && findCustomEventsHost(element, currentRuntime.owner)) {
+        return;
+      }
+
+      let target =
+        currentTarget ??
+        (typeof window === "undefined" ? undefined : window);
+      if (!target) return;
+
+      dispatchInitialCustomEvents(currentRuntime, target);
+    });
+  }
+
+  handle.addEventListener("insert", scheduleDispatch);
+  handle.addEventListener("reclaimed", scheduleDispatch);
+  handle.addEventListener("remove", () => {
+    didQueue = false;
+  });
+
+  return (runtime, target) => {
+    currentRuntime = runtime;
+    currentTarget = target;
+    scheduleDispatch();
+    return handle.element;
+  };
+});
+
 const customEventsHostMixin = createMixin<
   Element,
-  [owner: symbol, namespace: string | undefined]
+  [runtime: CustomEventsRuntime]
 >((handle) => {
   let currentElement: Element | undefined;
-  let currentOwner: symbol | undefined;
-  let currentNamespace: string | undefined;
+  let currentRuntime: CustomEventsRuntime | undefined;
   let isRegistered = false;
+  let didQueueInitialDispatch = false;
+
+  function scheduleInitialDispatch() {
+    if (didQueueInitialDispatch) return;
+
+    didQueueInitialDispatch = true;
+    handle.queueTask((element, signal) => {
+      didQueueInitialDispatch = false;
+      if (!currentRuntime || currentElement !== element || signal.aborted) {
+        return;
+      }
+
+      dispatchInitialCustomEvents(currentRuntime, element);
+    });
+  }
 
   function mount(
     element: Element,
-    owner: symbol | undefined,
-    namespace: string | undefined,
+    runtime: CustomEventsRuntime | undefined,
   ) {
-    if (isRegistered && currentElement && currentOwner) {
-      removeCustomEventsHost(currentElement, currentOwner);
+    if (isRegistered && currentElement && currentRuntime) {
+      removeCustomEventsHost(currentElement, currentRuntime.owner);
       isRegistered = false;
     }
 
     currentElement = element;
-    currentOwner = owner;
-    currentNamespace = namespace;
-    if (!owner) return;
+    currentRuntime = runtime;
+    if (!runtime) return;
 
-    addCustomEventsHost(element, owner);
+    addCustomEventsHost(element, runtime.owner);
     isRegistered = true;
-    enableCustomEventsHost(element, namespace);
+    seedInitialCustomEventsDetails(element, runtime);
+    enableCustomEventsHost(element, runtime.namespace);
+    scheduleInitialDispatch();
   }
 
   handle.addEventListener("insert", (event) => {
-    mount(event.node, currentOwner, currentNamespace);
+    mount(event.node, currentRuntime);
   });
   handle.addEventListener("reclaimed", (event) => {
-    mount(event.node, currentOwner, currentNamespace);
+    mount(event.node, currentRuntime);
   });
   handle.addEventListener("remove", () => {
-    if (isRegistered && currentElement && currentOwner) {
-      removeCustomEventsHost(currentElement, currentOwner);
+    if (isRegistered && currentElement && currentRuntime) {
+      removeCustomEventsHost(currentElement, currentRuntime.owner);
     }
     isRegistered = false;
     currentElement = undefined;
+    didQueueInitialDispatch = false;
   });
 
-  return (owner, namespace) => {
-    currentOwner = owner;
-    currentNamespace = namespace;
-    if (currentElement && !isRegistered) {
-      mount(currentElement, owner, namespace);
+  return (runtime) => {
+    currentRuntime = runtime;
+    if (currentElement) {
+      if (isRegistered) {
+        seedInitialCustomEventsDetails(currentElement, runtime);
+        scheduleInitialDispatch();
+      } else {
+        mount(currentElement, runtime);
+      }
     }
     return handle.element;
   };
@@ -1161,7 +1549,7 @@ function createCustomEventsOnElement<
     let initialEvent = createInitialEvent(
       type,
       runtime.namespace,
-      handle.props.initial,
+      handle.props.initial ?? runtime.initial?.event,
     );
     let currentGuardProp = handle.props.guard;
     let guard = createCustomEventsGuard(runtime, handle.props.guard);
@@ -1312,6 +1700,15 @@ export function customEvents<Events extends EventDetails>(): CustomEventsDescrip
   Events,
   undefined
 >;
+export function customEvents<Events extends EventDetails>(
+  options: CustomEventsOptions<undefined> & { namespace?: undefined },
+): CustomEventsDescriptor<Events, undefined>;
+export function customEvents<
+  Events extends EventDetails,
+  const Namespace extends string,
+>(
+  options: CustomEventsOptions<Namespace> & { namespace: Namespace },
+): CustomEventsDescriptor<Events, Namespace>;
 /**
  * Defines a namespaced product event set for DOM typing.
  *
@@ -1323,7 +1720,7 @@ export function customEvents<Events extends EventDetails>(): CustomEventsDescrip
  * @example
  * const checkoutEvents = customEvents<{
  *   submitted: { id: string };
- * }, "checkout">("checkout");
+ * }, "checkout">({ namespace: "checkout" });
  *
  * declare global {
  *   interface HTMLElementEventMap
@@ -1332,19 +1729,17 @@ export function customEvents<Events extends EventDetails>(): CustomEventsDescrip
  */
 export function customEvents<
   Events extends EventDetails,
-  Namespace extends string = string,
->(namespace: Namespace): CustomEventsDescriptor<Events, Namespace>;
-export function customEvents<
-  Events extends EventDetails,
-  Namespace extends string | undefined = undefined,
->(namespace?: Namespace): CustomEventsDescriptor<Events, Namespace> {
+  const Namespace extends string | undefined = undefined,
+>(
+  options?: CustomEventsOptions<Namespace>,
+): CustomEventsDescriptor<Events, Namespace> {
   let runtime: CustomEventsRuntime = {
-    namespace,
+    namespace: options?.namespace,
     owner: Symbol("customEvents.descriptor"),
   };
 
   function createCustomEvents<Source = unknown>(
-    events: EventObject<Events>,
+    events: CustomEventsDispatchInput<Events>,
     init?: CustomEventsInit<Source>,
   ) {
     if (init?.signal?.aborted) {
@@ -1352,19 +1747,11 @@ export function customEvents<
     }
 
     enableWindowTarget();
-    return new CustomEvent<CustomEventsDispatchDetail<Events>>(
-      CUSTOM_EVENTS_DISPATCH,
-      {
-        bubbles: init?.bubbles ?? true,
-        cancelable: true,
-        ...(init?.composed === undefined ? {} : { composed: init.composed }),
-        detail: {
-          events,
-          init,
-          namespace: runtime.namespace,
-          owner: runtime.owner,
-        },
-      },
+    return createCustomEventsDispatchEvent(
+      events,
+      init,
+      runtime.namespace,
+      runtime.owner,
     );
   }
 
@@ -1409,8 +1796,18 @@ export function customEvents<
               );
             }
 
+            if (isCustomEventsBuilder(detailOrHandle)) {
+              return createCustomEvents(
+                (details) =>
+                  ({
+                    [property]: detailOrHandle(details),
+                  }) as CustomEventsDispatchEvents<Events>,
+                init,
+              );
+            }
+
             return createCustomEvents(
-              { [property]: detailOrHandle } as EventObject<Events>,
+              { [property]: detailOrHandle } as CustomEventsDispatchEvents<Events>,
               init,
             );
           } as CustomEventsOnMember<Events, CustomEventsEventType<Events>>);
@@ -1429,7 +1826,7 @@ export function customEvents<
 
     for (let descriptor of descriptors) {
       let type = getOnDescriptorType(descriptor);
-        let eventName = getListenEventName(runtime, type);
+      let eventName = getListenEventName(runtime, type);
       mixins.push(
         forwardTargetEventsMixin(
           options.target,
@@ -1441,6 +1838,8 @@ export function customEvents<
       );
     }
 
+    mixins.push(initialWindowDispatchMixin(runtime, options.target));
+
     return mixins;
   }) as CustomEventsListenFunction<Events, Namespace>;
 
@@ -1448,14 +1847,26 @@ export function customEvents<
     listen: listenToOnDescriptors,
     host(target?: EventTarget) {
       if (!target) {
-        return customEventsHostMixin(runtime.owner, runtime.namespace);
+        return customEventsHostMixin(runtime);
       }
 
+      seedInitialCustomEventsDetails(target, runtime);
       enableCustomEventsHost(target, runtime.namespace);
-      if (target instanceof Element) {
+      if (isElement(target)) {
         addCustomEventsHost(target, runtime.owner);
       }
       return target;
+    },
+  });
+  Object.defineProperty(descriptor, "initial", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return runtime.initial;
+    },
+    set(initial: CustomEventsInitial<Events> | undefined) {
+      runtime.initial = initial as CustomEventsInitial<EventDetails> | undefined;
+      seedInitialCustomEventsDescriptorDetails(runtime);
     },
   });
 

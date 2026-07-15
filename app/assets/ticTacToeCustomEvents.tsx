@@ -1,4 +1,4 @@
-import { clientEntry, css, on, ref, type Handle } from "remix/ui";
+import { clientEntry, css, on } from "remix/ui";
 import { customEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
@@ -51,7 +51,7 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
-    let currentGame = {
+    let initialGame = {
       turn: {
         result: "Pending",
         position: new Map(),
@@ -60,6 +60,11 @@ export const TicTacToeCustomEvents = clientEntry(
       focus: { cellId: 0 },
     } satisfies GameEventMap["change"]["detail"]["details"];
 
+    gameEvents.initial = {
+      event: gameEvents(initialGame),
+      dispatch: true,
+    };
+
     return () => (
       <div
         mix={[
@@ -67,14 +72,6 @@ export const TicTacToeCustomEvents = clientEntry(
             display: "grid",
             gap: 16,
             maxWidth: 360,
-          }),
-          gameEvents.listen(
-            on("change", ({ detail }) => {
-              Object.assign(currentGame, detail.details);
-            }),
-          ),
-          ref((node) => {
-            node.dispatchEvent(gameEvents(currentGame));
           }),
         ]}
       >
@@ -88,26 +85,26 @@ export const TicTacToeCustomEvents = clientEntry(
             on("click", ({ target, currentTarget }) => {
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.value);
-              let { position, nextPlayer } = currentGame.turn;
-              if (position.has(cellId) || currentGame.turn.result !== "Pending")
-                return;
-              let nextPosition = new Map(position).set(cellId, nextPlayer);
-              let nextFreeCellIdx = cellId;
-              while (nextPosition.has(nextFreeCellIdx)) {
-                nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
-                if (nextFreeCellIdx === cellId) {
-                  // We've looped through all cells and found no free cell
-                  break;
-                }
-              }
               currentTarget.dispatchEvent(
-                gameEvents({
-                  turn: {
-                    position: nextPosition,
-                    nextPlayer: nextPlayer === "X" ? "O" : "X",
-                    result: deriveResult(nextPosition),
-                  },
-                  focus: { cellId: nextFreeCellIdx },
+                gameEvents((prevEvent) => {
+                  let { position, nextPlayer, result } = prevEvent.turn!;
+                  if (position.has(cellId) || result !== "Pending") return {};
+                  let nextPosition = new Map(position).set(cellId, nextPlayer);
+                  let nextFreeCellIdx = cellId;
+                  while (nextPosition.has(nextFreeCellIdx)) {
+                    nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
+                    if (nextFreeCellIdx === cellId) break;
+                  }
+                  return {
+                    turn: {
+                      position: nextPosition,
+                      nextPlayer: nextPlayer === "X" ? "O" : "X",
+                      result: deriveResult(nextPosition),
+                    },
+                    focus: {
+                      cellId: nextFreeCellIdx,
+                    },
+                  };
                 }),
               );
             }),
@@ -116,22 +113,25 @@ export const TicTacToeCustomEvents = clientEntry(
               let cell = target as HTMLButtonElement;
               let cellId = Number(cell.value);
               let idxIncrement = arrowKeyIdxIncrementMap[key];
-              let nextFreeCellIdx = cellId;
               let boundIdx = idxIncrement < 0 ? 0 : 8;
-              let { position } = currentGame.turn;
-              while (
-                nextFreeCellIdx === cellId ||
-                position.has(nextFreeCellIdx)
-              ) {
-                nextFreeCellIdx += idxIncrement;
-                if (
-                  (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
-                  (boundIdx === 8 && nextFreeCellIdx > boundIdx)
-                )
-                  return;
-              }
               currentTarget.dispatchEvent(
-                gameEvents.focus({ cellId: nextFreeCellIdx }),
+                gameEvents.focus((prevEvent) => {
+                  let nextFreeCellIdx = cellId;
+                  let { position } = prevEvent.turn!;
+                  while (
+                    nextFreeCellIdx === cellId ||
+                    position.has(nextFreeCellIdx)
+                  ) {
+                    nextFreeCellIdx += idxIncrement;
+                    if (
+                      (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
+                      (boundIdx === 8 && nextFreeCellIdx > boundIdx)
+                    ) {
+                      return { cellId };
+                    }
+                  }
+                  return { cellId: nextFreeCellIdx };
+                }),
               );
             }),
           ]}
@@ -171,7 +171,6 @@ export const TicTacToeCustomEvents = clientEntry(
               ]}
             >
               <gameEvents.turn
-                initial={currentGame}
                 render={({ detail }) => detail.position.get(index)}
               />
             </button>
@@ -187,16 +186,7 @@ export const TicTacToeCustomEvents = clientEntry(
               }),
             ),
             on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(
-                gameEvents({
-                  turn: {
-                    position: new Map(),
-                    nextPlayer: "X",
-                    result: "Pending",
-                  },
-                  focus: { cellId: 0 },
-                }),
-              );
+              currentTarget.dispatchEvent(gameEvents(initialGame));
             }),
           ]}
         >
@@ -211,7 +201,6 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           <gameEvents.turn
-            initial={currentGame}
             render={({ detail }) => {
               if (detail.result === "Pending") return "Game in progress";
               if (detail.result === "Draw") return "Game is drawn.";

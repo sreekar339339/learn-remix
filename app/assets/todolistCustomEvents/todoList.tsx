@@ -6,10 +6,14 @@ import { routes } from "../../routes.ts";
 import { customEvents } from "../utils/customEvents.tsx";
 
 export const todoEvents = customEvents<{
-  actionSubmitted: null;
-  actionSucceeded: null;
+  actionSubmitted: TodoActionDetail | null;
+  actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
 }>();
+
+export type TodoActionDetail = {
+  completed?: boolean;
+};
 
 export const TodoList = clientEntry(
   import.meta.url,

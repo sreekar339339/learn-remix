@@ -61,9 +61,12 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
     handle: Handle<{ initialQuery: string }>,
   ) {
     let initialQuery = handle.props.initialQuery.trim();
-    let initialSearchEvents = initialQuery
-      ? searchEvents.querySubmitted({ query: initialQuery })
-      : searchEvents.queryEmpty();
+    searchEvents.initial = {
+      event: initialQuery
+        ? searchEvents.querySubmitted({ query: initialQuery })
+        : searchEvents.queryEmpty(),
+      dispatch: true,
+    };
 
     return () => (
       <div>
@@ -95,9 +98,6 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                     : searchEvents.queryEmpty(),
                 );
               }),
-              ref((input) =>
-                queueMicrotask(() => input.dispatchEvent(new Event("input"))),
-              ),
               searchEvents.listen(
                 on("change", ({ currentTarget, detail }, signal) => {
                   currentTarget.classList.toggle(
@@ -118,7 +118,6 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
           />
         </label>
         <searchEvents.change
-          initial={initialSearchEvents}
           render={({ detail }) => {
             switch (detail.type) {
               case "queryEmpty":

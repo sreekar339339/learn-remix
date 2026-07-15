@@ -18,9 +18,12 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
   import.meta.url,
   function SearchBooksWithFrameCustomEvents(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
-    let initialEvent = initialQuery
-      ? searchEvents.querySubmitted(initialQuery)
-      : searchEvents.queryEmpty();
+    searchEvents.initial = {
+      event: initialQuery
+        ? searchEvents.querySubmitted(initialQuery)
+        : searchEvents.queryEmpty(),
+      dispatch: true,
+    };
 
     return () => (
       <>
@@ -67,13 +70,11 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
                       currentTarget.select();
                   }),
                 ),
-                // ref((input) => input.dispatchEvent(initialEvent))
               ]}
             />
           </label>
         </form>
         <searchEvents.change
-          initial={initialEvent}
           render={({ detail }) => {
             if (Array.isArray(detail.type)) return null;
             if (detail.type === "queryEmpty") {

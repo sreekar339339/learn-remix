@@ -34,7 +34,7 @@ type ChangeEventDetailFromMap<
   [K in keyof EventMap & string]: {
     type: K;
     detail: EventMap[K];
-    details: Pick<EventMap, K>;
+    details: Partial<EventMap>;
   } & ChangeDetailName<K, Namespace>;
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;

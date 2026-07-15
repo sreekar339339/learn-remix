@@ -9,6 +9,52 @@ const checkoutEvents = customEvents<{
   paid: null;
 }>();
 
+const checkoutEventsWithInitial = customEvents<{
+  submitted: { id: string };
+  paid: null;
+}>();
+checkoutEventsWithInitial.initial = { event: { paid: null } };
+
+const checkoutEventsWithDispatchedInitial = customEvents<{
+  submitted: { id: string };
+  paid: null;
+}>();
+checkoutEventsWithDispatchedInitial.initial = {
+  event: checkoutEventsWithDispatchedInitial.submitted({
+    id: "mounted-order",
+  }),
+  dispatch: true,
+};
+
+const checkoutEventsWithHostedInitial = customEvents<{
+  submitted: { id: string };
+}>();
+checkoutEventsWithHostedInitial.initial = {
+  event: checkoutEventsWithHostedInitial.submitted({
+    id: "hosted-mounted-order",
+  }),
+  dispatch: true,
+};
+
+const checkoutEventsWithoutInitial = customEvents<{
+  submitted: { id: string };
+}>();
+
+const checkoutEventsWithHostMemory = customEvents<{
+  submitted: { id: string };
+  paid: null;
+}>();
+checkoutEventsWithHostMemory.initial = {
+  event: { submitted: { id: "seed-order" } },
+};
+
+const checkoutEventsWithDescriptorMemory = customEvents<{
+  submitted: { id: string };
+}>();
+checkoutEventsWithDescriptorMemory.initial = {
+  event: { submitted: { id: "shared-order" } },
+};
+
 const shipmentEvents = customEvents<{
   submitted: { id: string };
 }>();
@@ -18,7 +64,9 @@ const namespacedCheckoutEvents = customEvents<
     submitted: { id: string };
   },
   "test-checkout"
->("test-checkout");
+>({
+  namespace: "test-checkout",
+});
 
 const todoActionEvents = customEvents<{
   actionSubmitted: null;
@@ -106,6 +154,252 @@ function CheckoutSummary(handle: Handle) {
           render={({ detail }) => detail.id}
         />
       </output>
+    </section>
+  );
+}
+
+function CheckoutSummaryWithDescriptorInitial(handle: Handle) {
+  return () => (
+    <section data-testid="checkout-with-default-initial">
+      <button
+        type="button"
+        data-action="submit-default-initial-checkout"
+        mix={on("click", ({ currentTarget }) => {
+          currentTarget.dispatchEvent(
+            checkoutEventsWithInitial.submitted({ id: "default-order" }),
+          );
+        })}
+      >
+        Submit
+      </button>
+      <button
+        type="button"
+        data-testid="default-initial-listener"
+        mix={checkoutEventsWithInitial.listen(
+          on("change", ({ currentTarget }) => {
+            currentTarget.dataset.changed = "true";
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <output data-testid="default-initial-summary">
+        <checkoutEventsWithInitial.change
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            return `${detail.type}:${JSON.stringify(detail.detail)}`;
+          }}
+        />
+      </output>
+      <output data-testid="default-initial-override">
+        <checkoutEventsWithInitial.change
+          initial={checkoutEventsWithInitial.submitted({
+            id: "override-order",
+          })}
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            return `${detail.type}:${JSON.stringify(detail.detail)}`;
+          }}
+        />
+      </output>
+    </section>
+  );
+}
+
+function CheckoutWithDispatchedInitial(handle: Handle) {
+  return () => (
+    <section data-testid="checkout-with-dispatched-initial">
+      <button
+        type="button"
+        data-testid="dispatched-initial-listener"
+        mix={checkoutEventsWithDispatchedInitial.listen(
+          on("change", ({ currentTarget, detail }) => {
+            if (Array.isArray(detail.type)) return;
+            currentTarget.dataset.changeCount = String(
+              Number(currentTarget.dataset.changeCount ?? 0) + 1,
+            );
+            currentTarget.dataset.changedType = detail.type;
+            currentTarget.dataset.changedDetail = JSON.stringify(
+              detail.detail,
+            );
+          }),
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+          on("paid", ({ currentTarget }) => {
+            currentTarget.dataset.paid = "true";
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <button
+        type="button"
+        data-testid="second-dispatched-initial-listener"
+        mix={checkoutEventsWithDispatchedInitial.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submitCount = String(
+              Number(currentTarget.dataset.submitCount ?? 0) + 1,
+            );
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+        )}
+      >
+        Second listener
+      </button>
+      <output data-testid="dispatched-initial-summary">
+        <checkoutEventsWithDispatchedInitial.change
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            return `${detail.type}:${JSON.stringify(detail.detail)}`;
+          }}
+        />
+      </output>
+      <output data-testid="dispatched-initial-override">
+        <checkoutEventsWithDispatchedInitial.change
+          initial={checkoutEventsWithDispatchedInitial.paid()}
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            return `${detail.type}:${JSON.stringify(detail.detail)}`;
+          }}
+        />
+      </output>
+    </section>
+  );
+}
+
+function CheckoutWithHostedDispatchedInitial(handle: Handle) {
+  return () => (
+    <section
+      data-testid="checkout-with-hosted-dispatched-initial"
+      mix={checkoutEventsWithHostedInitial.host()}
+    >
+      <button
+        type="button"
+        data-testid="hosted-dispatched-initial-listener"
+        mix={checkoutEventsWithHostedInitial.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submitCount = String(
+              Number(currentTarget.dataset.submitCount ?? 0) + 1,
+            );
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <button
+        type="button"
+        data-testid="second-hosted-dispatched-initial-listener"
+        mix={checkoutEventsWithHostedInitial.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submitCount = String(
+              Number(currentTarget.dataset.submitCount ?? 0) + 1,
+            );
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+        )}
+      >
+        Second listener
+      </button>
+    </section>
+  );
+}
+
+function CheckoutWithoutInitialDispatch(handle: Handle) {
+  return () => (
+    <button
+      type="button"
+      data-testid="no-initial-dispatch-listener"
+      mix={checkoutEventsWithoutInitial.listen(
+        on("submitted", ({ currentTarget, detail }) => {
+          currentTarget.dataset.submittedId = detail.id;
+        }),
+      )}
+    >
+      Listener
+    </button>
+  );
+}
+
+function CheckoutWithHostMemory(handle: Handle) {
+  return () => (
+    <section
+      data-testid="checkout-with-host-memory"
+      mix={checkoutEventsWithHostMemory.host()}
+    >
+      <button
+        type="button"
+        data-testid="host-memory-listener"
+        mix={checkoutEventsWithHostMemory.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+          on("paid", ({ currentTarget }) => {
+            currentTarget.dataset.paid = "true";
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <button
+        type="button"
+        data-action="derive-host-memory-checkout"
+        mix={on("click", ({ currentTarget }) => {
+          currentTarget.dispatchEvent(
+            checkoutEventsWithHostMemory.submitted((details) => ({
+              id: `${details.submitted!.id}-next`,
+            })),
+          );
+        })}
+      >
+        Derive
+      </button>
+      <button
+        type="button"
+        data-action="derive-host-memory-checkout-patch"
+        mix={on("click", ({ currentTarget }) => {
+          currentTarget.dispatchEvent(
+            checkoutEventsWithHostMemory((details) => ({
+              submitted: { id: `${details.submitted!.id}-patch` },
+              paid: null,
+            })),
+          );
+        })}
+      >
+        Derive patch
+      </button>
+    </section>
+  );
+}
+
+function CheckoutWithDescriptorMemory(handle: Handle) {
+  return () => (
+    <section data-testid="checkout-with-descriptor-memory">
+      <button
+        type="button"
+        data-testid="descriptor-memory-listener"
+        mix={checkoutEventsWithDescriptorMemory.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <button
+        type="button"
+        data-action="derive-descriptor-memory-checkout"
+        mix={on("click", ({ currentTarget }) => {
+          currentTarget.dispatchEvent(
+            checkoutEventsWithDescriptorMemory.submitted((details) => ({
+              id: `${details.submitted!.id}-next`,
+            })),
+          );
+        })}
+      >
+        Derive
+      </button>
     </section>
   );
 }
@@ -460,10 +754,49 @@ function assertCustomEventsTypes() {
 
   checkoutEvents.host(checkoutTarget);
 
+  let readyEvents = customEvents<{ ready: null }>();
+  readyEvents.initial = { event: { ready: null } };
+  readyEvents.initial = { event: readyEvents.ready(), dispatch: true };
+  readyEvents.initial = { dispatch: false };
+  readyEvents.initial = undefined;
+  // @ts-expect-error descriptor initial event must use known event names.
+  readyEvents.initial = { event: { done: null } };
+  // @ts-expect-error dispatch: true requires an event.
+  readyEvents.initial = { dispatch: true };
+  // @ts-expect-error event cannot be undefined when dispatch is true.
+  readyEvents.initial = { event: undefined, dispatch: true };
+
+  customEvents<{ ready: null }>();
+  customEvents<{ ready: null }, "ready-check">({
+    namespace: "ready-check",
+  });
+  let inferredNamespaceEvents = customEvents<{ ready: null }, "inferred-ready">({
+    namespace: "inferred-ready",
+  });
+  inferredNamespaceEvents.namespacedEventMap satisfies {
+    "inferred-ready:ready": CustomEvent<null>;
+  };
+  // @ts-expect-error customEvents options only accept namespace.
+  customEvents<{ ready: null }>({ initial: { event: { ready: null } } });
+
+  checkoutEvents((details) => ({
+    submitted: { id: `${details.submitted?.id ?? "typed-order"}-next` },
+    paid: null,
+  }));
+  checkoutEvents({
+    // @ts-expect-error aggregate event maps do not support per-event builders.
+    submitted(details) {
+      return { id: `${details.submitted?.id ?? "typed-order"}-next` };
+    },
+  });
   checkoutEvents.submitted({ id: "typed-order" });
+  checkoutEvents.submitted((details) => ({
+    id: `${details.submitted!.id}-next`,
+  }));
   checkoutEvents.submitted({ id: "typed-order" }, { composed: true });
   checkoutEvents.paid(null);
   checkoutEvents.paid();
+  checkoutEvents.paid(() => null);
   checkoutEvents.paid({ signal: new AbortController().signal });
   // @ts-expect-error non-null event details cannot be replaced with init.
   checkoutEvents.submitted({ signal: new AbortController().signal });
@@ -559,6 +892,153 @@ describe("customEvents", () => {
     await result.act(() => button.click());
 
     assert.equal(summary.textContent, 'submitted:{"id":"summary-order"}');
+  });
+
+  it("uses descriptor initial events as component defaults", async (t) => {
+    let result = render(<CheckoutSummaryWithDescriptorInitial />);
+    t.after(() => result.cleanup());
+
+    let listener = result.$(
+      '[data-testid="default-initial-listener"]',
+    ) as HTMLButtonElement;
+    let summary = result.$(
+      '[data-testid="default-initial-summary"]',
+    ) as HTMLOutputElement;
+    let override = result.$(
+      '[data-testid="default-initial-override"]',
+    ) as HTMLOutputElement;
+    let button = result.$(
+      '[data-action="submit-default-initial-checkout"]',
+    ) as HTMLButtonElement;
+
+    assert.equal(summary.textContent, "paid:null");
+    assert.equal(override.textContent, 'submitted:{"id":"override-order"}');
+    assert.equal(listener.dataset.changed, undefined);
+
+    await result.act(() => button.click());
+
+    assert.equal(summary.textContent, 'submitted:{"id":"default-order"}');
+    assert.equal(listener.dataset.changed, "true");
+  });
+
+  it("dispatches descriptor initial events once through window fallback when opted in", async (t) => {
+    let result = render(<CheckoutWithDispatchedInitial />);
+    t.after(() => result.cleanup());
+
+    let listener = result.$(
+      '[data-testid="dispatched-initial-listener"]',
+    ) as HTMLButtonElement;
+    let secondListener = result.$(
+      '[data-testid="second-dispatched-initial-listener"]',
+    ) as HTMLButtonElement;
+    let summary = result.$(
+      '[data-testid="dispatched-initial-summary"]',
+    ) as HTMLOutputElement;
+    let override = result.$(
+      '[data-testid="dispatched-initial-override"]',
+    ) as HTMLOutputElement;
+
+    await result.act(() => Promise.resolve());
+
+    assert.equal(listener.dataset.changedType, "submitted");
+    assert.equal(listener.dataset.changeCount, "1");
+    assert.equal(listener.dataset.changedDetail, '{"id":"mounted-order"}');
+    assert.equal(listener.dataset.submittedId, "mounted-order");
+    assert.equal(listener.dataset.paid, undefined);
+    assert.equal(secondListener.dataset.submittedId, "mounted-order");
+    assert.equal(secondListener.dataset.submitCount, "1");
+    assert.equal(summary.textContent, 'submitted:{"id":"mounted-order"}');
+    assert.equal(override.textContent, 'submitted:{"id":"mounted-order"}');
+  });
+
+  it("dispatches descriptor initial events from the nearest host boundary", async (t) => {
+    let result = render(<CheckoutWithHostedDispatchedInitial />);
+    let windowEvents: Array<string> = [];
+    let countWindowEvent = (event: Event) => {
+      windowEvents.push(event.type);
+    };
+    window.addEventListener("submitted", countWindowEvent);
+    window.addEventListener("change", countWindowEvent);
+    t.after(() => {
+      window.removeEventListener("submitted", countWindowEvent);
+      window.removeEventListener("change", countWindowEvent);
+      result.cleanup();
+    });
+
+    let listener = result.$(
+      '[data-testid="hosted-dispatched-initial-listener"]',
+    ) as HTMLButtonElement;
+    let secondListener = result.$(
+      '[data-testid="second-hosted-dispatched-initial-listener"]',
+    ) as HTMLButtonElement;
+
+    await result.act(() => Promise.resolve());
+
+    assert.equal(listener.dataset.submittedId, "hosted-mounted-order");
+    assert.equal(listener.dataset.submitCount, "1");
+    assert.equal(secondListener.dataset.submittedId, "hosted-mounted-order");
+    assert.equal(secondListener.dataset.submitCount, "1");
+    assert.deepEqual(windowEvents, []);
+  });
+
+  it("does not dispatch on mount when descriptor initial is unset", async (t) => {
+    let result = render(<CheckoutWithoutInitialDispatch />);
+    t.after(() => result.cleanup());
+
+    let listener = result.$(
+      '[data-testid="no-initial-dispatch-listener"]',
+    ) as HTMLButtonElement;
+
+    await result.act(() => Promise.resolve());
+
+    assert.equal(listener.dataset.submittedId, undefined);
+  });
+
+  it("builds event details from the nearest host's latest details", async (t) => {
+    let result = render(<CheckoutWithHostMemory />);
+    t.after(() => result.cleanup());
+
+    let listener = result.$(
+      '[data-testid="host-memory-listener"]',
+    ) as HTMLButtonElement;
+    let button = result.$(
+      '[data-action="derive-host-memory-checkout"]',
+    ) as HTMLButtonElement;
+    let patchButton = result.$(
+      '[data-action="derive-host-memory-checkout-patch"]',
+    ) as HTMLButtonElement;
+
+    assert.equal(listener.dataset.submittedId, undefined);
+
+    await result.act(() => button.click());
+    assert.equal(listener.dataset.submittedId, "seed-order-next");
+
+    await result.act(() => button.click());
+    assert.equal(listener.dataset.submittedId, "seed-order-next-next");
+
+    await result.act(() => patchButton.click());
+    assert.equal(listener.dataset.submittedId, "seed-order-next-next-patch");
+    assert.equal(listener.dataset.paid, "true");
+  });
+
+  it("falls back to descriptor-level latest details without a host", async (t) => {
+    let result = render(<CheckoutWithDescriptorMemory />);
+    t.after(() => result.cleanup());
+
+    let listener = result.$(
+      '[data-testid="descriptor-memory-listener"]',
+    ) as HTMLButtonElement;
+    let button = result.$(
+      '[data-action="derive-descriptor-memory-checkout"]',
+    ) as HTMLButtonElement;
+
+    assert.equal(listener.dataset.submittedId, undefined);
+
+    await result.act(() => button.click());
+    assert.equal(listener.dataset.submittedId, "shared-order-next");
+
+    await result.act(() => button.click());
+    assert.equal(listener.dataset.submittedId, "shared-order-next-next");
   });
 
   it("lets sibling branches react without a host by default", async (t) => {
