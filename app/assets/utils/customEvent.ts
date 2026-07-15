@@ -4,6 +4,9 @@ import {
   createCustomEventChangeDetail,
 } from "./customEventChange.ts";
 
+export const CUSTOM_EVENT_OWNER = Symbol("customEvent.owner");
+export const CUSTOM_EVENT_ORIGIN = Symbol("customEvent.origin");
+
 type NamespacedCustomEventName<
   EventName extends string,
   namespace extends string,
@@ -13,6 +16,7 @@ type CustomEventMapBase = Record<string, unknown>;
 
 export type CustomEventWithSource<Detail, Source = unknown> =
   CustomEvent<Detail> & {
+    originTarget?: EventTarget;
     source?: Source;
   };
 
@@ -271,6 +275,8 @@ function dispatchSingleCustomEvent(
   hasExplicitDetail = false,
   source?: unknown,
   hasExplicitSource = false,
+  owner?: symbol,
+  origin?: EventTarget,
 ) {
   let event = new CustomEvent(name, {
     ...(hasExplicitDetail ? { detail } : {}),
@@ -282,6 +288,25 @@ function dispatchSingleCustomEvent(
       configurable: true,
       enumerable: true,
       value: source,
+    });
+  }
+
+  if (owner) {
+    Object.defineProperty(event, CUSTOM_EVENT_OWNER, {
+      configurable: true,
+      value: owner,
+    });
+  }
+
+  if (origin) {
+    Object.defineProperty(event, CUSTOM_EVENT_ORIGIN, {
+      configurable: true,
+      value: origin,
+    });
+    Object.defineProperty(event, "originTarget", {
+      configurable: true,
+      enumerable: true,
+      value: origin,
     });
   }
 
@@ -301,6 +326,8 @@ type DispatchCustomEventRuntimeOptions = EventInit & {
   signal: AbortSignal;
   namespace?: string;
   source?: unknown;
+  [CUSTOM_EVENT_OWNER]?: symbol;
+  [CUSTOM_EVENT_ORIGIN]?: EventTarget;
 };
 
 function getNamespacedEventName(
@@ -334,6 +361,8 @@ function dispatchEventObject(
     true,
     options.source,
     hasSource,
+    options[CUSTOM_EVENT_OWNER],
+    options[CUSTOM_EVENT_ORIGIN],
   );
 
   let eventsResult = true;
@@ -349,6 +378,8 @@ function dispatchEventObject(
       true,
       options.source,
       hasSource,
+      options[CUSTOM_EVENT_OWNER],
+      options[CUSTOM_EVENT_ORIGIN],
     ) && eventsResult;
   }
 

@@ -1,6 +1,7 @@
 import { type Handle } from "remix/ui";
 import { Layout } from "../ui/layout.tsx";
 import { SearchBooksWithoutFrame } from "../assets/searchBooksWithoutFrame.tsx";
+import { SearchBooksWithoutFrameCustomEvents } from "../assets/searchBooksWithoutFrameCustomEvents.tsx";
 
 export function SearchBooksWithoutFramePage(
   handle: Handle<{ initialQuery: string }>,
@@ -8,7 +9,8 @@ export function SearchBooksWithoutFramePage(
   return () => (
     <Layout>
       <h1>Search books without frame</h1>
-      <SearchBooksWithoutFrame initialQuery={handle.props.initialQuery}/>
+      {/* <SearchBooksWithoutFrame initialQuery={handle.props.initialQuery}/> */}
+      <SearchBooksWithoutFrameCustomEvents initialQuery={handle.props.initialQuery} />
     </Layout>
   );
 }

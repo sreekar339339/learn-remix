@@ -7,11 +7,13 @@ import { SuperHeaders } from "remix/headers";
 import { match, P } from "ts-pattern";
 import * as s from "remix/data-schema";
 import { TodoListPage } from "./todoListPage.tsx";
+import { TodoListCustomEventsPage } from "./todoListCustomEventsPage.tsx";
 import { addTodos, deleteTodos, todos, updateTodos } from "../data/todolist.ts";
 import { redirect } from "remix/response/redirect";
 import * as f from "remix/data-schema/form-data";
 import { maxLength, minLength } from "remix/data-schema/checks";
 import { TodoItemsClientEntryMarked } from "../assets/todolist/todoItems.tsx";
+import { TodoItemsClientEntryMarked as TodoItemsCustomEventsClientEntryMarked } from "../assets/todolistCustomEvents/todoItems.tsx";
 import * as coerce from "remix/data-schema/coerce";
 import { SearchBooksWithoutFramePage } from "./searchBooksWithoutFramePage.tsx";
 import { SearchBooksWithFramePage } from "./searchBooksWithFramePage.tsx";
@@ -175,6 +177,17 @@ export const todolistController = createController(routes.todolist, {
   },
 });
 
+export const todolistCustomEventsController = createController(
+  routes.todolistCustomEvents,
+  {
+    actions: {
+      index({ render }) {
+        return render(<TodoListCustomEventsPage todos={todos} />);
+      },
+    },
+  },
+);
+
 const intent = {
   create: "create",
   delete: "delete",
@@ -269,3 +282,59 @@ export const todosCrudController = createController(routes.todolist.todos, {
     },
   },
 });
+
+export const todosCustomEventsCrudController = createController(
+  routes.todolistCustomEvents.todos,
+  {
+    actions: {
+      async index({ render }) {
+        await delay(2000);
+        return render(<TodoItemsCustomEventsClientEntryMarked todos={todos} />);
+      },
+      async action({ formData }) {
+        await delay(2000);
+        try {
+          let input = s.parse(todoActionFormData, formData);
+          match(input)
+            .with(
+              {
+                intent: "create",
+                text: P.select(),
+              },
+              addTodos,
+            )
+            .with({ intent: "delete", id: P.select() }, deleteTodos)
+            .with({ intent: "update" }, ({ intent, id, ...rest }) => {
+              updateTodos(id, rest);
+            })
+            .exhaustive();
+          if (input.redirectTo === "none") {
+            return new Response(null, { status: 204 });
+          }
+          return redirect(routes.todolistCustomEvents.index.href());
+        } catch (e) {
+          return match(e)
+            .with(
+              P.instanceOf(s.ValidationError),
+              (error) =>
+                new Response(error.issues[0].message, {
+                  status: 400,
+                  statusText: error.name,
+                }),
+            )
+            .with(
+              P.instanceOf(Error),
+              (err) =>
+                new Response(err.message + err.cause, {
+                  status: 500,
+                  statusText: err.name,
+                }),
+            )
+            .otherwise(
+              () => new Response("Unexpected server error", { status: 500 }),
+            );
+        }
+      },
+    },
+  },
+);

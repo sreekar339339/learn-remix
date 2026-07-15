@@ -1,6 +1,6 @@
 import { createRouter, type MiddlewareContext } from 'remix/router'
 import { staticFiles } from 'remix/middleware/static'
-import { searchBooksController, rootController, todolistController, todosCrudController } from './actions/controller.tsx'
+import { searchBooksController, rootController, todolistController, todolistCustomEventsController, todosCrudController, todosCustomEventsCrudController } from './actions/controller.tsx'
 import { render } from './middleware/render.tsx'
 import { routes } from './routes.ts'
 import { formData } from 'remix/form-data-middleware'
@@ -24,3 +24,5 @@ router.map(routes, rootController)
 router.map(routes.searchBooks, searchBooksController)
 router.map(routes.todolist, todolistController)
 router.map(routes.todolist.todos, todosCrudController)
+router.map(routes.todolistCustomEvents, todolistCustomEventsController)
+router.map(routes.todolistCustomEvents.todos, todosCustomEventsCrudController)

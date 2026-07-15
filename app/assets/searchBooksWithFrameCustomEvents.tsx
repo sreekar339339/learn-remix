@@ -1,0 +1,99 @@
+import {
+  clientEntry,
+  css,
+  Frame,
+  on,
+  ref,
+  type Handle,
+} from "remix/ui";
+import { routes } from "../routes.ts";
+import { customEvents } from "./utils/customEvents.tsx";
+
+const searchEvents = customEvents<{
+  queryEmpty: null;
+  querySubmitted: string;
+}>();
+
+export const SearchBooksWithFrameCustomEvents = clientEntry(
+  import.meta.url,
+  function SearchBooksWithFrameCustomEvents(handle: Handle<{ initialQuery?: string }>) {
+    let initialQuery = handle.props.initialQuery?.trim() ?? "";
+    let initialEvent = initialQuery
+      ? searchEvents.querySubmitted(initialQuery)
+      : searchEvents.queryEmpty();
+
+    return () => (
+      <>
+        <form
+          action={routes.searchBooks.books.href()}
+          target="response"
+          mix={[
+            on("submit", ({ currentTarget, preventDefault }) => {
+              preventDefault();
+              let query = (
+                new FormData(currentTarget).get("q") as string
+              ).trim();
+              currentTarget.dispatchEvent(
+                query
+                  ? searchEvents.querySubmitted(query)
+                  : searchEvents.queryEmpty(),
+              );
+            }),
+          ]}
+        >
+          <label>
+            Search{" "}
+            <input
+              name="q"
+              type="text"
+              defaultValue={initialQuery}
+              mix={[
+                css({
+                  padding: 4,
+                  "&.pending": {
+                    backgroundImage:
+                      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+                    backgroundSize: "220% 100%",
+                    animation: "glimmer 1.15s linear infinite",
+                  },
+                }),
+                searchEvents.listen(
+                  on("change", ({ currentTarget, detail }) => {
+                    currentTarget.classList.toggle(
+                      "pending",
+                      detail.type === "querySubmitted",
+                    );
+                    if (detail.type !== "querySubmitted")
+                      currentTarget.select();
+                  }),
+                ),
+                // ref((input) => input.dispatchEvent(initialEvent))
+              ]}
+            />
+          </label>
+        </form>
+        <searchEvents.change
+          initial={initialEvent}
+          render={({ detail }) => {
+            if (Array.isArray(detail.type)) return null;
+            if (detail.type === "queryEmpty") {
+              return <p>Enter the title of any book.</p>;
+            }
+            if (detail.type !== "querySubmitted") return null;
+
+            let query = detail.detail;
+            return (
+              <Frame
+                key={query}
+                fallback={
+                  <p>fetching books with title containing "{query}"...</p>
+                }
+                src={routes.searchBooks.books.href(undefined, { q: query })}
+              />
+            );
+          }}
+        />
+      </>
+    );
+  },
+);

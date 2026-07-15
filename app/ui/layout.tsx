@@ -36,6 +36,7 @@ export function Layout(
             Search books with Frame
           </a>
           <a href={routes.todolist.index.href()}>Todo list</a>
+          <a href={routes.todolistCustomEvents.index.href()}>Todo list customEvents</a>
         </nav>
         <section mix={css({maxWidth: '70%'})}>
           {handle.props.children}

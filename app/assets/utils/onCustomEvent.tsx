@@ -208,6 +208,7 @@ const onCustomEventMixin = createMixin<
   let currentType = "";
   let currentListener: RuntimeListener = () => {};
   let currentElement: HTMLElement | undefined;
+  let currentInitial: Record<string, unknown> | undefined;
   let controller: AbortController | undefined;
 
   function react(event: Event, signal: AbortSignal) {
@@ -253,16 +254,23 @@ const onCustomEventMixin = createMixin<
   return (scope, type, listener) => {
     let needsListen =
       currentScope?.target !== scope.target || currentType !== type;
+    let initialChanged = currentInitial !== scope.initial;
 
     currentScope = scope;
     currentType = type;
     currentListener = listener;
+    currentInitial = scope.initial;
 
     if (needsListen) {
       listen();
     }
 
-    if (currentElement) {
+    if (
+      currentElement &&
+      initialChanged &&
+      !queuedInitialDispatches.has(scope) &&
+      !completedInitialDispatches.has(scope)
+    ) {
       reactToInitial();
     }
 
@@ -346,6 +354,13 @@ function createOnCustomEventElement<
     let currentEvent: Event | undefined = initialEvent;
     let parentElement: HTMLElement | undefined;
 
+    function setParentElement(element: Element) {
+      let nextParent = element.parentElement ?? undefined;
+      if (parentElement === nextParent) return;
+      parentElement = nextParent;
+      void handle.update();
+    }
+
     function canRender(event: Event) {
       if (event === initialEvent) return true;
       if (!scope.guard) return true;
@@ -369,14 +384,7 @@ function createOnCustomEventElement<
 
     return () => (
       <>
-        <span
-          hidden
-          aria-hidden="true"
-          mix={ref((element) => {
-            parentElement = element.parentElement ?? undefined;
-            void handle.update();
-          })}
-        />
+        <span hidden aria-hidden="true" mix={ref(setParentElement)} />
         {currentEvent?.type === type
           ? canRender(currentEvent)
             ? handle.props.render(currentEvent)
