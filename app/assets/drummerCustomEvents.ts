@@ -1,26 +1,21 @@
 import { TypedEventTarget } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
-// const mix = (Base, ...mixins) => mixins.reduce((c, m) => m(c), Base);
+class DrummerEvents extends CustomEvents<{
+  play: { tempoBpm: number };
+  stop: { tempoBpm: number };
+  tempo: { tempoBpm: number };
+}> {}
 
-class DrummerEvents extends CustomEvents<
-  {
-    play: { tempoBpm: number };
-    stop: { tempoBpm: number };
-    tempo: { tempoBpm: number };
-  },
-  undefined,
-  undefined
-> {}
-
-export class Drummer extends TypedEventTarget<DrummerEvents['__eventMap']> {
+export class Drummer extends TypedEventTarget<DrummerEvents["__eventMap"]> {
   #isPlaying = false;
   #tempoBpm = 90;
   events: DrummerEvents;
 
   constructor() {
     super();
-    this.events = new DrummerEvents({ target: this });
+    this.events = new DrummerEvents();
+    this.events.setHost(this);
   }
 
   get isPlaying() {

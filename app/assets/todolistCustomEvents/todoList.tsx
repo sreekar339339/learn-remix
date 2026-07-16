@@ -5,13 +5,11 @@ import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
 import { CustomEvents } from "../utils/customEvents.tsx";
 
-class TodoEvents extends CustomEvents<{
+export const todoEvents = new CustomEvents<{
   actionSubmitted: TodoActionDetail | null;
   actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
-}> {}
-
-export const todoEvents = new TodoEvents();
+}>();
 
 export type TodoActionDetail = {
   completed?: boolean;

@@ -1,4 +1,10 @@
-import { clientEntry, css, on, type Dispatched, type Handle } from "remix/ui";
+import {
+  clientEntry,
+  css,
+  on,
+  type Dispatched,
+  type Handle,
+} from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
 import { todoEvents, type TodoActionDetail } from "./todoList.tsx";
@@ -141,7 +147,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
-            mix={todoEvents.setHost()}
+            mix={todoEvents.host()}
           >
             <button
               mix={[
@@ -170,7 +176,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           </form>
           <form
             mix={[
-              todoEvents.setHost(),
+              todoEvents.host(),
               todoEvents.listen(
                 on("actionErrored", ({ currentTarget }) =>
                   currentTarget.reset(),
@@ -214,7 +220,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
-            mix={todoEvents.setHost()}
+            mix={todoEvents.host()}
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />

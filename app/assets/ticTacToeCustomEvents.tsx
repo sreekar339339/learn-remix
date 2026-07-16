@@ -1,15 +1,8 @@
-import { clientEntry, css, on, TypedEventTarget } from "remix/ui";
+import { clientEntry, css, on, ref, TypedEventTarget } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw" | "Pending";
-
-class GameEvents extends CustomEvents<{
-  turn: { result: Result; position: Map<number, Player>; nextPlayer: Player };
-  focus: { cellId: number };
-}> {}
-
-type GameEventMap = GameEvents["__eventMap"];
 
 let winningCombos = [
   [0, 1, 2],
@@ -51,18 +44,18 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
-    let initialGame = {
-      turn: {
+    let ticTacToeEvents = new CustomEvents<{
+      turn: { result: Result; position: Map<number, Player>; nextPlayer: Player };
+      focus: { cellId: number };
+    }>()
+    let {turn, focus, events} = ticTacToeEvents
+    ticTacToeEvents.seedInitialEvent(
+      turn({
         result: "Pending",
         position: new Map(),
         nextPlayer: "X",
-      },
-      focus: { cellId: 0 },
-    } satisfies GameEventMap["change"]["detail"]["details"];
-
-    let gameEvents = new GameEvents({
-      initial: { event: initialGame, dispatch: true },
-    });
+      }),
+    );
 
     return () => (
       <div
@@ -72,6 +65,7 @@ export const TicTacToeCustomEvents = clientEntry(
             gap: 16,
             maxWidth: 360,
           }),
+          ref((board) => board.dispatchEvent(focus({ cellId: 0 }))),
         ]}
       >
         <div
@@ -85,7 +79,7 @@ export const TicTacToeCustomEvents = clientEntry(
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.value);
               let { position, nextPlayer, result } =
-                gameEvents.getHost(currentTarget).latest?.events.turn!;
+                ticTacToeEvents.getHost(currentTarget).latest?.events.turn!;
               if (position.has(cellId) || result !== "Pending") return;
 
               let nextPosition = new Map(position).set(cellId, nextPlayer);
@@ -96,7 +90,7 @@ export const TicTacToeCustomEvents = clientEntry(
               }
 
               currentTarget.dispatchEvent(
-                gameEvents.events({
+                events({
                   turn: {
                     position: nextPosition,
                     nextPlayer: nextPlayer === "X" ? "O" : "X",
@@ -116,7 +110,7 @@ export const TicTacToeCustomEvents = clientEntry(
               let boundIdx = idxIncrement < 0 ? 0 : 8;
               let nextFreeCellIdx = cellId;
               let { position } =
-                gameEvents.getHost(currentTarget).latest?.events.turn!;
+                ticTacToeEvents.getHost(currentTarget).latest?.events.turn!;
               while (
                 nextFreeCellIdx === cellId ||
                 position.has(nextFreeCellIdx)
@@ -130,7 +124,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 }
               }
               currentTarget.dispatchEvent(
-                gameEvents.focus({ cellId: nextFreeCellIdx }),
+                focus({ cellId: nextFreeCellIdx }),
               );
             }),
           ]}
@@ -151,7 +145,7 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                gameEvents.listen(
+                ticTacToeEvents.listen(
                   on("turn", ({ currentTarget, detail }) => {
                     currentTarget.toggleAttribute(
                       "disabled",
@@ -169,7 +163,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 ),
               ]}
             >
-              <gameEvents.turn
+              <ticTacToeEvents.turn
                 render={({ detail }) => detail.position.get(index)}
               />
             </button>
@@ -178,14 +172,23 @@ export const TicTacToeCustomEvents = clientEntry(
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            gameEvents.listen(
+            ticTacToeEvents.listen(
               on("turn", ({ detail, currentTarget }) => {
                 if (detail.result === "Pending") return;
                 currentTarget.focus();
               }),
             ),
             on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(gameEvents.events(initialGame));
+              currentTarget.dispatchEvent(
+                ticTacToeEvents.events({
+                  turn: {
+                    result: "Pending",
+                    position: new Map(),
+                    nextPlayer: "X",
+                  },
+                  focus: { cellId: 0 },
+                }),
+              );
             }),
           ]}
         >
@@ -199,7 +202,7 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <gameEvents.turn
+          <ticTacToeEvents.turn
             render={({ detail }) => {
               if (detail.result === "Pending") return "Game in progress";
               if (detail.result === "Draw") return "Game is drawn.";

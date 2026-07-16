@@ -6,7 +6,7 @@ import {
 } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
-type AppContext = {
+type AppContextValue = {
   user: { name: string; age: number } | null;
   settings: {
     theme: "dark" | "light" | "system";
@@ -14,38 +14,41 @@ type AppContext = {
   };
 };
 
-class AppContextEvents extends CustomEvents<
-  AppContext,
-  undefined,
-  TypedEventTarget<CustomEvents<AppContext>["__eventMap"]>
-> {}
+class AppContext extends TypedEventTarget<
+  CustomEvents<AppContextValue>["__eventMap"]
+> {
+  events: CustomEvents<AppContextValue>;
 
-function AppProvider(
-  handle: Handle<{ children?: RemixNode }, AppContextEvents>,
-) {
-  let appContext = new AppContextEvents({
-    target: new TypedEventTarget<AppContextEvents["__eventMap"]>(),
-    initial: {
-      event: {
-        user: null,
-        settings: { layout: "normal", theme: "system" },
-      },
-    },
+  constructor(initial: Partial<AppContextValue>) {
+    super();
+    this.events = new CustomEvents<AppContextValue>();
+    this.events.seedInitialEvent(this.events.events(initial));
+    this.events.setHost(this);
+  }
+
+  get value() {
+    return this.events.getHost(this).latest?.events as AppContextValue;
+  }
+
+  set value(value: Partial<AppContextValue>) {
+    this.dispatchEvent(this.events.events(value));
+  }
+}
+
+function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
+  let appContext = new AppContext({
+    user: null,
+    settings: { layout: "normal", theme: "system" },
   });
   handle.context.set(appContext);
 
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
     await Promise.resolve();
-    appContext.target.dispatchEvent(
-      appContext.events(
-        {
-          user: { age: 23, name: "Bob Lazar" },
-          settings: { layout: "zen", theme: "light" },
-        },
-        { signal },
-      ),
-    );
+    appContext.value = {
+      user: { age: 23, name: "Bob Lazar" },
+      settings: { layout: "zen", theme: "light" },
+    };
   });
 
   return () => <body>{handle.props.children}</body>;
@@ -55,15 +58,13 @@ function AppProvider(
 function UserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(appContext.target, handle.signal, {
+  addEventListeners(appContext, handle.signal, {
     user() {
       handle.update();
     },
   });
 
-  return () => (
-    <div>{appContext.latest?.events.user?.name ?? "Not logged in"}</div>
-  );
+  return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
 }
 
 // Event components can display context values without calling handle.update().
@@ -71,7 +72,7 @@ function EventUserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.user
+    <appContext.events.user
       render={({ detail }) => <div>{detail?.name ?? "Not logged in"}</div>}
     />
   );
@@ -80,7 +81,7 @@ function EventUserDisplay(handle: Handle) {
 function SettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(appContext.target, handle.signal, {
+  addEventListeners(appContext, handle.signal, {
     settings() {
       handle.update();
     },
@@ -89,8 +90,8 @@ function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {appContext.latest?.events.settings?.layout}, Theme:{" "}
-        {appContext.latest?.events.settings?.theme}
+        Layout: {appContext.value.settings?.layout}, Theme:{" "}
+        {appContext.value.settings?.theme}
       </pre>
     </div>
   );
@@ -100,7 +101,7 @@ function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.settings
+    <appContext.events.settings
       render={({ detail }) => (
         <div>
           <pre>

@@ -6,16 +6,15 @@ type Book = {
   title: string;
 };
 
-class SearchEvents extends CustomEvents<{
+let searchEvents = new CustomEvents<{
   booksFound: Array<Book>;
   booksNotFound: { reason: "emptyList" | { other: string } };
   errorOccurred: Error;
   queryEmpty: null;
   querySubmitted: { query: string };
-}> {}
+}>()
 
 async function fetchBooks(
-  searchEvents: InstanceType<typeof SearchEvents>,
   query: string,
   input: HTMLInputElement,
   signal: AbortSignal,
@@ -62,14 +61,20 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
     handle: Handle<{ initialQuery: string }>,
   ) {
     let initialQuery = handle.props.initialQuery.trim();
-    let searchEvents = new SearchEvents({
-      initial: {
-        event: initialQuery
-          ? { querySubmitted: { query: initialQuery } }
-          : { queryEmpty: null },
-        dispatch: true,
-      },
-    });
+    searchEvents.seedInitialEvent(
+      initialQuery
+        ? searchEvents.querySubmitted({ query: initialQuery })
+        : searchEvents.queryEmpty(),
+    );
+
+    if (initialQuery) {
+      handle.queueTask((signal) => {
+        if (signal.aborted) return;
+        window.dispatchEvent(
+          searchEvents.querySubmitted({ query: initialQuery }, { signal }),
+        );
+      });
+    }
 
     return () => (
       <div>
@@ -109,7 +114,6 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                   );
                   if (detail.type === "querySubmitted") {
                     return void fetchBooks(
-                      searchEvents,
                       detail.detail.query,
                       currentTarget,
                       signal,

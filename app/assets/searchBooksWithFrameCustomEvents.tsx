@@ -2,23 +2,20 @@ import { clientEntry, css, Frame, on, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
-class SearchEvents extends CustomEvents<{
+let searchEvents = new CustomEvents<{
   queryEmpty: null;
   querySubmitted: string;
-}> {}
+}>()
 
 export const SearchBooksWithFrameCustomEvents = clientEntry(
   import.meta.url,
   function SearchBooksWithFrameCustomEvents(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
-    let searchEvents = new SearchEvents({
-      initial: {
-        event: initialQuery
-          ? { querySubmitted: initialQuery }
-          : { queryEmpty: null },
-        dispatch: true,
-      },
-    });
+    searchEvents.seedInitialEvent(
+      initialQuery
+        ? searchEvents.querySubmitted(initialQuery)
+        : searchEvents.queryEmpty(),
+    );
 
     return () => (
       <>

@@ -1,6 +1,11 @@
 import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
-import { addEventListeners, on, TypedEventTarget, type Handle } from "remix/ui";
+import {
+  addEventListeners,
+  on,
+  TypedEventTarget,
+  type Handle,
+} from "remix/ui";
 import { render } from "remix/ui/test";
 import { CustomEvents } from "./customEvents.tsx";
 
@@ -12,38 +17,34 @@ type CheckoutEventDetails = {
 class CheckoutEvents extends CustomEvents<CheckoutEventDetails> {}
 const checkoutEvents = new CheckoutEvents();
 
-class CheckoutTerminalEvents extends CustomEvents<
-  CheckoutEventDetails,
-  undefined,
-  CheckoutTerminal
-> {}
+class CheckoutTerminalEvents extends CustomEvents<CheckoutEventDetails> {}
 
 class CheckoutEventsWithInitial extends CustomEvents<{
   submitted: { id: string };
   paid: null;
 }> {}
-const checkoutEventsWithInitial = new CheckoutEventsWithInitial({
-  initial: { event: { paid: null } },
-});
+const checkoutEventsWithInitial = new CheckoutEventsWithInitial();
+checkoutEventsWithInitial.seedInitialEvent(checkoutEventsWithInitial.paid());
 
 class CheckoutEventsWithDispatchedInitial extends CustomEvents<{
   submitted: { id: string };
   paid: null;
 }> {}
 const checkoutEventsWithDispatchedInitial =
-  new CheckoutEventsWithDispatchedInitial({
-    initial: { event: { submitted: { id: "mounted-order" } }, dispatch: true },
-  });
+  new CheckoutEventsWithDispatchedInitial();
+checkoutEventsWithDispatchedInitial.seedInitialEvent(
+  checkoutEventsWithDispatchedInitial.submitted({ id: "mounted-order" }),
+);
 
 class CheckoutEventsWithHostedInitial extends CustomEvents<{
   submitted: { id: string };
 }> {}
-const checkoutEventsWithHostedInitial = new CheckoutEventsWithHostedInitial({
-  initial: {
-    event: { submitted: { id: "hosted-mounted-order" } },
-    dispatch: true,
-  },
-});
+const checkoutEventsWithHostedInitial = new CheckoutEventsWithHostedInitial();
+checkoutEventsWithHostedInitial.seedInitialEvent(
+  checkoutEventsWithHostedInitial.submitted({
+    id: "hosted-mounted-order",
+  }),
+);
 
 class CheckoutEventsWithoutInitial extends CustomEvents<{
   submitted: { id: string };
@@ -56,23 +57,21 @@ type CheckoutHostMemoryEventDetails = {
 };
 
 class CheckoutEventsWithHostMemory extends CustomEvents<CheckoutHostMemoryEventDetails> {}
-const checkoutEventsWithHostMemory = new CheckoutEventsWithHostMemory({
-  initial: { event: { submitted: { id: "seed-order" } } },
-});
+const checkoutEventsWithHostMemory = new CheckoutEventsWithHostMemory();
+checkoutEventsWithHostMemory.seedInitialEvent(
+  checkoutEventsWithHostMemory.submitted({ id: "seed-order" }),
+);
 
-class BoundCheckoutTerminalEvents extends CustomEvents<
-  CheckoutHostMemoryEventDetails,
-  undefined,
-  BoundCheckoutTerminal
-> {}
+class BoundCheckoutTerminalEvents extends CustomEvents<CheckoutHostMemoryEventDetails> {}
 
 class CheckoutEventsWithDescriptorMemory extends CustomEvents<{
   submitted: { id: string };
 }> {}
 const checkoutEventsWithDescriptorMemory =
-  new CheckoutEventsWithDescriptorMemory({
-    initial: { event: { submitted: { id: "shared-order" } } },
-  });
+  new CheckoutEventsWithDescriptorMemory();
+checkoutEventsWithDescriptorMemory.seedInitialEvent(
+  checkoutEventsWithDescriptorMemory.submitted({ id: "shared-order" }),
+);
 
 class ShipmentEvents extends CustomEvents<{
   submitted: { id: string };
@@ -121,7 +120,8 @@ class CheckoutTerminal extends TypedEventTarget<
 
   constructor() {
     super();
-    this.events = new CheckoutTerminalEvents({ target: this });
+    this.events = new CheckoutTerminalEvents();
+    this.events.setHost(this);
   }
 }
 
@@ -132,10 +132,11 @@ class BoundCheckoutTerminal extends TypedEventTarget<
 
   constructor() {
     super();
-    this.events = new BoundCheckoutTerminalEvents({
-      target: this,
-      initial: { event: { submitted: { id: "seed-order" } } },
-    });
+    this.events = new BoundCheckoutTerminalEvents();
+    this.events.seedInitialEvent(
+      this.events.submitted({ id: "seed-order" }),
+    );
+    this.events.setHost(this);
   }
 }
 
@@ -145,11 +146,24 @@ function BoundCheckoutTerminalSummary(
   let terminal = handle.props.terminal;
 
   return () => (
-    <terminal.events.submitted
-      render={({ detail }) => (
-        <output data-testid="bound-terminal-summary">{detail.id}</output>
-      )}
-    />
+    <>
+      <button
+        type="button"
+        data-testid="bound-terminal-listener"
+        mix={terminal.events.listen(
+          on("submitted", ({ currentTarget, detail }) => {
+            currentTarget.dataset.submittedId = detail.id;
+          }),
+        )}
+      >
+        Listener
+      </button>
+      <terminal.events.submitted
+        render={({ detail }) => (
+          <output data-testid="bound-terminal-summary">{detail.id}</output>
+        )}
+      />
+    </>
   );
 }
 
@@ -331,7 +345,7 @@ function CheckoutWithHostedDispatchedInitial(handle: Handle) {
   return () => (
     <section
       data-testid="checkout-with-hosted-dispatched-initial"
-      mix={checkoutEventsWithHostedInitial.setHost()}
+      mix={checkoutEventsWithHostedInitial.host()}
     >
       <button
         type="button"
@@ -385,7 +399,7 @@ function CheckoutWithHostMemory(handle: Handle) {
   return () => (
     <section
       data-testid="checkout-with-host-memory"
-      mix={checkoutEventsWithHostMemory.setHost()}
+      mix={checkoutEventsWithHostMemory.host()}
     >
       <button
         type="button"
@@ -546,7 +560,10 @@ function SiblingCheckoutBranches(handle: Handle) {
 
 function HostedCheckout(handle: Handle) {
   return () => (
-    <section data-testid="checkout-host" mix={checkoutEvents.setHost()}>
+    <section
+      data-testid="checkout-host"
+      mix={checkoutEvents.host()}
+    >
       <button
         type="button"
         data-testid="hosted-checkout-listener"
@@ -695,15 +712,13 @@ function WindowForwardedCheckout(handle: Handle) {
 }
 
 function GameInitialFocusBoard(handle: Handle) {
-  let gameEvents = new GameInitialFocusEvents({
-    initial: {
-      event: {
-        turn: { position: new Map() },
-        focus: { cellId: 0 },
-      },
-      dispatch: true,
-    },
-  });
+  let gameEvents = new GameInitialFocusEvents();
+  gameEvents.seedInitialEvent(
+    gameEvents.events({
+      turn: { position: new Map([[0, "X"]]) },
+      focus: { cellId: 0 },
+    }),
+  );
 
   return () => (
     <div>
@@ -730,7 +745,10 @@ function GameInitialFocusBoard(handle: Handle) {
 function TodoActionRow(handle: Handle<{ completed: boolean }>) {
   return () => (
     <li data-testid="todo-action-row">
-      <form data-testid="todo-delete-form" mix={todoActionEvents.setHost()}>
+      <form
+        data-testid="todo-delete-form"
+        mix={todoActionEvents.host()}
+      >
         <button
           type="button"
           data-testid="todo-delete-button"
@@ -760,7 +778,7 @@ function TodoActionRow(handle: Handle<{ completed: boolean }>) {
       <form
         data-testid="todo-edit-form"
         mix={[
-          todoActionEvents.setHost(),
+          todoActionEvents.host(),
           on("focusout", ({ currentTarget }) => {
             if (
               todoActionEvents.getHost(currentTarget).latest?.event.type ===
@@ -801,7 +819,10 @@ function TodoActionRow(handle: Handle<{ completed: boolean }>) {
         </button>
       </form>
 
-      <form data-testid="todo-complete-form" mix={todoActionEvents.setHost()}>
+      <form
+        data-testid="todo-complete-form"
+        mix={todoActionEvents.host()}
+      >
         <button
           type="button"
           data-testid="todo-complete-button"
@@ -874,19 +895,15 @@ function assertCustomEventsTypes() {
     )}
   />;
 
-  let boundCheckoutEvents = checkoutEvents.setHost(checkoutTarget);
-  boundCheckoutEvents.target satisfies EventTarget;
-  (boundCheckoutEvents.target === checkoutTarget) satisfies boolean;
-  boundCheckoutEvents.latest?.events.submitted?.id;
-  boundCheckoutEvents.latest?.event.type satisfies
-    | "submitted"
-    | "paid"
-    | Array<"submitted" | "paid">
-    | undefined;
-  // @ts-expect-error target-bound descriptors do not expose host management.
-  boundCheckoutEvents.setHost(checkoutTarget);
-  // @ts-expect-error target-bound descriptors read latest directly.
-  boundCheckoutEvents.getHost(checkoutTarget);
+  checkoutEvents.setHost(checkoutTarget) satisfies () => void;
+  checkoutEvents.setHost(
+    checkoutTarget,
+    new AbortController().signal,
+  ) satisfies () => void;
+  // @ts-expect-error descriptors stay target-agnostic and do not expose latest directly.
+  checkoutEvents.latest;
+  // @ts-expect-error unbound descriptors do not expose a target either.
+  checkoutEvents.target;
 
   checkoutEvents.getHost(checkoutTarget).latest?.event.type satisfies
     | "submitted"
@@ -905,23 +922,27 @@ function assertCustomEventsTypes() {
   checkoutEvents.getHost(checkoutTarget).event;
   // @ts-expect-error getHost() exposes latest.events, not events directly.
   checkoutEvents.getHost(checkoutTarget).events;
-  // @ts-expect-error host() was replaced by setHost().
+  checkoutEvents.host();
+  // @ts-expect-error host() is a DOM mixin and does not accept a target.
   checkoutEvents.host(checkoutTarget);
 
   class ReadyEvents extends CustomEvents<{ ready: null }> {}
   let readyEvents = new ReadyEvents();
-  readyEvents.initial = { event: { ready: null } };
-  readyEvents.initial = { event: readyEvents.ready(), dispatch: true };
-  readyEvents.initial = { dispatch: false };
-  readyEvents.initial = undefined;
-  // @ts-expect-error descriptor initial event must use known event names.
-  readyEvents.initial = { event: { done: null } };
-  // @ts-expect-error dispatch: true requires an event.
-  readyEvents.initial = { dispatch: true };
-  // @ts-expect-error event cannot be undefined when dispatch is true.
-  readyEvents.initial = { event: undefined, dispatch: true };
+  readyEvents.seedInitialEvent(readyEvents.ready());
+  // @ts-expect-error descriptor seed accepts event objects, not raw event maps.
+  readyEvents.seedInitialEvent({ ready: null });
+  // @ts-expect-error descriptor seed accepts event objects, not raw event maps.
+  readyEvents.seedInitialEvent({ done: null });
+  // @ts-expect-error seedInitialEvent() does not accept dispatch options.
+  readyEvents.seedInitialEvent({ event: { ready: null }, dispatch: true });
+  // @ts-expect-error descriptors no longer expose an initial property.
+  readyEvents.initial = { ready: null };
 
   new ReadyEvents();
+  // @ts-expect-error use events.seedInitialEvent(...) instead of constructor initial.
+  new ReadyEvents({ initial: { ready: null } });
+  // @ts-expect-error use events.setHost(target) instead of a constructor target.
+  new ReadyEvents({ target: checkoutTarget });
   class ReadyCheckEvents extends CustomEvents<{ ready: null }, "ready-check"> {}
   new ReadyCheckEvents({
     namespace: "ready-check",
@@ -987,6 +1008,11 @@ function assertCustomEventsTypes() {
 void assertCustomEventsTypes;
 
 describe("customEvents", () => {
+  it("keeps descriptors target-agnostic", () => {
+    assert.equal("target" in checkoutEvents, false);
+    assert.equal("latest" in checkoutEvents, false);
+  });
+
   it("supports TypedEventTarget subclasses through setHost(this)", () => {
     let terminal = new CheckoutTerminal();
     let controller = new AbortController();
@@ -1022,7 +1048,7 @@ describe("customEvents", () => {
     assert.equal(source, form);
   });
 
-  it("returns a target-bound descriptor from setHost(target)", async (t) => {
+  it("installs custom event behavior on EventTarget instances without binding the descriptor", async (t) => {
     let terminal = new BoundCheckoutTerminal();
     let result = render(<BoundCheckoutTerminalSummary terminal={terminal} />);
     t.after(() => result.cleanup());
@@ -1030,14 +1056,19 @@ describe("customEvents", () => {
     let summary = result.$(
       '[data-testid="bound-terminal-summary"]',
     ) as HTMLOutputElement;
+    let listener = result.$(
+      '[data-testid="bound-terminal-listener"]',
+    ) as HTMLButtonElement;
 
     assert.equal(summary.textContent, "seed-order");
-    assert.equal(terminal.events.latest?.events.submitted?.id, "seed-order");
-    assert.equal(terminal.events.target, terminal);
-    assert.equal("setHost" in terminal.events, false);
-    assert.equal("getHost" in terminal.events, false);
-    assert.equal("target" in terminal.events, true);
-    assert.equal("latest" in terminal.events, true);
+    assert.equal(
+      terminal.events.getHost(terminal).latest?.events.submitted?.id,
+      "seed-order",
+    );
+    assert.equal("setHost" in terminal.events, true);
+    assert.equal("getHost" in terminal.events, true);
+    assert.equal("target" in terminal.events, false);
+    assert.equal("latest" in terminal.events, false);
 
     terminal.dispatchEvent(
       terminal.events.submitted({ id: "bound-terminal-order" }),
@@ -1048,9 +1079,31 @@ describe("customEvents", () => {
 
     assert.equal(summary.textContent, "bound-terminal-order");
     assert.equal(
-      terminal.events.latest?.events.submitted?.id,
+      terminal.events.getHost(terminal).latest?.events.submitted?.id,
       "bound-terminal-order",
     );
+    assert.equal(listener.dataset.submittedId, "bound-terminal-order");
+  });
+
+  it("cleans a registered host when the setHost signal aborts", () => {
+    class SignalCheckoutEvents extends CustomEvents<CheckoutEventDetails> {}
+    let signalCheckoutEvents = new SignalCheckoutEvents();
+    let target = new EventTarget();
+    let controller = new AbortController();
+
+    signalCheckoutEvents.seedInitialEvent(
+      signalCheckoutEvents.submitted({ id: "abort-order" }),
+    );
+    signalCheckoutEvents.setHost(target, controller.signal);
+
+    assert.equal(
+      signalCheckoutEvents.getHost(target).latest?.events.submitted?.id,
+      "abort-order",
+    );
+
+    controller.abort();
+
+    assert.equal(signalCheckoutEvents.getHost(target).latest, undefined);
   });
 
   it("uses a DOM element as the dispatch target for host element reactions", async (t) => {
@@ -1115,7 +1168,7 @@ describe("customEvents", () => {
     assert.equal(listener.dataset.changed, "true");
   });
 
-  it("dispatches descriptor initial events once through window fallback when opted in", async (t) => {
+  it("seeds descriptor initial events without dispatching listeners", async (t) => {
     let result = render(<CheckoutWithDispatchedInitial />);
     t.after(() => result.cleanup());
 
@@ -1132,35 +1185,32 @@ describe("customEvents", () => {
       '[data-testid="dispatched-initial-override"]',
     ) as HTMLOutputElement;
 
-    await result.act(
-      () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
-    );
+    await result.act(() => Promise.resolve());
 
-    assert.equal(listener.dataset.changedType, "submitted");
-    assert.equal(listener.dataset.changeCount, "1");
-    assert.equal(listener.dataset.changedDetail, '{"id":"mounted-order"}');
-    assert.equal(listener.dataset.submittedId, "mounted-order");
+    assert.equal(listener.dataset.changedType, undefined);
+    assert.equal(listener.dataset.changeCount, undefined);
+    assert.equal(listener.dataset.changedDetail, undefined);
+    assert.equal(listener.dataset.submittedId, undefined);
     assert.equal(listener.dataset.paid, undefined);
-    assert.equal(secondListener.dataset.submittedId, "mounted-order");
-    assert.equal(secondListener.dataset.submitCount, "1");
+    assert.equal(secondListener.dataset.submittedId, undefined);
+    assert.equal(secondListener.dataset.submitCount, undefined);
     assert.equal(summary.textContent, 'submitted:{"id":"mounted-order"}');
-    assert.equal(override.textContent, 'submitted:{"id":"mounted-order"}');
+    assert.equal(override.textContent, "paid:null");
   });
 
-  it("lets descriptor initial events focus the matching mounted element", async (t) => {
+  it("renders from seeded initial events without firing focus listeners", async (t) => {
     let result = render(<GameInitialFocusBoard />);
     t.after(() => result.cleanup());
 
     let firstCell = result.$('[data-testid="game-cell-0"]') as HTMLButtonElement;
 
-    await result.act(
-      () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
-    );
+    await result.act(() => Promise.resolve());
 
-    assert.equal(document.activeElement, firstCell);
+    assert.equal(firstCell.textContent, "X");
+    assert.notEqual(document.activeElement, firstCell);
   });
 
-  it("dispatches descriptor initial events from the nearest host boundary", async (t) => {
+  it("seeds hosted initial events without sending them outside the host", async (t) => {
     let result = render(<CheckoutWithHostedDispatchedInitial />);
     let windowEvents: Array<string> = [];
     let countWindowEvent = (event: Event) => {
@@ -1181,14 +1231,20 @@ describe("customEvents", () => {
       '[data-testid="second-hosted-dispatched-initial-listener"]',
     ) as HTMLButtonElement;
 
-    await result.act(
-      () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
-    );
+    await result.act(() => Promise.resolve());
 
-    assert.equal(listener.dataset.submittedId, "hosted-mounted-order");
-    assert.equal(listener.dataset.submitCount, "1");
-    assert.equal(secondListener.dataset.submittedId, "hosted-mounted-order");
-    assert.equal(secondListener.dataset.submitCount, "1");
+    assert.equal(listener.dataset.submittedId, undefined);
+    assert.equal(listener.dataset.submitCount, undefined);
+    assert.equal(secondListener.dataset.submittedId, undefined);
+    assert.equal(secondListener.dataset.submitCount, undefined);
+    assert.equal(
+      checkoutEventsWithHostedInitial.getHost(
+        result.$(
+          '[data-testid="checkout-with-hosted-dispatched-initial"]',
+        ) as HTMLElement,
+      ).latest?.events.submitted?.id,
+      "hosted-mounted-order",
+    );
     assert.deepEqual(windowEvents, []);
   });
 

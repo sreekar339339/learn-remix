@@ -5,7 +5,7 @@ import { render } from "remix/ui/test";
 import { TicTacToeCustomEvents } from "./ticTacToeCustomEvents.tsx";
 
 describe("TicTacToeCustomEvents", () => {
-  it("focuses the first cell from the dispatched initial event", async (t) => {
+  it("renders the seeded initial game state and explicitly dispatches initial focus", async (t) => {
     let result = render(<TicTacToeCustomEvents />);
     t.after(() => result.cleanup());
 
@@ -14,6 +14,10 @@ describe("TicTacToeCustomEvents", () => {
     );
 
     let firstCell = result.$("button[value='0']") as HTMLButtonElement;
+    let status = result.$("p") as HTMLParagraphElement;
+
+    assert.equal(firstCell.textContent, "");
+    assert.equal(status.textContent, "Game in progress");
     assert.equal(document.activeElement, firstCell);
   });
 });
