@@ -141,7 +141,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
-            mix={todoEvents.host()}
+            mix={todoEvents.setHost()}
           >
             <button
               mix={[
@@ -170,15 +170,19 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           </form>
           <form
             mix={[
-              todoEvents.host(),
+              todoEvents.setHost(),
               todoEvents.listen(
                 on("actionErrored", ({ currentTarget }) =>
                   currentTarget.reset(),
                 ),
               ),
               on("focusout", ({ currentTarget }) => {
-                if (currentTarget.dataset.eventType === "actionSubmitted")
+                if (
+                  todoEvents.getHost(currentTarget).latest?.event.type ===
+                  "actionSubmitted"
+                ) {
                   return;
+                }
                 currentTarget.reset();
               }),
             ]}
@@ -210,7 +214,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolistCustomEvents.todos.action.href()}
-            mix={todoEvents.host()}
+            mix={todoEvents.setHost()}
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
@@ -229,7 +233,6 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
                       "disabled",
                       isActionSubmitted,
                     );
-                    currentTarget.focus();
                   }),
                 ),
               ]}

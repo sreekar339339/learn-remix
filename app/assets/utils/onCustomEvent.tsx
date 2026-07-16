@@ -35,7 +35,7 @@ type DetailFor<Target extends EventTarget, Type extends EventType<Target>> =
 type InitialEventMap<Target extends EventTarget> =
   DispatchCustomEventEvents<Target>;
 
-export type OnCustomEventListener<
+type OnCustomEventListener<
   Element extends HTMLElement,
   Target extends EventTarget,
   Type extends EventType<Target>,
@@ -45,7 +45,7 @@ export type OnCustomEventListener<
   signal: AbortSignal,
 ) => void | Promise<void>;
 
-export type OnCustomEventGuard<Element extends HTMLElement = HTMLElement> = (
+type OnCustomEventGuard<Element extends HTMLElement = HTMLElement> = (
   event: Event,
   element: Element,
   signal: AbortSignal,

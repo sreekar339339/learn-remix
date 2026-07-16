@@ -6,7 +6,7 @@ import {
   type Namespaced,
 } from "./utils/customEvent.ts";
 
-export type DragDetail = {
+type DragDetail = {
   left: number;
   top: number;
 };

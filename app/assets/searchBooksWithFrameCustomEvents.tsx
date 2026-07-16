@@ -1,42 +1,36 @@
-import {
-  clientEntry,
-  css,
-  Frame,
-  on,
-  ref,
-  type Handle,
-} from "remix/ui";
+import { clientEntry, css, Frame, on, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { customEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
-const searchEvents = customEvents<{
+class SearchEvents extends CustomEvents<{
   queryEmpty: null;
   querySubmitted: string;
-}>();
+}> {}
 
 export const SearchBooksWithFrameCustomEvents = clientEntry(
   import.meta.url,
   function SearchBooksWithFrameCustomEvents(handle: Handle<{ initialQuery?: string }>) {
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
-    searchEvents.initial = {
-      event: initialQuery
-        ? searchEvents.querySubmitted(initialQuery)
-        : searchEvents.queryEmpty(),
-      dispatch: true,
-    };
+    let searchEvents = new SearchEvents({
+      initial: {
+        event: initialQuery
+          ? { querySubmitted: initialQuery }
+          : { queryEmpty: null },
+        dispatch: true,
+      },
+    });
 
     return () => (
       <>
         <form
           action={routes.searchBooks.books.href()}
-          target="response"
           mix={[
-            on("submit", ({ currentTarget, preventDefault }) => {
-              preventDefault();
+            on("submit", (evt) => {
+              evt.preventDefault();
               let query = (
-                new FormData(currentTarget).get("q") as string
+                new FormData(evt.currentTarget).get("q") as string
               ).trim();
-              currentTarget.dispatchEvent(
+              evt.currentTarget.dispatchEvent(
                 query
                   ? searchEvents.querySubmitted(query)
                   : searchEvents.queryEmpty(),

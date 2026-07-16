@@ -14,7 +14,7 @@ type NamespacedCustomEventName<
 
 type CustomEventMapBase = Record<string, unknown>;
 
-export type CustomEventWithSource<Detail, Source = unknown> =
+type CustomEventWithSource<Detail, Source = unknown> =
   CustomEvent<Detail> & {
     originTarget?: EventTarget;
     source?: Source;

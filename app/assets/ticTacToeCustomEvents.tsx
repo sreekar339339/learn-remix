@@ -1,15 +1,15 @@
-import { clientEntry, css, on } from "remix/ui";
-import { customEvents } from "./utils/customEvents.tsx";
+import { clientEntry, css, on, TypedEventTarget } from "remix/ui";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw" | "Pending";
 
-const gameEvents = customEvents<{
+class GameEvents extends CustomEvents<{
   turn: { result: Result; position: Map<number, Player>; nextPlayer: Player };
   focus: { cellId: number };
-}>();
+}> {}
 
-type GameEventMap = (typeof gameEvents)["eventMap"];
+type GameEventMap = GameEvents["__eventMap"];
 
 let winningCombos = [
   [0, 1, 2],
@@ -60,10 +60,9 @@ export const TicTacToeCustomEvents = clientEntry(
       focus: { cellId: 0 },
     } satisfies GameEventMap["change"]["detail"]["details"];
 
-    gameEvents.initial = {
-      event: gameEvents(initialGame),
-      dispatch: true,
-    };
+    let gameEvents = new GameEvents({
+      initial: { event: initialGame, dispatch: true },
+    });
 
     return () => (
       <div
@@ -85,53 +84,53 @@ export const TicTacToeCustomEvents = clientEntry(
             on("click", ({ target, currentTarget }) => {
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.value);
+              let { position, nextPlayer, result } =
+                gameEvents.getHost(currentTarget).latest?.events.turn!;
+              if (position.has(cellId) || result !== "Pending") return;
+
+              let nextPosition = new Map(position).set(cellId, nextPlayer);
+              let nextFreeCellIdx = cellId;
+              while (nextPosition.has(nextFreeCellIdx)) {
+                nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
+                if (nextFreeCellIdx === cellId) break;
+              }
+
               currentTarget.dispatchEvent(
-                gameEvents((prevEvent) => {
-                  let { position, nextPlayer, result } = prevEvent.turn!;
-                  if (position.has(cellId) || result !== "Pending") return {};
-                  let nextPosition = new Map(position).set(cellId, nextPlayer);
-                  let nextFreeCellIdx = cellId;
-                  while (nextPosition.has(nextFreeCellIdx)) {
-                    nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
-                    if (nextFreeCellIdx === cellId) break;
-                  }
-                  return {
-                    turn: {
-                      position: nextPosition,
-                      nextPlayer: nextPlayer === "X" ? "O" : "X",
-                      result: deriveResult(nextPosition),
-                    },
-                    focus: {
-                      cellId: nextFreeCellIdx,
-                    },
-                  };
+                gameEvents.events({
+                  turn: {
+                    position: nextPosition,
+                    nextPlayer: nextPlayer === "X" ? "O" : "X",
+                    result: deriveResult(nextPosition),
+                  },
+                  focus: {
+                    cellId: nextFreeCellIdx,
+                  },
                 }),
               );
             }),
             on("keydown", ({ key, target, currentTarget }) => {
               if (!isArrowKey(key)) return;
-              let cell = target as HTMLButtonElement;
-              let cellId = Number(cell.value);
+              if (!(target instanceof HTMLButtonElement)) return;
+              let cellId = Number(target.value);
               let idxIncrement = arrowKeyIdxIncrementMap[key];
               let boundIdx = idxIncrement < 0 ? 0 : 8;
+              let nextFreeCellIdx = cellId;
+              let { position } =
+                gameEvents.getHost(currentTarget).latest?.events.turn!;
+              while (
+                nextFreeCellIdx === cellId ||
+                position.has(nextFreeCellIdx)
+              ) {
+                nextFreeCellIdx += idxIncrement;
+                if (
+                  (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
+                  (boundIdx === 8 && nextFreeCellIdx > boundIdx)
+                ) {
+                  break;
+                }
+              }
               currentTarget.dispatchEvent(
-                gameEvents.focus((prevEvent) => {
-                  let nextFreeCellIdx = cellId;
-                  let { position } = prevEvent.turn!;
-                  while (
-                    nextFreeCellIdx === cellId ||
-                    position.has(nextFreeCellIdx)
-                  ) {
-                    nextFreeCellIdx += idxIncrement;
-                    if (
-                      (boundIdx === 0 && nextFreeCellIdx < boundIdx) ||
-                      (boundIdx === 8 && nextFreeCellIdx > boundIdx)
-                    ) {
-                      return { cellId };
-                    }
-                  }
-                  return { cellId: nextFreeCellIdx };
-                }),
+                gameEvents.focus({ cellId: nextFreeCellIdx }),
               );
             }),
           ]}
@@ -186,7 +185,7 @@ export const TicTacToeCustomEvents = clientEntry(
               }),
             ),
             on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(gameEvents(initialGame));
+              currentTarget.dispatchEvent(gameEvents.events(initialGame));
             }),
           ]}
         >

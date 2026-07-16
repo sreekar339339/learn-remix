@@ -1,20 +1,21 @@
-import { clientEntry, css, on, ref, type Handle } from "remix/ui";
+import { clientEntry, css, on, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { customEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Book = {
   title: string;
 };
 
-const searchEvents = customEvents<{
+class SearchEvents extends CustomEvents<{
   booksFound: Array<Book>;
   booksNotFound: { reason: "emptyList" | { other: string } };
   errorOccurred: Error;
   queryEmpty: null;
   querySubmitted: { query: string };
-}>();
+}> {}
 
 async function fetchBooks(
+  searchEvents: InstanceType<typeof SearchEvents>,
   query: string,
   input: HTMLInputElement,
   signal: AbortSignal,
@@ -61,12 +62,14 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
     handle: Handle<{ initialQuery: string }>,
   ) {
     let initialQuery = handle.props.initialQuery.trim();
-    searchEvents.initial = {
-      event: initialQuery
-        ? searchEvents.querySubmitted({ query: initialQuery })
-        : searchEvents.queryEmpty(),
-      dispatch: true,
-    };
+    let searchEvents = new SearchEvents({
+      initial: {
+        event: initialQuery
+          ? { querySubmitted: { query: initialQuery } }
+          : { queryEmpty: null },
+        dispatch: true,
+      },
+    });
 
     return () => (
       <div>
@@ -106,6 +109,7 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                   );
                   if (detail.type === "querySubmitted") {
                     return void fetchBooks(
+                      searchEvents,
                       detail.detail.query,
                       currentTarget,
                       signal,

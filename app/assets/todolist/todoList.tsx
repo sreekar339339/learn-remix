@@ -14,7 +14,7 @@ import type { Todo } from "../../data/todolist.ts";
 import type { CustomEventMap } from "../utils/customEvent.ts";
 import { routes } from "../../routes.ts";
 
-export type TodoActionEventMap = CustomEventMap<{
+type TodoActionEventMap = CustomEventMap<{
   actionSubmitted: null;
   actionSucceeded: null;
   actionErrored: { error: Error };

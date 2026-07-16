@@ -3,13 +3,15 @@ import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
-import { customEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents.tsx";
 
-export const todoEvents = customEvents<{
+class TodoEvents extends CustomEvents<{
   actionSubmitted: TodoActionDetail | null;
   actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
-}>();
+}> {}
+
+export const todoEvents = new TodoEvents();
 
 export type TodoActionDetail = {
   completed?: boolean;
