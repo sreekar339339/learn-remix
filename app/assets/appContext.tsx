@@ -29,7 +29,7 @@ class AppContext extends TypedEventTarget<
     return this.events.getHost(this).latest?.events as AppContextValue;
   }
 
-  set value(value: Partial<AppContextValue>) {
+  patch(value: Partial<AppContextValue>) {
     this.dispatchEvent(this.events.change(value));
   }
 }
@@ -43,10 +43,10 @@ function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
 
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
-    appContext.value = {
+    appContext.patch({
       user: { age: 23, name: "Bob Lazar" },
       settings: { layout: "zen", theme: "light" },
-    };
+    });
   });
 
   return () => <body>{handle.props.children}</body>;

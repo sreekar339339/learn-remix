@@ -50,7 +50,7 @@ type AppContext = {
     theme: "dark" | "light" | "system";
     layout: "zen" | "normal" | "grid";
   };
-}
+};
 
 class TestAppContext extends TypedEventTarget<CustomEvents<AppContext>["map"]> {
   events = new CustomEvents<AppContext>();
@@ -65,7 +65,7 @@ class TestAppContext extends TypedEventTarget<CustomEvents<AppContext>["map"]> {
     return this.events.getHost(this).latest?.events as AppContext;
   }
 
-  set value(value: Partial<AppContext>) {
+  patch(value: Partial<AppContext>) {
     this.dispatchEvent(this.events.change(value));
   }
 }
@@ -83,23 +83,17 @@ const gestureMixin = createMixin<HTMLElement>((handle) => {
     <handle.element
       {...props}
       mix={[
-        on("pointerdown", ({currentTarget, pointerId}, signal) => {
+        on("pointerdown", ({ currentTarget, pointerId }, signal) => {
           currentTarget.dispatchEvent(
-            gestureEvents.activated(
-              { pointerId: pointerId },
-              { signal },
-            ),
+            gestureEvents.activated({ pointerId: pointerId }, { signal }),
           );
         }),
-        on("pointermove", ({currentTarget, clientX, clientY}, signal) => {
+        on("pointermove", ({ currentTarget, clientX, clientY }, signal) => {
           currentTarget.dispatchEvent(
-            gestureEvents.moved(
-              { x: clientX, y: clientY },
-              { signal },
-            ),
+            gestureEvents.moved({ x: clientX, y: clientY }, { signal }),
           );
         }),
-        on("pointerup", ({currentTarget}, signal) => {
+        on("pointerup", ({ currentTarget }, signal) => {
           currentTarget.dispatchEvent(gestureEvents.released({ signal }));
         }),
       ]}
@@ -314,15 +308,18 @@ function SearchForm(handle: Handle<Props<"div">>) {
               );
             }),
             searchEvents.listen(),
-            on(searchEvents.types.change, ({ currentTarget, detail }, signal) => {
-              if (detail.type === "querySubmitted") {
-                return void fetchBooks(
-                  detail.detail.query,
-                  currentTarget,
-                  signal,
-                );
-              }
-            }),
+            on(
+              searchEvents.types.change,
+              ({ currentTarget, detail }, signal) => {
+                if (detail.type === "querySubmitted") {
+                  return void fetchBooks(
+                    detail.detail.query,
+                    currentTarget,
+                    signal,
+                  );
+                }
+              },
+            ),
           ]}
         />
         <button>Search</button>
@@ -353,7 +350,7 @@ function TestAppProvider(
         type="button"
         data-action="login"
         mix={on("click", () => {
-          appContext.value = { user: { name: "Ada", age: 37 } };
+          appContext.patch({ user: { name: "Ada", age: 37 } });
         })}
       >
         Login
@@ -362,12 +359,12 @@ function TestAppProvider(
         type="button"
         data-action="theme"
         mix={on("click", () => {
-          appContext.value = {
+          appContext.patch({
             settings: {
               layout: "zen",
               theme: "light",
             },
-          };
+          });
         })}
       >
         Set Zen-Light Theme
@@ -376,10 +373,10 @@ function TestAppProvider(
         type="button"
         data-action="loadContext"
         mix={on("click", () => {
-          appContext.value = {
+          appContext.patch({
             user: { name: "Bob Lazar", age: 23 },
             settings: { layout: "grid", theme: "dark" },
-          };
+          });
         })}
       >
         Set Full Context
@@ -421,7 +418,8 @@ function SettingsDisplay(handle: Handle) {
 
   return () => (
     <output data-testid="settings">
-      {appContext.value.settings.theme}:{appContext.value.settings.layout} AND updateCount:
+      {appContext.value.settings.theme}:{appContext.value.settings.layout} AND
+      updateCount:
       {updateCount}
     </output>
   );
