@@ -1,6 +1,6 @@
 import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
-import { on, TypedEventTarget, type Handle } from "remix/ui";
+import { on, ref, TypedEventTarget, type Handle } from "remix/ui";
 import { render } from "remix/ui/test";
 import { CustomEvents, __customEventsTest } from "./customEvents.tsx";
 
@@ -165,6 +165,39 @@ describe("CustomEvents", () => {
     assert.equal(status.textContent, "shortcut-order");
     assert.equal(status.dataset.hostTag, "output");
     assert.equal(status.dataset.paidDetail, undefined);
+  });
+
+  it("catches same-element events dispatched from a later ref on mount", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutSearch(handle: Handle) {
+      return () => (
+        <input
+          data-testid="checkout-search"
+          mix={[
+            on("input", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(checkoutEvents.paid());
+            }),
+            checkoutEvents.on("change", ({ currentTarget, detail }) => {
+              if (Array.isArray(detail.type)) return;
+              currentTarget.dataset.latestEvent = detail.type;
+            }),
+            ref((input) => input.dispatchEvent(new InputEvent("input"))),
+          ]}
+        />
+      );
+    }
+
+    let result = render(<CheckoutSearch />);
+    t.after(() => result.cleanup());
+
+    let input = result.$(
+      '[data-testid="checkout-search"]',
+    ) as HTMLInputElement;
+
+    await result.act(() => Promise.resolve());
+
+    assert.equal(input.dataset.latestEvent, "paid");
   });
 
   it("renders from initial and later custom events without mirrored component state", async (t) => {

@@ -1,4 +1,4 @@
-import { clientEntry, css, on, ref, TypedEventTarget } from "remix/ui";
+import { clientEntry, css, on, ref } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
@@ -51,9 +51,10 @@ let isArrowKey = (
 
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
-  function TicTacToeCustomEvents() {
+  function TicTacToeCustomEvents(handle) {
     let ticTacToeEvents = new TicTacToeEvents();
     let { turn, focus, change } = ticTacToeEvents;
+
     ticTacToeEvents.seed(
       turn({
         result: "Pending",
@@ -70,7 +71,11 @@ export const TicTacToeCustomEvents = clientEntry(
             gap: 16,
             maxWidth: 360,
           }),
-          ref((board) => board.dispatchEvent(focus({ cellId: 0 }))),
+          ref((board) => {
+            queueMicrotask(
+              () => board.dispatchEvent(ticTacToeEvents.focus({ cellId: 0 })),
+            );
+          }),
         ]}
       >
         <div
@@ -86,24 +91,23 @@ export const TicTacToeCustomEvents = clientEntry(
               let { position, nextPlayer, result } =
                 ticTacToeEvents.getHost(currentTarget).latest?.events.turn!;
               if (position.has(cellId) || result !== "Pending") return;
-
               let nextPosition = new Map(position).set(cellId, nextPlayer);
+              let nextResult = deriveResult(nextPosition);
               let nextFreeCellIdx = cellId;
               while (nextPosition.has(nextFreeCellIdx)) {
                 nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
                 if (nextFreeCellIdx === cellId) break;
               }
-
               currentTarget.dispatchEvent(
                 change({
                   turn: {
                     position: nextPosition,
                     nextPlayer: nextPlayer === "X" ? "O" : "X",
-                    result: deriveResult(nextPosition),
+                    result: nextResult,
                   },
-                  focus: {
-                    cellId: nextFreeCellIdx,
-                  },
+                  ...(nextResult === "Pending"
+                    ? { focus: { cellId: nextFreeCellIdx } }
+                    : {}),
                 }),
               );
             }),
@@ -133,41 +137,38 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <button
+            <ticTacToeEvents.turn
               key={index}
-              value={index}
-              mix={[
-                css({
-                  aspectRatio: "1/1",
-                  fontSize: 32,
-                  fontWeight: "bold",
-                  "&.X": {
-                    color: "blue",
-                  },
-                  "&.O": {
-                    color: "red",
-                  },
-                }),
-                ticTacToeEvents.on("turn", ({ currentTarget, detail }) => {
-                  currentTarget.toggleAttribute(
-                    "disabled",
-                    detail.position.has(index) || detail.result !== "Pending",
-                  );
-                  currentTarget.classList.toggle(
-                    detail.position.get(index)!,
-                    detail.position.has(index),
-                  );
-                }),
-                ticTacToeEvents.on("focus", ({ detail, currentTarget }) => {
-                  if (detail.cellId !== index) return;
-                  currentTarget.focus();
-                }),
-              ]}
-            >
-              <ticTacToeEvents.turn
-                render={({ detail }) => detail.position.get(index)}
-              />
-            </button>
+              render={({ detail }, turnHandle) => (
+                <button
+                  value={index}
+                  disabled={
+                    detail.position.has(index) || detail.result !== "Pending"
+                  }
+                  class={detail.position.get(index)}
+                  mix={[
+                    css({
+                      aspectRatio: "1/1",
+                      fontSize: 32,
+                      fontWeight: "bold",
+                      "&.X": {
+                        color: "blue",
+                      },
+                      "&.O": {
+                        color: "red",
+                      },
+                    }),
+                    ticTacToeEvents.on("focus", ({ detail, currentTarget }) => {
+                      if (detail.cellId !== index) return;
+                      currentTarget.focus();
+                      turnHandle.queueTask(() => currentTarget.focus());
+                    }),
+                  ]}
+                >
+                  {detail.position.get(index)}
+                </button>
+              )}
+            />
           ))}
         </div>
         <button

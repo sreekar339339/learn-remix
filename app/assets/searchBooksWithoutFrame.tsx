@@ -88,33 +88,25 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                   animation: "none",
                 },
               }),
-              on("input", (event) => {
-                let input = event.currentTarget;
-                let query = input.value.trim();
-                input.dispatchEvent(
-                  query
-                    ? searchEvents.querySubmitted({ query })
-                    : searchEvents.queryEmpty(),
-                );
-              }),
-              on(
-                searchEvents.types.change,
-                ({ currentTarget, detail }, signal) => {
-                  currentTarget.classList.toggle(
-                    "pending",
-                    detail.type === "querySubmitted",
+              on("input", ({ currentTarget }, signal) => {
+                let query = currentTarget.value.trim();
+                if (!query)
+                  return void currentTarget.dispatchEvent(
+                    searchEvents.queryEmpty(),
                   );
-                  if (detail.type === "querySubmitted") {
-                    return void fetchBooks(
-                      detail.detail.query,
-                      currentTarget,
-                      signal,
-                    );
-                  }
-                  currentTarget.select();
-                },
-              ),
-              ref((input) => input.dispatchEvent(new InputEvent('input')))
+                currentTarget.dispatchEvent(
+                  searchEvents.querySubmitted({ query }),
+                );
+                fetchBooks(query, currentTarget, signal);
+              }),
+              searchEvents.on("change", ({ detail, currentTarget }) => {
+                currentTarget.classList.toggle(
+                  "pending",
+                  detail.type === "querySubmitted",
+                );
+                if (detail.type !== "querySubmitted") currentTarget.select();
+              }),
+              ref((input) => input.dispatchEvent(new InputEvent("input"))),
             ]}
           />
         </label>

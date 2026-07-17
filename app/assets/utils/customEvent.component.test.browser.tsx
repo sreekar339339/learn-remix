@@ -758,6 +758,7 @@ describe("CustomEvents component usage", () => {
 
     input.value = "offline";
     await result.act(() => submitButton.click());
+    await result.act(() => Promise.resolve());
 
     assert.equal(
       result.$("output")?.textContent,
@@ -781,6 +782,7 @@ describe("CustomEvents component usage", () => {
       submitButton.click();
       await settleAsyncSearch();
     });
+    await result.act(settleAsyncSearch);
 
     assert.equal(
       result.$("output")?.textContent,

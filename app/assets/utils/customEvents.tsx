@@ -3,8 +3,8 @@ import {
   on as remixOn,
   ref,
   type Handle,
-  type MixinDescriptor,
   type RemixNode,
+  type MixinDescriptor,
 } from "remix/ui";
 
 // Constants and metadata symbols
@@ -204,7 +204,10 @@ type CustomEventsRenderProps<
    * @example
    * <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
    */
-  render: (event: CustomEventsEvent<Events, Type>) => RemixNode;
+  render: (
+    event: CustomEventsEvent<Events, Type>,
+    handle: Handle<CustomEventsRenderProps<Events, Type>>,
+  ) => RemixNode;
 };
 
 type CustomEventsOnElement<
@@ -1272,15 +1275,17 @@ function processCustomEventsEvent(
   if (kind === "source-event") {
     let type = getEventType(descriptor, event.type);
     if (!type || type === CHANGE_EVENT_NAME) return true;
-    let result = dispatchDerivedChangeEvent(
-      origin,
-      descriptor,
-      [[type, event.detail]],
-      init,
-      metadata,
-    );
-    if (!result) event.preventDefault();
-    return result;
+    let detail = event.detail;
+    queueMicrotask(() => {
+      dispatchDerivedChangeEvent(
+        origin,
+        descriptor,
+        [[type, detail]],
+        init,
+        metadata,
+      );
+    });
+    return true;
   }
 
   let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
@@ -1289,29 +1294,17 @@ function processCustomEventsEvent(
     : ([[detail.type, detail.detail]] satisfies Array<[string, unknown]>);
   if (!entries.length) return true;
 
-  let changeDetail = hostRegistry.record(origin, descriptor.owner, entries);
-  let localChangeResult = dispatchLocalTypedEvent(
-    origin,
-    CHANGE_EVENT_NAME,
-    init,
-    changeDetail,
-    {
+  queueMicrotask(() => {
+    let changeDetail = hostRegistry.record(origin, descriptor.owner, entries);
+    dispatchLocalTypedEvent(origin, CHANGE_EVENT_NAME, init, changeDetail, {
       ...metadata,
       kind: "derived-change",
       owner: descriptor.owner,
       origin,
-    },
-  );
-  let result = dispatchExpandedGranularEvents(
-    origin,
-    descriptor,
-    entries,
-    init,
-    metadata,
-  );
-  result = localChangeResult && result;
-  if (!result) event.preventDefault();
-  return result;
+    });
+    dispatchExpandedGranularEvents(origin, descriptor, entries, init, metadata);
+  });
+  return true;
 }
 
 let customEventsDispatchTargetRegistrations = new WeakMap<
@@ -1592,7 +1585,10 @@ const customEventsOnMixin = createMixin<
           forwardEventsMixin(target, descriptor),
           remixOn(
             getEventName(descriptor, type) as AnyCustomEventsName,
-            listener as (event: CustomEventWithMetadata<any>, signal: AbortSignal) => void,
+            listener as (
+              event: CustomEventWithMetadata<any>,
+              signal: AbortSignal,
+            ) => void,
           ),
         ]}
       />
@@ -1615,11 +1611,7 @@ function createCustomEventsOnElement<
 ): CustomEventsOnElement<Events, Type> {
   addEventType(descriptor, type);
   return function CustomEventsOnElement(
-    handle: Handle<{
-      initial?: Event;
-      target?: EventTarget;
-      render: (event: CustomEventsEvent<Events, Type>) => RemixNode;
-    }>,
+    handle: Handle<CustomEventsRenderProps<Events, Type>>,
   ) {
     let eventName = getEventName(descriptor, type);
     let initialEvent = createInitialEvent(
@@ -1712,6 +1704,7 @@ function createCustomEventsOnElement<
         currentEvent?.type === eventName && canRender(currentEvent)
           ? handle.props.render(
               currentEvent as CustomEventsEvent<Events, Type>,
+              handle,
             )
           : undefined;
 
