@@ -3,6 +3,14 @@ import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw" | "Pending";
+class TicTacToeEvents extends CustomEvents<{
+  turn: {
+    result: Result;
+    position: Map<number, Player>;
+    nextPlayer: Player;
+  };
+  focus: { cellId: number };
+}> {}
 
 let winningCombos = [
   [0, 1, 2],
@@ -44,16 +52,9 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
-    let ticTacToeEvents = new CustomEvents<{
-      turn: {
-        result: Result;
-        position: Map<number, Player>;
-        nextPlayer: Player;
-      };
-      focus: { cellId: number };
-    }>();
+    let ticTacToeEvents = new TicTacToeEvents();
     let { turn, focus, change } = ticTacToeEvents;
-    ticTacToeEvents.seedInitialEvent(
+    ticTacToeEvents.seed(
       turn({
         result: "Pending",
         position: new Map(),
@@ -147,8 +148,7 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                ticTacToeEvents.listen(),
-                on(ticTacToeEvents.names.turn, ({ currentTarget, detail }) => {
+                ticTacToeEvents.on("turn", ({ currentTarget, detail }) => {
                   currentTarget.toggleAttribute(
                     "disabled",
                     detail.position.has(index) || detail.result !== "Pending",
@@ -158,7 +158,7 @@ export const TicTacToeCustomEvents = clientEntry(
                     detail.position.has(index),
                   );
                 }),
-                on(ticTacToeEvents.names.focus, ({ detail, currentTarget }) => {
+                ticTacToeEvents.on("focus", ({ detail, currentTarget }) => {
                   if (detail.cellId !== index) return;
                   currentTarget.focus();
                 }),
@@ -174,7 +174,7 @@ export const TicTacToeCustomEvents = clientEntry(
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
             ticTacToeEvents.listen(),
-            on(ticTacToeEvents.names.turn, ({ detail, currentTarget }) => {
+            on(ticTacToeEvents.types.turn, ({ detail, currentTarget }) => {
               if (detail.result === "Pending") return;
               currentTarget.focus();
             }),

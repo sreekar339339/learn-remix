@@ -1,53 +1,39 @@
-import {
-  clientEntry,
-  css,
-  Frame,
-  type Handle,
-  TypedEventTarget,
-  on,
-} from "remix/ui";
+import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import {
-  dispatchCustomEvent,
-  type CustomEventMap,
-} from "./utils/customEvent.ts";
-import { onCustomEvent } from "./utils/onCustomEvent.tsx";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
-type SearchEventMap = CustomEventMap<{
+let searchEvents = new CustomEvents<{
   queryEmpty: null;
-  querySubmitted: { query: string };
-}>;
+  querySubmitted: string;
+}>();
 
-export const SearchBooksWithFrame = clientEntry(
+export const SearchBooksWithFrameCustomEvents = clientEntry(
   import.meta.url,
-  function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
-    let initialQuery = handle.props.initialQuery?.trim() || "";
-    let searchTarget = new TypedEventTarget<SearchEventMap>();
-    let onSearch = onCustomEvent.with({
-      target: searchTarget,
-      initial: initialQuery
-        ? { querySubmitted: { query: initialQuery } }
-        : { queryEmpty: null },
-    });
+  function SearchBooksWithFrameCustomEvents(
+    handle: Handle<{ initialQuery?: string }>,
+  ) {
+    let initialQuery = handle.props.initialQuery?.trim() ?? "";
+    searchEvents.seed(
+      initialQuery
+        ? searchEvents.querySubmitted(initialQuery)
+        : searchEvents.queryEmpty(),
+    );
 
     return () => (
       <>
         <form
           action={routes.searchBooks.books.href()}
-          target="response"
           mix={[
-            on("submit", (evt, signal) => {
+            on("submit", (evt) => {
               evt.preventDefault();
-              let form = evt.currentTarget;
-              let query = (new FormData(form).get("q") as string).trim();
-              let opts = {
-                target: searchTarget,
-                signal,
-              };
-              if (!query) {
-                return void dispatchCustomEvent(opts, { queryEmpty: null });
-              }
-              dispatchCustomEvent(opts, { querySubmitted: { query } });
+              let query = (
+                new FormData(evt.currentTarget).get("q") as string
+              ).trim();
+              evt.currentTarget.dispatchEvent(
+                query
+                  ? searchEvents.querySubmitted(query)
+                  : searchEvents.queryEmpty(),
+              );
             }),
           ]}
         >
@@ -57,6 +43,7 @@ export const SearchBooksWithFrame = clientEntry(
               name="q"
               type="text"
               defaultValue={initialQuery}
+              autofocus
               mix={[
                 css({
                   padding: 4,
@@ -65,17 +52,21 @@ export const SearchBooksWithFrame = clientEntry(
                       "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
                     backgroundSize: "220% 100%",
                     animation: "glimmer 1.15s linear infinite",
-                    borderColor: "var(--brand-blue)",
                   },
                 }),
-                onSearch("change", (_, input) => {
-                  input.select();
+                searchEvents.listen(),
+                on(searchEvents.types.change, ({ currentTarget, detail }) => {
+                  currentTarget.classList.toggle(
+                    "pending",
+                    detail.type === "querySubmitted",
+                  );
+                  if (detail.type !== "querySubmitted") currentTarget.select();
                 }),
               ]}
             />
           </label>
         </form>
-        <onSearch.change
+        <searchEvents.change
           render={({ detail }) => {
             if (Array.isArray(detail.type)) return null;
             if (detail.type === "queryEmpty") {
@@ -83,28 +74,18 @@ export const SearchBooksWithFrame = clientEntry(
             }
             if (detail.type !== "querySubmitted") return null;
 
-            let { query } = detail.detail;
+            let query = detail.detail;
             return (
               <Frame
                 key={query}
                 fallback={
                   <p>fetching books with title containing "{query}"...</p>
                 }
-                src={routes.searchBooks.books.href(undefined, {
-                  q: query,
-                })}
+                src={routes.searchBooks.books.href(undefined, { q: query })}
               />
             );
           }}
         />
-        {/* <noscript>
-          <iframe
-            name="response"
-            src={routes.searchBooks.books.href(undefined, {
-              q: initialQuery,
-            })}
-          />
-        </noscript>  */}
       </>
     );
   },

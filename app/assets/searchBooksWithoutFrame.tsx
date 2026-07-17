@@ -1,171 +1,165 @@
 import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { match, P } from "ts-pattern";
-import {
-  type CustomEventMap,
-  type DispatchCustomEvent,
-  type Namespaced,
-  dispatchCustomEvent,
-} from "./utils/customEvent.ts";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
-async function fetchBooks(
-  query: string,
-  dispatch: DispatchCustomEvent<HTMLInputElement, "bookSearch">,
-  signal: AbortSignal,
-) {
-  try {
-    dispatch({ querySubmitted: { query } });
-    let resp = await fetch(
-      routes.searchBooks.books.href(undefined, { q: query }),
-      {
-        signal,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      },
-    );
-    if (!resp.ok) {
-      throw new Error(`${resp.status} ${resp.statusText}`, {
-        cause: await resp.text(),
-      });
-    }
-    let json = await resp.json();
-    if (!("docs" in json)) {
-      return void dispatch({
-        booksNotFound: { reason: { other: json.detail[0].msg } },
-      });
-    }
-    let books = json.docs;
-    if (!books.length) {
-      return void dispatch({ booksNotFound: { reason: "emptyList" } });
-    }
-    dispatch({ booksFound: books });
-  } catch (error) {
-    dispatch({ errorOccurred: error as Error });
-  }
-}
+type Book = {
+  title: string;
+};
 
-type SearchEventMap = CustomEventMap<{
-  booksFound: Array<{ title: string }>;
+let searchEvents = new CustomEvents<{
+  booksFound: Array<Book>;
   booksNotFound: { reason: "emptyList" | { other: string } };
   errorOccurred: Error;
   queryEmpty: null;
   querySubmitted: { query: string };
-}>;
+}>();
 
-declare global {
-  interface HTMLElementEventMap extends Namespaced<
-    SearchEventMap,
-    "bookSearch"
-  > {}
+async function fetchBooks(
+  query: string,
+  input: HTMLInputElement,
+  signal: AbortSignal,
+) {
+  let opts = { signal };
+  try {
+    let response = await fetch(
+      routes.searchBooks.books.href(undefined, { q: query }),
+      {
+        signal,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`, {
+        cause: await response.text(),
+      });
+    }
+    let json = await response.json();
+    if (!("docs" in json)) {
+      return input.dispatchEvent(
+        searchEvents.booksNotFound(
+          { reason: { other: json.detail[0].msg } },
+          opts,
+        ),
+      );
+    }
+    let books = json.docs as Array<Book>;
+    input.dispatchEvent(
+      books.length
+        ? searchEvents.booksFound(books, opts)
+        : searchEvents.booksNotFound({ reason: "emptyList" }, opts),
+    );
+  } catch (error) {
+    input.dispatchEvent(searchEvents.errorOccurred(error as Error, opts));
+  }
 }
 
-function SearchBooksWithoutFrame_(handle: Handle<{ initialQuery: string }>) {
-  let { initialQuery } = handle.props;
-
-  let bookSearchEvt: SearchEventMap["change"]["detail"] = initialQuery
-    ? {
-        type: "querySubmitted",
-        detail: { query: initialQuery },
-        details: { querySubmitted: { query: initialQuery } },
-      }
-    : { type: "queryEmpty", detail: null, details: { queryEmpty: null } };
-
-  return () => (
-    <>
-      <label>
-        Search{" "}
-        <input
-          type="text"
-          defaultValue={initialQuery}
-          class={bookSearchEvt?.type === "querySubmitted" ? "pending" : ""}
-          mix={[
-            css({
-              padding: 4,
-              "&.pending": {
-                backgroundImage:
-                  "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
-                backgroundSize: "220% 100%",
-                animation: "glimmer 1.15s linear infinite",
-                borderColor: "var(--brand-blue)",
-              },
-              "@media (prefers-reduced-motion: reduce)": {
-                animation: "none",
-              },
-            }),
-            on("input", (evt, signal) => {
-              let query = evt.currentTarget.value.trim();
-              let dispatch = dispatchCustomEvent.bind(null, {
-                target: evt.currentTarget,
-                signal,
-                namespace: "bookSearch",
-              });
-              if (!query) {
-                return void dispatch({ queryEmpty: null });
-              }
-              fetchBooks(query, dispatch, signal);
-            }),
-            on("bookSearch:change", ({ detail, currentTarget }) => {
-              bookSearchEvt = detail;
-              handle.update();
-              if (detail.type !== "querySubmitted") {
-                currentTarget.select();
-              }
-            }),
-            ref((input) => input.dispatchEvent(new Event("input"))),
-          ]}
-        />
-      </label>
-      {match(bookSearchEvt)
-        .with({ type: "queryEmpty" }, () => <p>Enter the title of any book.</p>)
-        .with({ type: "querySubmitted" }, ({ detail: { query } }) => (
-          <p>fetching books with title containing {query}...</p>
-        ))
-        .with({ type: "booksFound" }, ({ detail: books }) => (
-          <ul>
-            {books.map((book) => (
-              <li>{book.title}</li>
-            ))}
-          </ul>
-        ))
-        .with(
-          { type: "booksNotFound", detail: { reason: "emptyList" } },
-          () => <p>No books were found for this title at this time.</p>,
-        )
-        .with(
-          {
-            type: "booksNotFound",
-            detail: { reason: { other: P.select() } },
-          },
-          (msg) => <p>Could not fetch books for this title. Reason: {msg}.</p>,
-        )
-        .with({ type: "errorOccurred" }, ({ detail: error }) => (
-          <p>
-            Unexpected error occured, try again! {error.message} Cause:{" "}
-            {error.cause as string}.
-          </p>
-        ))
-        .with({ type: P.array(P._) }, () => null)
-        .exhaustive()}
-    </>
-  );
-}
-
-export const SearchBooksWithoutFrame = clientEntry(
+export const SearchBooksWithoutFrameCustomEvents = clientEntry(
   import.meta.url,
-  function SearchBooksWithoutFrame(
+  function SearchBooksWithoutFrameCustomEvents(
     handle: Handle<{ initialQuery: string }>,
   ) {
+    let initialQuery = handle.props.initialQuery.trim();
+    searchEvents.seed(
+      initialQuery
+        ? searchEvents.querySubmitted({ query: initialQuery })
+        : searchEvents.queryEmpty(),
+    );
+
     return () => (
-      <div
-        mix={[
-          on("bookSearch:change", (evt) => {
-            console.log("in parent", evt.detail);
-          }),
-        ]}
-      >
-        <SearchBooksWithoutFrame_ initialQuery={handle.props.initialQuery} />
-      </div>
+      <>
+        <label>
+          Search{" "}
+          <input
+            type="text"
+            defaultValue={initialQuery}
+            mix={[
+              css({
+                padding: 4,
+                "&.pending": {
+                  backgroundImage:
+                    "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+                  backgroundSize: "220% 100%",
+                  animation: "glimmer 1.15s linear infinite",
+                  borderColor: "var(--brand-blue)",
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  animation: "none",
+                },
+              }),
+              on("input", (event) => {
+                let input = event.currentTarget;
+                let query = input.value.trim();
+                input.dispatchEvent(
+                  query
+                    ? searchEvents.querySubmitted({ query })
+                    : searchEvents.queryEmpty(),
+                );
+              }),
+              on(
+                searchEvents.types.change,
+                ({ currentTarget, detail }, signal) => {
+                  currentTarget.classList.toggle(
+                    "pending",
+                    detail.type === "querySubmitted",
+                  );
+                  if (detail.type === "querySubmitted") {
+                    return void fetchBooks(
+                      detail.detail.query,
+                      currentTarget,
+                      signal,
+                    );
+                  }
+                  currentTarget.select();
+                },
+              ),
+              ref((input) => input.dispatchEvent(new InputEvent('input')))
+            ]}
+          />
+        </label>
+        <searchEvents.change
+          render={({ detail }) => {
+            switch (detail.type) {
+              case "queryEmpty":
+                return <p>Enter the title of any book.</p>;
+              case "querySubmitted":
+                return (
+                  <p>
+                    {`fetching books with title containing "${detail.detail.query}"...`}
+                  </p>
+                );
+              case "booksFound":
+                return (
+                  <ul>
+                    {detail.detail.map((book) => (
+                      <li>{book.title}</li>
+                    ))}
+                  </ul>
+                );
+              case "booksNotFound":
+                if (detail.detail.reason === "emptyList") {
+                  return (
+                    <p>No books were found for this title at this time.</p>
+                  );
+                }
+                return (
+                  <p>
+                    Could not fetch books for this title. Reason:{" "}
+                    {detail.detail.reason.other}.
+                  </p>
+                );
+              case "errorOccurred":
+                return (
+                  <p>
+                    Unexpected error occured, try again! {detail.detail.message}
+                    Cause: {detail.detail.cause as string}.
+                  </p>
+                );
+            }
+          }}
+        />
+      </>
     );
   },
 );

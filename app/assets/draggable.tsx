@@ -1,160 +1,108 @@
 import { createMixin, on } from "remix/ui";
-import {
-  dispatchCustomEvent,
-  type CustomEventMap,
-  type DispatchCustomEvent,
-  type Namespaced,
-} from "./utils/customEvent.ts";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
-type DragDetail = {
+type DraggableCustomEventDetail = {
   left: number;
   top: number;
 };
 
-type DraggableEventMap = CustomEventMap<{
-  start: DragDetail;
-  end: DragDetail;
-}>;
+let draggableEvents = new CustomEvents<{
+  start: DraggableCustomEventDetail;
+  end: DraggableCustomEventDetail;
+}>();
 
-type DraggableNamespace = "rmx:drag";
-
-declare global {
-  interface HTMLElementEventMap extends Namespaced<
-    DraggableEventMap,
-    DraggableNamespace
-  > {}
-}
-type DraggableProps = {
+type DraggableCustomEventsProps = {
   on?: Record<string, (event: Event) => void>;
 };
 
-const baseDraggable = createMixin<HTMLElement, [boolean], DraggableProps>(
-  (handle) => {
-    let target: HTMLElement | null = null;
-    let enabled = true;
-    let pointerId: number | null = null;
-    let startLeft = 0;
-    let startTop = 0;
-    let startClientX = 0;
-    let startClientY = 0;
-    let dispatch: DispatchCustomEvent<HTMLElement, DraggableNamespace>;
-
-    handle.addEventListener("insert", (event) => {
-      target = event.node;
-      dispatch = dispatchCustomEvent.bind(null, {
-        target,
-        signal: handle.signal,
-        namespace: "rmx:drag",
-      });
-    });
-
-    handle.addEventListener("remove", stopDrag);
-
-    return (nextEnabled: boolean = true, props) => {
-      enabled = nextEnabled;
-      if (!enabled) {
-        stopDrag();
-      }
-
-      return (
-        <handle.element
-          {...props}
-          mix={[on("pointerdown", (event) => onPointerDown(event))]}
-        />
-      );
-    };
-
-    function onPointerDown(event: PointerEvent) {
-      if (event.button !== 0) return;
-      if (!enabled) return;
-      if (!target) return;
-
-      let style = getComputedStyle(target);
-      if (style.position === "static") {
-        target.style.position = "relative";
-      }
-      target.style.cursor = "grabbing";
-
-      startLeft = readPx(target.style.left);
-      startTop = readPx(target.style.top);
-      startClientX = event.clientX;
-      startClientY = event.clientY;
-      pointerId = event.pointerId;
-
-      try {
-        target.setPointerCapture(event.pointerId);
-      } catch {}
-
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", onPointerDone);
-      window.addEventListener("pointercancel", onPointerDone);
-      dispatch({
-        start: {
-          left: startLeft,
-          top: startTop,
-        },
-      });
-    }
-
-    function onPointerMove(event: PointerEvent) {
-      if (!target) return;
-      if (pointerId == null) return;
-      if (event.pointerId !== pointerId) return;
-      let dx = event.clientX - startClientX;
-      let dy = event.clientY - startClientY;
-      target.style.left = `${startLeft + dx}px`;
-      target.style.top = `${startTop + dy}px`;
-      void handle.update();
-    }
-
-    function onPointerDone(event: PointerEvent) {
-      if (!target) return;
-      if (pointerId == null) return;
-      if (event.pointerId !== pointerId) return;
-      stopDrag();
-      dispatch({
-        end: {
-          left: readPx(target.style.left),
-          top: readPx(target.style.top),
-        },
-      });
-    }
-
-    function stopDrag() {
-      if (!target) return;
-      if (pointerId == null) return;
-      pointerId = null;
-      target.style.cursor = "grab";
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerDone);
-      window.removeEventListener("pointercancel", onPointerDone);
-    }
-  },
-);
-
 function readPx(value: string) {
-  if (!value) return 0;
   let parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return parsed;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-let draggableEventTypes: {
-  [K in Exclude<
-    keyof DraggableEventMap,
-    "change"
-  >]: `${DraggableNamespace}:${K}`;
-} = {
-  start: "rmx:drag:start",
-  end: "rmx:drag:end",
-};
+export const draggable_ = createMixin<
+  HTMLElement,
+  [boolean],
+  DraggableCustomEventsProps
+>((handle) => {
+  let element: HTMLElement | undefined;
+  let enabled = true;
+  let pointerId: number | undefined;
+  let startLeft = 0;
+  let startTop = 0;
+  let startClientX = 0;
+  let startClientY = 0;
 
-type DraggableMixin = typeof baseDraggable & typeof draggableEventTypes;
+  handle.addEventListener("insert", (event) => {
+    element = event.node;
+  });
 
-export const draggable: DraggableMixin = Object.assign(
-  baseDraggable,
-  draggableEventTypes,
-);
+  handle.addEventListener("remove", () => stopDrag());
+
+  function startDrag(event: PointerEvent) {
+    if (!enabled || !element || event.button !== 0) return;
+
+    let style = getComputedStyle(element);
+    if (style.position === "static") {
+      element.style.position = "relative";
+    }
+
+    startLeft = readPx(element.style.left);
+    startTop = readPx(element.style.top);
+    startClientX = event.clientX;
+    startClientY = event.clientY;
+    pointerId = event.pointerId;
+    element.setPointerCapture(event.pointerId);
+    element.dispatchEvent(
+      draggableEvents.start({ left: startLeft, top: startTop }),
+    );
+    window.addEventListener("pointermove", moveDrag);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+  }
+
+  function moveDrag(event: PointerEvent) {
+    if (!element || event.pointerId !== pointerId) return;
+    element.style.left = `${startLeft + event.clientX - startClientX}px`;
+    element.style.top = `${startTop + event.clientY - startClientY}px`;
+  }
+
+  function stopDrag(event?: PointerEvent) {
+    if (!element || pointerId === undefined) return;
+    if (event && event.pointerId !== pointerId) return;
+
+    pointerId = undefined;
+    window.removeEventListener("pointermove", moveDrag);
+    window.removeEventListener("pointerup", stopDrag);
+    window.removeEventListener("pointercancel", stopDrag);
+    element.dispatchEvent(
+      draggableEvents.end({
+        left: readPx(element.style.left),
+        top: readPx(element.style.top),
+      }),
+    );
+  }
+
+  return (nextEnabled = true, props) => {
+    enabled = nextEnabled;
+    if (!enabled) stopDrag();
+    return (
+      <handle.element
+        {...props}
+        mix={[
+          on("pointerdown", (event) => startDrag(event)),
+        ]}
+      />
+    );
+  };
+});
+
+export const draggable: typeof draggable_ & typeof draggableEvents.types =
+  Object.assign(draggable_, {
+    change: draggableEvents.types.change,
+    start: draggableEvents.types.start,
+    end: draggableEvents.types.end,
+  });
 
 function DraggableCard() {
   return () => (

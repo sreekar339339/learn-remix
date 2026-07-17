@@ -5,7 +5,7 @@ import { renderToString } from "remix/ui/server";
 import { TodoItems } from "./todoItems.tsx";
 
 describe("TodoItems SSR", () => {
-  it("server-renders completed state from onCustomEvent event components", async () => {
+  it("server-renders completed state in the customEvents copy", async () => {
     let html = await renderToString(
       <TodoItems
         todos={[

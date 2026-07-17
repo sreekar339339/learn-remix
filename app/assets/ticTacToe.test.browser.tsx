@@ -2,7 +2,7 @@ import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { render } from "remix/ui/test";
 
-import { TicTacToeCustomEvents } from "./ticTacToeCustomEvents.tsx";
+import { TicTacToeCustomEvents } from "./ticTacToe.tsx";
 
 describe("TicTacToeCustomEvents", () => {
   it("renders the seeded initial game state and explicitly dispatches initial focus", async (t) => {

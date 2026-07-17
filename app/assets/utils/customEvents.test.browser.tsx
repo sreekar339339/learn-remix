@@ -2,7 +2,7 @@ import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { on, TypedEventTarget, type Handle } from "remix/ui";
 import { render } from "remix/ui/test";
-import { CustomEvents } from "./customEvents.tsx";
+import { CustomEvents, __customEventsTest } from "./customEvents.tsx";
 
 type CheckoutDetails = {
   submitted: { id: string };
@@ -12,7 +12,7 @@ type CheckoutDetails = {
 class CheckoutEvents extends CustomEvents<CheckoutDetails> {}
 
 describe("CustomEvents", () => {
-  it("creates descriptor-owned names for Remix on() listeners", async (t) => {
+  it("creates descriptor-owned types for Remix on() listeners", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
     function CheckoutButton(handle: Handle) {
@@ -22,7 +22,7 @@ describe("CustomEvents", () => {
           data-testid="checkout-button"
           mix={[
             checkoutEvents.listen(),
-            on(checkoutEvents.names.submitted, ({
+            on(checkoutEvents.types.submitted, ({
               currentTarget,
               detail,
               target,
@@ -35,7 +35,7 @@ describe("CustomEvents", () => {
                 target === currentTarget,
               );
             }),
-            on(checkoutEvents.names.change, ({ currentTarget, target }) => {
+            on(checkoutEvents.types.change, ({ currentTarget, target }) => {
               currentTarget.dataset.changeTargetIsButton = String(
                 target === currentTarget,
               );
@@ -87,7 +87,7 @@ describe("CustomEvents", () => {
             data-testid="checkout-status"
             mix={[
               checkoutEvents.listen(),
-              on(checkoutEvents.names.change, ({ currentTarget, detail }) => {
+              on(checkoutEvents.types.change, ({ currentTarget, detail }) => {
                 if (Array.isArray(detail.type)) return;
                 currentTarget.dataset.eventType = detail.type;
                 currentTarget.textContent = String(
@@ -116,6 +116,57 @@ describe("CustomEvents", () => {
     assert.equal(status.textContent, "summary-order");
   });
 
+  it("listens with descriptor-owned on() without naming the generated event", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutPanel(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="submit-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                checkoutEvents.submitted({ id: "shortcut-order" }),
+              );
+            })}
+          >
+            Submit
+          </button>
+          <output
+            data-testid="checkout-status"
+            mix={[
+              checkoutEvents.on("submitted", ({ currentTarget, detail }) => {
+                currentTarget.textContent = detail.id;
+                currentTarget.dataset.hostTag =
+                  currentTarget.tagName.toLowerCase();
+              }),
+              checkoutEvents.on("paid", ({ currentTarget, detail }) => {
+                currentTarget.dataset.paidDetail = String(detail);
+              }),
+            ]}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutPanel />);
+    t.after(() => result.cleanup());
+
+    let button = result.$(
+      '[data-testid="submit-checkout"]',
+    ) as HTMLButtonElement;
+    let status = result.$(
+      '[data-testid="checkout-status"]',
+    ) as HTMLOutputElement;
+
+    await result.act(() => button.click());
+
+    assert.equal(status.textContent, "shortcut-order");
+    assert.equal(status.dataset.hostTag, "output");
+    assert.equal(status.dataset.paidDetail, undefined);
+  });
+
   it("renders from initial and later custom events without mirrored component state", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
@@ -139,6 +190,20 @@ describe("CustomEvents", () => {
               <output data-testid="checkout-summary">{detail.id}</output>
             )}
           />
+          <checkoutEvents.change
+            initial={checkoutEvents.submitted({ id: "initial-order" })}
+            render={({ detail }) => {
+              let text =
+                !Array.isArray(detail.type) && detail.type === "submitted"
+                  ? detail.detail.id
+                  : "many";
+              return (
+                <output data-testid="checkout-change-summary">
+                  {text}
+                </output>
+              );
+            }}
+          />
         </section>
       );
     }
@@ -149,15 +214,20 @@ describe("CustomEvents", () => {
     let summary = result.$(
       '[data-testid="checkout-summary"]',
     ) as HTMLOutputElement;
+    let changeSummary = result.$(
+      '[data-testid="checkout-change-summary"]',
+    ) as HTMLOutputElement;
     let button = result.$(
       '[data-testid="submit-checkout"]',
     ) as HTMLButtonElement;
 
     assert.equal(summary.textContent, "initial-order");
+    assert.equal(changeSummary.textContent, "initial-order");
 
     await result.act(() => button.click());
 
     assert.equal(summary.textContent, "rendered-order");
+    assert.equal(changeSummary.textContent, "rendered-order");
   });
 
   it("uses host boundaries for isolated rows and composed events for escape", async (t) => {
@@ -169,7 +239,7 @@ describe("CustomEvents", () => {
           data-testid="checkout-root"
           mix={[
             checkoutEvents.listen(),
-            on(checkoutEvents.names.change, ({ currentTarget, detail }) => {
+            on(checkoutEvents.types.change, ({ currentTarget, detail }) => {
               if (Array.isArray(detail.type)) return;
               currentTarget.dataset.latestOrder =
                 detail.details.submitted?.id;
@@ -267,7 +337,7 @@ describe("CustomEvents", () => {
     assert.equal(latest?.events.paid, null);
   });
 
-  it("expands batch change events into granular product events", async (t) => {
+  it("expands batch change events into single product events", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
     function CheckoutBatch(handle: Handle) {
@@ -291,7 +361,7 @@ describe("CustomEvents", () => {
             data-testid="submitted-listener"
             mix={[
               checkoutEvents.listen(),
-              on(checkoutEvents.names.submitted, ({
+              on(checkoutEvents.types.submitted, ({
                 currentTarget,
                 detail,
               }) => {
@@ -303,7 +373,7 @@ describe("CustomEvents", () => {
             data-testid="paid-listener"
             mix={[
               checkoutEvents.listen(),
-              on(checkoutEvents.names.paid, ({ currentTarget, detail }) => {
+              on(checkoutEvents.types.paid, ({ currentTarget, detail }) => {
                 currentTarget.textContent = String(detail);
               }),
             ]}
@@ -329,7 +399,7 @@ describe("CustomEvents", () => {
     assert.equal(paid.textContent, "null");
   });
 
-  it("ignores manually created events that reuse descriptor names", async (t) => {
+  it("ignores manually created events that reuse descriptor types", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
     function CheckoutButton(handle: Handle) {
@@ -339,12 +409,12 @@ describe("CustomEvents", () => {
           data-testid="fake-checkout"
           mix={[
             checkoutEvents.listen(),
-            on(checkoutEvents.names.change, ({ currentTarget }) => {
+            on(checkoutEvents.types.change, ({ currentTarget }) => {
               currentTarget.dataset.changed = "true";
             }),
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                new CustomEvent(checkoutEvents.names.submitted, {
+                new CustomEvent(checkoutEvents.types.submitted, {
                   bubbles: true,
                   detail: { id: "fake-order" },
                 }),
@@ -425,13 +495,158 @@ describe("CustomEvents", () => {
     );
   });
 
-  it("keeps descriptor event names separate for different instances", () => {
+  it("keeps descriptor event types separate for different instances", () => {
     let firstCheckoutEvents = new CheckoutEvents();
     let secondCheckoutEvents = new CheckoutEvents();
 
     assert.notEqual(
-      firstCheckoutEvents.names.submitted,
-      secondCheckoutEvents.names.submitted,
+      firstCheckoutEvents.types.submitted,
+      secondCheckoutEvents.types.submitted,
     );
+  });
+
+  it("removes stale window listeners and recreates them on later dispatches", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+    let submittedName = checkoutEvents.types.submitted;
+    let changeName = checkoutEvents.types.change;
+
+    t.after(() => {
+      __customEventsTest.removeWindowListener(submittedName);
+      __customEventsTest.removeWindowListener(changeName);
+      __customEventsTest.removeWindowListener(checkoutEvents.types.paid);
+    });
+
+    assert.equal(__customEventsTest.hasWindowListener(submittedName), false);
+    assert.equal(__customEventsTest.hasWindowListener(changeName), false);
+
+    function CheckoutPanel(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="submit-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                checkoutEvents.submitted({
+                  id: currentTarget.dataset.orderId!,
+                }),
+              );
+            })}
+          >
+            Submit
+          </button>
+          <button
+            type="button"
+            data-testid="patch-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                checkoutEvents.change({
+                  submitted: {
+                    id: currentTarget.dataset.orderId!,
+                  },
+                  paid: null,
+                }),
+              );
+            })}
+          >
+            Patch
+          </button>
+          <output
+            data-testid="checkout-status"
+            mix={[
+              checkoutEvents.listen(),
+              on(checkoutEvents.types.change, ({ currentTarget, detail }) => {
+                if (Array.isArray(detail.type)) return;
+                currentTarget.textContent = detail.details.submitted?.id ?? "";
+              }),
+            ]}
+          />
+          <output
+            data-testid="paid-status"
+            mix={[
+              checkoutEvents.listen(),
+              on(checkoutEvents.types.paid, ({ currentTarget, detail }) => {
+                currentTarget.textContent = String(detail);
+              }),
+            ]}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutPanel />);
+    t.after(() => result.cleanup());
+
+    let submitButton = result.$(
+      '[data-testid="submit-checkout"]',
+    ) as HTMLButtonElement;
+    let patchButton = result.$(
+      '[data-testid="patch-checkout"]',
+    ) as HTMLButtonElement;
+    let status = result.$(
+      '[data-testid="checkout-status"]',
+    ) as HTMLOutputElement;
+    let paidStatus = result.$(
+      '[data-testid="paid-status"]',
+    ) as HTMLOutputElement;
+
+    submitButton.dataset.orderId = "first-order";
+    await result.act(() => submitButton.click());
+
+    assert.equal(status.textContent, "first-order");
+    assert.equal(
+      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      "first-order",
+    );
+    assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
+    assert.equal(__customEventsTest.hasWindowListener(changeName), true);
+
+    assert.equal(__customEventsTest.expireWindowListener(submittedName), true);
+
+    submitButton.dataset.orderId = "stale-order";
+    await result.act(() => submitButton.click());
+
+    assert.equal(status.textContent, "first-order");
+    assert.equal(
+      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      "first-order",
+    );
+    assert.equal(__customEventsTest.hasWindowListener(submittedName), false);
+
+    submitButton.dataset.orderId = "recreated-order";
+    await result.act(() => submitButton.click());
+
+    assert.equal(status.textContent, "recreated-order");
+    assert.equal(
+      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      "recreated-order",
+    );
+    assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
+
+    assert.equal(__customEventsTest.expireWindowListener(changeName), true);
+
+    patchButton.dataset.orderId = "stale-patch-order";
+    await result.act(() => patchButton.click());
+
+    assert.equal(paidStatus.textContent, "");
+    assert.equal(
+      checkoutEvents.getHost(patchButton).latest?.events.submitted?.id,
+      "recreated-order",
+    );
+    assert.equal(__customEventsTest.hasWindowListener(changeName), false);
+
+    patchButton.dataset.orderId = "recreated-patch-order";
+    await result.act(() => patchButton.click());
+
+    assert.equal(paidStatus.textContent, "null");
+    assert.equal(
+      checkoutEvents.getHost(patchButton).latest?.events.submitted?.id,
+      "recreated-patch-order",
+    );
+    assert.equal(
+      checkoutEvents.getHost(patchButton).latest?.events.paid,
+      null,
+    );
+    assert.equal(__customEventsTest.hasWindowListener(changeName), true);
   });
 });

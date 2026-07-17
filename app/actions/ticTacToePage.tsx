@@ -1,7 +1,6 @@
 import { type Handle } from "remix/ui";
-import { TicTacToe } from "../assets/ticTcToe.tsx";
 import { Layout } from "../ui/layout.tsx";
-import { TicTacToeCustomEvents } from "../assets/ticTacToeCustomEvents.tsx";
+import { TicTacToeCustomEvents } from "../assets/ticTacToe.tsx";
 
 export function TicTacToePage(handle: Handle) {
   return () => (

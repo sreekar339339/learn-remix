@@ -2,7 +2,7 @@ import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { on, type Handle } from "remix/ui";
 import { render } from "remix/ui/test";
-import { draggable } from "./draggableCustomEvents.tsx";
+import { draggable } from "./draggable.tsx";
 
 describe("draggable custom events", () => {
   it("dispatches drag start and end events from the draggable element", async (t) => {

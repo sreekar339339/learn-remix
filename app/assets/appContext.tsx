@@ -4,12 +4,9 @@ import {
   type Handle,
   type RemixNode,
 } from "remix/ui";
-import {
-  dispatchCustomEvent,
-  type CustomEventMap,
-} from "./utils/customEvent.ts";
+import { CustomEvents } from "./utils/customEvents.tsx";
 
-type AppContext = {
+type AppContextValue = {
   user: { name: string; age: number } | null;
   settings: {
     theme: "dark" | "light" | "system";
@@ -17,38 +14,39 @@ type AppContext = {
   };
 };
 
-type AppContextEventMap = CustomEventMap<AppContext>;
+class AppContext extends TypedEventTarget<
+  CustomEvents<AppContextValue>["map"]
+> {
+  events = new CustomEvents<AppContextValue>();
 
-type CompContext = {
-  target: TypedEventTarget<AppContextEventMap>;
-  appContext: AppContext;
-};
-function AppProvider(handle: Handle<{ children?: RemixNode }, CompContext>) {
-  let target = new TypedEventTarget<AppContextEventMap>();
-  let appContext: AppContext = {
+  constructor(initial: Partial<AppContextValue>) {
+    super();
+    this.events.seed(this.events.change(initial));
+    this.events.setHost(this);
+  }
+
+  get value() {
+    return this.events.getHost(this).latest?.events as AppContextValue;
+  }
+
+  set value(value: Partial<AppContextValue>) {
+    this.dispatchEvent(this.events.change(value));
+  }
+}
+
+function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
+  let appContext = new AppContext({
     user: null,
-    settings: { layout: "normal", theme: "dark" },
-  };
-  handle.context.set({
-    appContext,
-    target,
+    settings: { layout: "normal", theme: "system" },
   });
-  addEventListeners(target, handle.signal, {
-    change({ detail }) {
-      Object.assign(appContext, detail.details);
-    },
-  });
+  handle.context.set(appContext);
 
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
-    await Promise.resolve();
-    dispatchCustomEvent(
-      { target, signal },
-      {
-        user: { age: 23, name: "Bob Lazar" },
-        settings: { layout: "zen", theme: "light" },
-      },
-    );
+    appContext.value = {
+      user: { age: 23, name: "Bob Lazar" },
+      settings: { layout: "zen", theme: "light" },
+    };
   });
 
   return () => <body>{handle.props.children}</body>;
@@ -56,23 +54,32 @@ function AppProvider(handle: Handle<{ children?: RemixNode }, CompContext>) {
 
 // Components can subscribe to only the events they care about
 function UserDisplay(handle: Handle) {
-  let provider = handle.context.get(AppProvider);
-  let context = provider.appContext;
+  let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(provider.target, handle.signal, {
+  addEventListeners(appContext, handle.signal, {
     user() {
       handle.update();
     },
   });
 
-  return () => <div>{context.user?.name ?? "Not logged in"}</div>;
+  return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
+}
+
+// Event components can display context values without calling handle.update().
+function EventUserDisplay(handle: Handle) {
+  let appContext = handle.context.get(AppProvider);
+
+  return () => (
+    <appContext.events.user
+      render={({ detail }) => <div>{detail?.name ?? "Not logged in"}</div>}
+    />
+  );
 }
 
 function SettingsDisplay(handle: Handle) {
-  let provider = handle.context.get(AppProvider);
-  let context = provider.appContext;
+  let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(provider.target, handle.signal, {
+  addEventListeners(appContext, handle.signal, {
     settings() {
       handle.update();
     },
@@ -81,8 +88,25 @@ function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {context.settings.layout}, Theme: {context.settings.theme}
+        Layout: {appContext.value.settings?.layout}, Theme:{" "}
+        {appContext.value.settings?.theme}
       </pre>
     </div>
+  );
+}
+
+function EventSettingsDisplay(handle: Handle) {
+  let appContext = handle.context.get(AppProvider);
+
+  return () => (
+    <appContext.events.settings
+      render={({ detail }) => (
+        <div>
+          <pre>
+            Layout: {detail.layout}, Theme: {detail.theme}
+          </pre>
+        </div>
+      )}
+    />
   );
 }

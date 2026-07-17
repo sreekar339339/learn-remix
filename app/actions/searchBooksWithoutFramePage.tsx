@@ -1,7 +1,7 @@
 import { type Handle } from "remix/ui";
 import { Layout } from "../ui/layout.tsx";
 import { SearchBooksWithoutFrame } from "../assets/searchBooksWithoutFrame.tsx";
-import { SearchBooksWithoutFrameCustomEvents } from "../assets/searchBooksWithoutFrameCustomEvents.tsx";
+import { SearchBooksWithoutFrameCustomEvents } from "../assets/searchBooksWithoutFrame.tsx";
 
 export function SearchBooksWithoutFramePage(
   handle: Handle<{ initialQuery: string }>,

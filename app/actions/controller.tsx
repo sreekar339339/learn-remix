@@ -6,14 +6,12 @@ import { assetServer } from "../assets.ts";
 import { SuperHeaders } from "remix/headers";
 import { match, P } from "ts-pattern";
 import * as s from "remix/data-schema";
-import { TodoListPage } from "./todoListPage.tsx";
-import { TodoListCustomEventsPage } from "./todoListCustomEventsPage.tsx";
+import { TodoListCustomEventsPage } from "./todoListPage.tsx";
 import { addTodos, deleteTodos, todos, updateTodos } from "../data/todolist.ts";
 import { redirect } from "remix/response/redirect";
 import * as f from "remix/data-schema/form-data";
 import { maxLength, minLength } from "remix/data-schema/checks";
-import { TodoItemsClientEntryMarked } from "../assets/todolist/todoItems.tsx";
-import { TodoItemsClientEntryMarked as TodoItemsCustomEventsClientEntryMarked } from "../assets/todolistCustomEvents/todoItems.tsx";
+import { TodoItemsClientEntryMarked as TodoItemsCustomEventsClientEntryMarked } from "../assets/todolist/todoItems.tsx";
 import * as coerce from "remix/data-schema/coerce";
 import { SearchBooksWithoutFramePage } from "./searchBooksWithoutFramePage.tsx";
 import { SearchBooksWithFramePage } from "./searchBooksWithFramePage.tsx";
@@ -169,16 +167,8 @@ export const searchBooksController = createController(routes.searchBooks, {
 
 let delay = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
 
-export const todolistController = createController(routes.todolist, {
-  actions: {
-    index({ render }) {
-      return render(<TodoListPage todos={todos} />);
-    },
-  },
-});
-
-export const todolistCustomEventsController = createController(
-  routes.todolistCustomEvents,
+export const todolistController = createController(
+  routes.todolist,
   {
     actions: {
       index({ render }) {
@@ -230,61 +220,8 @@ const todoActionFormData = s.union([
   }),
 ]);
 
-export const todosCrudController = createController(routes.todolist.todos, {
-  actions: {
-    async index({ render }) {
-      await delay(2000);
-      return render(<TodoItemsClientEntryMarked todos={todos} />);
-    },
-    async action({ formData }) {
-      await delay(2000);
-      try {
-        let input = s.parse(todoActionFormData, formData);
-        match(input)
-          .with(
-            {
-              intent: "create",
-              text: P.select(),
-            },
-            addTodos,
-          )
-          .with({ intent: "delete", id: P.select() }, deleteTodos)
-          .with({ intent: "update" }, ({ intent, id, ...rest }) => {
-            updateTodos(id, rest);
-          })
-          .exhaustive();
-        if (input.redirectTo === "none") {
-          return new Response(null, { status: 204 });
-        }
-        return redirect(routes.todolist.index.href());
-      } catch (e) {
-        return match(e)
-          .with(
-            P.instanceOf(s.ValidationError),
-            (error) =>
-              new Response(error.issues[0].message, {
-                status: 400,
-                statusText: error.name,
-              }),
-          )
-          .with(
-            P.instanceOf(Error),
-            (err) =>
-              new Response(err.message + err.cause, {
-                status: 500,
-                statusText: err.name,
-              }),
-          )
-          .otherwise(
-            () => new Response("Unexpected server error", { status: 500 }),
-          );
-      }
-    },
-  },
-});
-
-export const todosCustomEventsCrudController = createController(
-  routes.todolistCustomEvents.todos,
+export const todosCrudController = createController(
+  routes.todolist.todos,
   {
     actions: {
       async index({ render }) {
@@ -311,7 +248,7 @@ export const todosCustomEventsCrudController = createController(
           if (input.redirectTo === "none") {
             return new Response(null, { status: 204 });
           }
-          return redirect(routes.todolistCustomEvents.index.href());
+          return redirect(routes.todolist.index.href());
         } catch (e) {
           return match(e)
             .with(

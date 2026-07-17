@@ -12,9 +12,5 @@ export const routes = route({
   todolist: route('todolist', {
     index: get('/'),
     todos: form('todos')
-  }),
-  todolistCustomEvents: route('todolist-custom-events', {
-    index: get('/'),
-    todos: form('todos')
   })
 })

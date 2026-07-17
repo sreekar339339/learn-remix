@@ -1,26 +1,19 @@
-import {
-  addEventListeners,
-  clientEntry,
-  css,
-  Frame,
-  ref,
-  TypedEventTarget,
-  type Handle,
-  type Props,
-} from "remix/ui";
+import { clientEntry, css, Frame, on, type Handle } from "remix/ui";
 import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
-import type { CustomEventMap } from "../utils/customEvent.ts";
 import { routes } from "../../routes.ts";
+import { CustomEvents } from "../utils/customEvents.tsx";
 
-type TodoActionEventMap = CustomEventMap<{
-  actionSubmitted: null;
-  actionSucceeded: null;
+export const todoEvents = new CustomEvents<{
+  actionSubmitted: TodoActionDetail | null;
+  actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
-}>;
+}>();
 
-export let actionTarget = new TypedEventTarget<TodoActionEventMap>();
+export type TodoActionDetail = {
+  completed?: boolean;
+};
 
 export const TodoList = clientEntry(
   import.meta.url,
@@ -29,16 +22,14 @@ export const TodoList = clientEntry(
   },
 );
 
-export function _TodoList(
-  handle: Handle<{ todos: Todo[] }>,
-) {
-  addEventListeners(actionTarget, handle.signal, {
-    change({detail}) {
-      console.log(detail)
-    }
-  })
+export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
   return () => (
-    <div>
+    <div
+      mix={[
+        todoEvents.listen(),
+        on(todoEvents.types.change, ({ detail }) => console.log(detail)),
+      ]}
+    >
       <AddTodo />
       <Frame
         name="TodoItems"
@@ -50,7 +41,6 @@ export function _TodoList(
           </div>
         }
       />
-      {/* <TodoItems todos={handle.props.todos} /> */}
     </div>
   );
 }

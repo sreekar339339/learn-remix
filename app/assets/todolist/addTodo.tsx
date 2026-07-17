@@ -7,15 +7,9 @@ import {
   type Props,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
-import { actionTarget } from "./todoList.tsx";
-import { dispatchCustomEvent } from "../utils/customEvent.ts";
-import { onCustomEvent, sourceContainsElement } from "../utils/onCustomEvent.tsx";
+import { todoEvents } from "./todoList.tsx";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
-  const onTodo = onCustomEvent.with({
-    target: actionTarget,
-    guard: sourceContainsElement,
-  });
   let onSubmit = async (
     evt: Dispatched<SubmitEvent, HTMLFormElement>,
     signal: AbortSignal,
@@ -26,13 +20,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     let formData = new FormData(form, submitter);
     if (formData.get("text") === "") return;
     formData.set("redirectTo", "none");
-    let dispatch = dispatchCustomEvent.bind(null, {
-      target: actionTarget,
-      signal,
-      source: form,
-    });
+    let opts = { composed: true, signal };
     try {
-      dispatch({ actionSubmitted: null });
+      form.dispatchEvent(todoEvents.actionSubmitted(null, opts));
       // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
       let resp = await fetch(new URL(form.action), {
         method: "POST",
@@ -45,9 +35,11 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         });
       }
       await handle.frames.get("TodoItems")!.reload();
-      dispatch({ actionSucceeded: null });
+      form.dispatchEvent(todoEvents.actionSucceeded(null, opts));
     } catch (error) {
-      dispatch({ actionErrored: { error: error as Error } });
+      form.dispatchEvent(
+        todoEvents.actionErrored({ error: error as Error }, opts),
+      );
     }
   };
 
@@ -58,8 +50,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       mix={[
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
-        onTodo("actionSucceeded", (_event, form) => {
-          form.reset();
+        todoEvents.host(),
+        on(todoEvents.types.actionSucceeded, ({ currentTarget }) => {
+          currentTarget.reset();
         }),
       ]}
     >
@@ -67,11 +60,12 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         Enter a todo{" "}
         <input
           mix={[
-            onTodo("change", (event, input) => {
-              let isActionSubmitted = event.detail.type === "actionSubmitted";
-              input.classList.toggle("pending", isActionSubmitted);
-              input.toggleAttribute("disabled", isActionSubmitted);
-              event.detail.type === 'actionErrored' && input.select()
+            todoEvents.listen(),
+            on(todoEvents.types.change, ({ currentTarget, detail }) => {
+              let isActionSubmitted = detail.type === "actionSubmitted";
+              currentTarget.classList.toggle("pending", isActionSubmitted);
+              currentTarget.toggleAttribute("disabled", isActionSubmitted);
+              if (detail.type !== "actionSubmitted") currentTarget.select();
             }),
             ref((input) => input.select()),
             css({
@@ -97,7 +91,9 @@ export function AddTodo(handle: Handle<Props<"form">>) {
           name="text"
         />
       </label>
-      <button name="intent" value="create">Add</button>
+      <button name="intent" value="create">
+        Add
+      </button>
     </form>
   );
 }

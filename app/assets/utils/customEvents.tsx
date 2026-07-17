@@ -1,11 +1,19 @@
 import {
   createMixin,
+  on as remixOn,
   ref,
   type Handle,
   type MixinDescriptor,
   type RemixNode,
 } from "remix/ui";
 
+// Constants and metadata symbols
+//
+// These values define the private wire format for descriptor-owned DOM events.
+// Public event names are generated from a stable prefix, a per-descriptor id,
+// and the product event type. Symbols keep ownership and processing metadata
+// off the public event shape while still allowing cloned/derived events to be
+// recognized by this module.
 const CUSTOM_EVENTS_EVENT_PREFIX = "rmx:custom-events";
 const CUSTOM_EVENTS_ABORTED = `${CUSTOM_EVENTS_EVENT_PREFIX}:aborted`;
 const CHANGE_EVENT_NAME = "change";
@@ -16,6 +24,14 @@ const CUSTOM_EVENT_KIND = Symbol("customEvents.kind");
 const CUSTOM_EVENT_PROCESSED = Symbol("customEvents.processed");
 let customEventsOwnerId = 0;
 
+// Public and internal types
+//
+// The public descriptor surface is type-derived: product engineers declare an
+// event-detail map once, and the proxy-backed descriptor exposes event factory
+// methods, event components, event type strings, host helpers, and typed target
+// maps.
+// These types also reserve descriptor method names so event maps cannot collide
+// with the public API.
 type EventDetails = Record<string, unknown>;
 type EventObject<Events extends EventDetails> = Partial<Events>;
 type OwnedEvent = Event & {
@@ -28,10 +44,10 @@ type OwnedEvent = Event & {
   source?: unknown;
 };
 type CustomEventKind =
-  | "granular"
-  | "batch-change"
+  | "source-event"
+  | "source-change"
   | "derived-change"
-  | "expanded-granular";
+  | "derived-event";
 type CustomEventWithMetadata<Detail, Source = unknown> =
   CustomEvent<Detail> & {
     originTarget?: EventTarget;
@@ -80,9 +96,11 @@ type EventMapReservedKeys<EventMap extends EventDetails> = Extract<
   keyof EventMap,
   | typeof CHANGE_EVENT_NAME
   | "listen"
+  | "on"
+  | "seed"
   | "setHost"
   | "getHost"
-  | "names"
+  | "types"
   | "initial"
   | "map"
 >;
@@ -134,12 +152,12 @@ type CustomEventsDispatchEvents<Events extends EventDetails> = {
 type CustomEventsDispatchInput<Events extends EventDetails> =
   CustomEventsDispatchEvents<Events>;
 
-type CustomEventsRuntime = {
+type CustomEventsDescriptorState = {
   owner: symbol;
   ownerId: string;
   initial?: CustomEventsInitial<EventDetails>;
   eventTypes: Set<string>;
-  eventTypeListeners: Set<() => void>;
+  typeListeners: Set<() => void>;
 };
 
 type CustomEventsInitial<Events extends EventDetails> = Event;
@@ -153,11 +171,11 @@ type CustomEventsEventType<Events extends EventDetails> = Extract<
   string
 >;
 
-type CustomEventsName<Type extends string> =
+type CustomEventsTypeName<Type extends string> =
   `${typeof CUSTOM_EVENTS_EVENT_PREFIX}:${string}:${Type}`;
 
-type CustomEventsNames<Events extends EventDetails> = {
-  readonly [Type in CustomEventsEventType<Events>]: CustomEventsName<Type>;
+type CustomEventsTypes<Events extends EventDetails> = {
+  readonly [Type in CustomEventsEventType<Events>]: CustomEventsTypeName<Type>;
 };
 
 type CustomEventsEvent<
@@ -175,7 +193,7 @@ type CustomEventsRenderProps<
    * @example
    * <searchEvents.change initial={searchEvents.queryEmpty()} render={...} />
    */
-  initial?: EventObject<Events> | Event;
+  initial?: Event;
   /**
    * Explicit target to observe. Most DOM components can omit this.
    */
@@ -297,13 +315,13 @@ type CustomEventsListenFunction<
   Events extends EventDetails,
 > = {
   /**
-   * Enables Remix `on(events.names.someEvent, ...)` on this element.
+   * Enables Remix `on(events.types.someEvent, ...)` on this element.
    *
    * @example
    * mix={[
    *   checkoutEvents.listen(),
-   *   on(checkoutEvents.names.submitted, handleSubmitted),
-   *   on(checkoutEvents.names.paid, handlePaid),
+   *   on(checkoutEvents.types.submitted, handleSubmitted),
+   *   on(checkoutEvents.types.paid, handlePaid),
    * ]}
    */
   <HostElement extends Element>(
@@ -316,6 +334,46 @@ type CustomEventsListenOptions = {
    * Explicit target to observe. Most DOM components can omit this.
    */
   target?: EventTarget;
+};
+
+type CustomEventsListenerEvent<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  HostElement extends Element,
+> = CustomEventsEvent<Events, Type> & {
+  readonly currentTarget: HostElement;
+};
+
+type CustomEventsOnFunction<Events extends EventDetails> = {
+  /**
+   * Listens to one event from this event set on the element that owns the mixin.
+   *
+   * This is the descriptor-owned shortcut for:
+   *
+   * @example
+   * mix={[
+   *   checkoutEvents.listen(),
+   *   on(checkoutEvents.types.submitted, handleSubmitted),
+   * ]}
+   *
+   * Prefer it when you do not need the generated event name directly.
+   *
+   * @example
+   * <button mix={checkoutEvents.on("submitted", ({ detail, currentTarget }) => {
+   *   currentTarget.disabled = detail.pending;
+   * })} />
+   */
+  <
+    HostElement extends Element = Element,
+    Type extends CustomEventsEventType<Events> = CustomEventsEventType<Events>,
+  >(
+    type: Type,
+    listener: (
+      event: CustomEventsListenerEvent<Events, Type, HostElement>,
+      signal: AbortSignal,
+    ) => void | Promise<void>,
+    options?: CustomEventsListenOptions,
+  ): MixinDescriptor<HostElement, any>;
 };
 
 type CustomEventsHostReference<Events extends EventDetails> = {
@@ -348,7 +406,7 @@ type HostableCustomEventsDescriptor<
    * <form mix={todoEvents.host()}>
    *   <button mix={[
    *     todoEvents.listen(),
-   *     on(todoEvents.names.change, updatePendingUi),
+   *     on(todoEvents.types.change, updatePendingUi),
    *   ]} />
    * </form>
    *
@@ -413,20 +471,31 @@ type CustomEventsDescriptor<
   Events extends EventDetails,
 > = {
   /**
-   * Enables `on(events.names.someEvent, ...)` on a DOM element.
+   * Enables `on(events.types.someEvent, ...)` on a DOM element.
    */
   listen: CustomEventsListenFunction<Events>;
 
   /**
-   * Event names for Remix `on(...)`.
+   * Listens to a product event from this descriptor.
+   *
+   * This composes `listen()` and Remix `on(...)` for the common case where the
+   * product engineer only cares about the local event name.
+   *
+   * @example
+   * <button mix={todoEvents.on("actionSubmitted", updatePendingUi)} />
+   */
+  on: CustomEventsOnFunction<Events>;
+
+  /**
+   * Event types for Remix `on(...)`.
    *
    * @example
    * <button mix={[
    *   checkoutEvents.listen(),
-   *   on(checkoutEvents.names.submitted, handleSubmitted),
+   *   on(checkoutEvents.types.submitted, handleSubmitted),
    * ]} />
    */
-  readonly names: CustomEventsNames<Events>;
+  readonly types: CustomEventsTypes<Events>;
 
   /**
    * Sets the initial event for render components and latest-event memory.
@@ -434,14 +503,14 @@ type CustomEventsDescriptor<
    * This does not dispatch. Dispatch explicitly when DOM effects should run.
    *
    * @example
-   * searchEvents.seedInitialEvent(searchEvents.queryEmpty());
+   * searchEvents.seed(searchEvents.queryEmpty());
    *
    * @example
-   * appContextEvents.seedInitialEvent(
+   * appContextEvents.seed(
    *   appContextEvents.change({ user: null, settings }),
    * );
    */
-  seedInitialEvent(event: CustomEventsInitial<Events>): void;
+  seed(event: CustomEventsInitial<Events>): void;
 
   /**
    * Local event map for class targets and product event details.
@@ -450,26 +519,347 @@ type CustomEventsDescriptor<
 } & CustomEventsOnDescriptor<Events> &
   HostableCustomEventsDescriptor<Events>;
 
-let enabledWindowTargetOwners = new Set<symbol>();
-let customEventHosts = new WeakMap<Element, Map<symbol, number>>();
-let customEventRegisteredHosts = new Map<symbol, Set<WeakRef<EventTarget>>>();
-let customEventDetails = new WeakMap<
-  EventTarget,
-  Map<symbol, EventObject<EventDetails>>
->();
-let customEventDescriptorDetails = new Map<
-  symbol,
-  EventObject<EventDetails>
->();
-let customEventChangeDetails = new WeakMap<
-  EventTarget,
-  Map<symbol, ChangeEventDetailFromMap<EventDetails>>
->();
-let customEventDescriptorChangeDetails = new Map<
-  symbol,
-  ChangeEventDetailFromMap<EventDetails>
->();
-let customEventHostListeners = new Map<symbol, Set<() => void>>();
+// Host registry and latest event memory
+//
+// DOM hosts define local event boundaries and memory scopes. Non-DOM targets
+// registered with setHost() are tracked separately so event components and
+// listen() can discover the sole active target when there is no DOM parent.
+// Latest memory stores both the last change detail and the accumulated event
+// detail map in one record.
+type CustomEventsMemory = {
+  event?: ChangeEventDetailFromMap<EventDetails>;
+  events: EventObject<EventDetails>;
+};
+
+class HostRegistry {
+  #hosts = new WeakMap<Element, Map<symbol, number>>();
+  #registeredHosts = new Map<symbol, Set<WeakRef<EventTarget>>>();
+  #memory = new WeakMap<EventTarget, Map<symbol, CustomEventsMemory>>();
+  #descriptorMemory = new Map<symbol, CustomEventsMemory>();
+  #listeners = new Map<symbol, Set<() => void>>();
+
+  addRegisteredHost(target: EventTarget, owner: symbol) {
+    let hosts = this.#registeredHosts.get(owner);
+    if (!hosts) {
+      hosts = new Set();
+      this.#registeredHosts.set(owner, hosts);
+    }
+    hosts.add(new WeakRef(target));
+    this.notify(owner);
+    this.notifySoon(owner);
+  }
+
+  removeRegisteredHost(target: EventTarget, owner: symbol) {
+    let hosts = this.#registeredHosts.get(owner);
+    if (!hosts) return;
+
+    for (let host of hosts) {
+      let registeredTarget = host.deref();
+      if (!registeredTarget || registeredTarget === target) {
+        hosts.delete(host);
+        if (registeredTarget === target) break;
+      }
+    }
+    if (!hosts.size) {
+      this.#registeredHosts.delete(owner);
+    }
+    this.notify(owner);
+    this.notifySoon(owner);
+  }
+
+  forEachRegisteredHost(
+    owner: symbol,
+    callback: (target: EventTarget) => void,
+  ) {
+    let hosts = this.#registeredHosts.get(owner);
+    if (!hosts) return;
+
+    for (let host of hosts) {
+      let target = host.deref();
+      if (!target) {
+        hosts.delete(host);
+        continue;
+      }
+      callback(target);
+    }
+
+    if (!hosts.size) {
+      this.#registeredHosts.delete(owner);
+    }
+  }
+
+  getSoleRegisteredHost(owner: symbol) {
+    let hosts = this.#registeredHosts.get(owner);
+    if (!hosts) return undefined;
+
+    let soleTarget: EventTarget | undefined;
+    for (let host of hosts) {
+      let target = host.deref();
+      if (!target) {
+        hosts.delete(host);
+        continue;
+      }
+      if (!soleTarget) {
+        soleTarget = target;
+        continue;
+      }
+      if (soleTarget !== target) {
+        return undefined;
+      }
+    }
+
+    if (!hosts.size) {
+      this.#registeredHosts.delete(owner);
+    }
+    return soleTarget;
+  }
+
+  addHost(element: Element, owner: symbol) {
+    let hosts = this.#hosts.get(element);
+    if (!hosts) {
+      hosts = new Map();
+      this.#hosts.set(element, hosts);
+    }
+    hosts.set(owner, (hosts.get(owner) ?? 0) + 1);
+    this.addRegisteredHost(element, owner);
+  }
+
+  removeHost(element: Element, owner: symbol) {
+    let hosts = this.#hosts.get(element);
+    if (!hosts) return;
+
+    let count = hosts.get(owner) ?? 0;
+    if (count <= 1) {
+      hosts.delete(owner);
+      if (!hosts.size) {
+        this.#hosts.delete(element);
+      }
+      this.removeMemory(element, owner);
+      this.removeRegisteredHost(element, owner);
+    } else {
+      hosts.set(owner, count - 1);
+    }
+  }
+
+  removeMemory(target: EventTarget, owner: symbol) {
+    let memoryByOwner = this.#memory.get(target);
+    if (memoryByOwner) {
+      memoryByOwner.delete(owner);
+      if (!memoryByOwner.size) {
+        this.#memory.delete(target);
+      }
+    }
+  }
+
+  findHost(element: Element | undefined, owner: symbol) {
+    for (
+      let current = element;
+      current;
+      current = current.parentElement ?? undefined
+    ) {
+      if (this.#hosts.get(current)?.has(owner)) return current;
+    }
+    return undefined;
+  }
+
+  getDefaultTarget(element: Element | undefined, owner: symbol) {
+    return (
+      this.findHost(element, owner) ??
+      this.getSoleRegisteredHost(owner) ??
+      (typeof window === "undefined" ? undefined : window)
+    );
+  }
+
+  getMemoryTarget(target: EventTarget | undefined, owner: symbol) {
+    if (isElement(target)) {
+      return this.findHost(target, owner);
+    }
+    return target;
+  }
+
+  getMemory(target: EventTarget | undefined, owner: symbol) {
+    let memoryTarget = this.getMemoryTarget(target, owner);
+    if (!memoryTarget) return this.#descriptorMemory.get(owner);
+
+    return this.#memory.get(memoryTarget)?.get(owner);
+  }
+
+  getReference(target: EventTarget, owner: symbol) {
+    let memory = this.getMemory(target, owner);
+    return {
+      latest: memory?.event
+        ? { event: memory.event, events: memory.events }
+        : undefined,
+    };
+  }
+
+  setMemory(
+    target: EventTarget | undefined,
+    owner: symbol,
+    memory: CustomEventsMemory,
+  ) {
+    let memoryTarget = this.getMemoryTarget(target, owner);
+    if (!memoryTarget) {
+      this.#descriptorMemory.set(owner, memory);
+      return;
+    }
+
+    let memoryByOwner = this.#memory.get(memoryTarget);
+    if (!memoryByOwner) {
+      memoryByOwner = new Map();
+      this.#memory.set(memoryTarget, memoryByOwner);
+    }
+    memoryByOwner.set(owner, memory);
+  }
+
+  record(
+    target: EventTarget | undefined,
+    owner: symbol | undefined,
+    entries: Array<[string, unknown]>,
+  ) {
+    let patchDetail = createCustomEventChangeDetail(entries);
+    if (!owner) return patchDetail;
+
+    let current = this.getMemory(target, owner)?.events ?? {};
+    let details: EventObject<EventDetails> = { ...current };
+    for (let [type, detail] of entries) {
+      details[type] = detail;
+    }
+    let changeDetail = createCustomEventChangeDetail(entries, details);
+    this.setMemory(target, owner, {
+      event: changeDetail,
+      events: details,
+    });
+    return changeDetail;
+  }
+
+  notify(owner: symbol) {
+    for (let listener of this.#listeners.get(owner) ?? []) {
+      listener();
+    }
+  }
+
+  notifySoon(owner: symbol) {
+    queueMicrotask(() => this.notify(owner));
+  }
+
+  subscribe(owner: symbol, listener: () => void) {
+    let listeners = this.#listeners.get(owner);
+    if (!listeners) {
+      listeners = new Set();
+      this.#listeners.set(owner, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) {
+        this.#listeners.delete(owner);
+      }
+    };
+  }
+
+  seedInitialMemory(
+    target: EventTarget | undefined,
+    descriptor: CustomEventsDescriptorState,
+  ) {
+    let entries = getInitialEventEntries(descriptor);
+    if (!entries?.length) return;
+    this.record(target, descriptor.owner, entries);
+  }
+
+  seedInitialDescriptorMemory(descriptor: CustomEventsDescriptorState) {
+    this.seedInitialMemory(undefined, descriptor);
+  }
+
+  seedInitialRegisteredHosts(descriptor: CustomEventsDescriptorState) {
+    this.forEachRegisteredHost(descriptor.owner, (target) => {
+      this.seedInitialMemory(target, descriptor);
+    });
+  }
+}
+
+const hostRegistry = new HostRegistry();
+
+// Window event processing
+//
+// Source events often bubble to window so sibling branches can react without a
+// shared EventTarget. Window listeners must not keep descriptor instances alive:
+// each listener owns only a WeakRef to descriptor state and unregisters itself
+// when that state has been collected or finalized.
+type CustomEventsWindowListener = {
+  controller: AbortController;
+  descriptor: WeakRef<CustomEventsDescriptorState>;
+};
+
+class WindowBridge {
+  #listeners = new Map<string, CustomEventsWindowListener>();
+  #finalizer =
+    typeof FinalizationRegistry === "undefined"
+      ? undefined
+      : new FinalizationRegistry<string>((eventName) => {
+          this.remove(eventName);
+        });
+
+  enable(descriptor: CustomEventsDescriptorState) {
+    if (typeof window === "undefined") return;
+
+    for (let type of descriptor.eventTypes) {
+      let eventName = getEventName(descriptor, type);
+      if (this.#listeners.has(eventName)) continue;
+
+      let controller = new AbortController();
+      let descriptorRef = new WeakRef(descriptor);
+      this.#listeners.set(eventName, {
+        controller,
+        descriptor: descriptorRef,
+      });
+      this.#finalizer?.register(descriptor, eventName);
+
+      window.addEventListener(
+        eventName,
+        (event) => {
+          if (!(event instanceof CustomEvent)) return;
+
+          let listener = this.#listeners.get(eventName);
+          let descriptor = listener?.descriptor.deref();
+          if (!descriptor) {
+            this.remove(eventName);
+            return;
+          }
+
+          processCustomEventsEvent(event, descriptor);
+        },
+        { signal: controller.signal },
+      );
+    }
+  }
+
+  remove(eventName: string) {
+    let listener = this.#listeners.get(eventName);
+    if (!listener) return;
+    listener.controller.abort();
+    this.#listeners.delete(eventName);
+  }
+
+  has(eventName: string) {
+    return this.#listeners.has(eventName);
+  }
+
+  expire(eventName: string) {
+    let listener = this.#listeners.get(eventName);
+    if (!listener) return false;
+    listener.descriptor = {
+      deref: () => undefined,
+    } as WeakRef<CustomEventsDescriptorState>;
+    return true;
+  }
+
+  count() {
+    return this.#listeners.size;
+  }
+}
+
+const windowBridge = new WindowBridge();
 
 function createCustomEventsOwnerId() {
   customEventsOwnerId += 1;
@@ -503,7 +893,7 @@ function eventPathIncludes(event: Event, target: EventTarget) {
   return event.composedPath().includes(target);
 }
 
-function shouldForwardToHost(
+function shouldBridgeEventToElement(
   event: Event,
   element: Element | undefined,
 ): element is Element {
@@ -513,293 +903,42 @@ function shouldForwardToHost(
   return true;
 }
 
-function addCustomEventsRegisteredHost(target: EventTarget, owner: symbol) {
-  let hosts = customEventRegisteredHosts.get(owner);
-  if (!hosts) {
-    hosts = new Set();
-    customEventRegisteredHosts.set(owner, hosts);
-  }
-  hosts.add(new WeakRef(target));
-  notifyCustomEventsHost(owner);
-  notifyCustomEventsHostSoon(owner);
+// Event type strings and known event types
+//
+// Descriptor event type strings are globally unique, so descriptor-owned events
+// can be forwarded or processed without colliding with browser events or
+// another CustomEvents instance. Known event types are discovered lazily through
+// proxy property access and event factory calls.
+function getEventName(descriptor: CustomEventsDescriptorState, type: string) {
+  return `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:${type}`;
 }
 
-function removeCustomEventsRegisteredHost(target: EventTarget, owner: symbol) {
-  let hosts = customEventRegisteredHosts.get(owner);
-  if (!hosts) return;
-
-  for (let host of hosts) {
-    let registeredTarget = host.deref();
-    if (!registeredTarget || registeredTarget === target) {
-      hosts.delete(host);
-      if (registeredTarget === target) break;
-    }
-  }
-  if (!hosts.size) {
-    customEventRegisteredHosts.delete(owner);
-  }
-  notifyCustomEventsHost(owner);
-  notifyCustomEventsHostSoon(owner);
-}
-
-function forEachCustomEventsRegisteredHost(
-  owner: symbol,
-  callback: (target: EventTarget) => void,
-) {
-  let hosts = customEventRegisteredHosts.get(owner);
-  if (!hosts) return;
-
-  for (let host of hosts) {
-    let target = host.deref();
-    if (!target) {
-      hosts.delete(host);
-      continue;
-    }
-    callback(target);
-  }
-
-  if (!hosts.size) {
-    customEventRegisteredHosts.delete(owner);
-  }
-}
-
-function getSoleCustomEventsRegisteredHost(owner: symbol) {
-  let hosts = customEventRegisteredHosts.get(owner);
-  if (!hosts) return undefined;
-
-  let soleTarget: EventTarget | undefined;
-  for (let host of hosts) {
-    let target = host.deref();
-    if (!target) {
-      hosts.delete(host);
-      continue;
-    }
-    if (!soleTarget) {
-      soleTarget = target;
-      continue;
-    }
-    if (soleTarget !== target) {
-      return undefined;
-    }
-  }
-
-  if (!hosts.size) {
-    customEventRegisteredHosts.delete(owner);
-  }
-  return soleTarget;
-}
-
-function addCustomEventsHost(element: Element, owner: symbol) {
-  let hosts = customEventHosts.get(element);
-  if (!hosts) {
-    hosts = new Map();
-    customEventHosts.set(element, hosts);
-  }
-  hosts.set(owner, (hosts.get(owner) ?? 0) + 1);
-  addCustomEventsRegisteredHost(element, owner);
-}
-
-function removeCustomEventsHost(element: Element, owner: symbol) {
-  let hosts = customEventHosts.get(element);
-  if (!hosts) return;
-
-  let count = hosts.get(owner) ?? 0;
-  if (count <= 1) {
-    hosts.delete(owner);
-    if (!hosts.size) {
-      customEventHosts.delete(element);
-    }
-    removeCustomEventsHostDetails(element, owner);
-    removeCustomEventsRegisteredHost(element, owner);
-  } else {
-    hosts.set(owner, count - 1);
-  }
-}
-
-function removeCustomEventsHostDetails(target: EventTarget, owner: symbol) {
-  let detailsByOwner = customEventDetails.get(target);
-  if (detailsByOwner) {
-    detailsByOwner.delete(owner);
-    if (!detailsByOwner.size) {
-      customEventDetails.delete(target);
-    }
-  }
-
-  let changeDetailsByOwner = customEventChangeDetails.get(target);
-  if (changeDetailsByOwner) {
-    changeDetailsByOwner.delete(owner);
-    if (!changeDetailsByOwner.size) {
-      customEventChangeDetails.delete(target);
-    }
-  }
-}
-
-function findCustomEventsHost(element: Element | undefined, owner: symbol) {
-  for (
-    let current = element;
-    current;
-    current = current.parentElement ?? undefined
-  ) {
-    if (customEventHosts.get(current)?.has(owner)) return current;
-  }
-  return undefined;
-}
-
-function getDefaultHostTarget(element: Element | undefined, owner: symbol) {
-  return (
-    findCustomEventsHost(element, owner) ??
-    getSoleCustomEventsRegisteredHost(owner) ??
-    (typeof window === "undefined" ? undefined : window)
-  );
-}
-
-function getCustomEventsDetailsTarget(
-  target: EventTarget | undefined,
-  owner: symbol,
-) {
-  if (isElement(target)) {
-    return findCustomEventsHost(target, owner);
-  }
-  return target;
-}
-
-function getCustomEventsDetails(
-  target: EventTarget | undefined,
-  owner: symbol,
-) {
-  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
-  if (!detailsTarget) return customEventDescriptorDetails.get(owner) ?? {};
-
-  return customEventDetails.get(detailsTarget)?.get(owner) ?? {};
-}
-
-function getCustomEventsHostReference(
-  target: EventTarget,
-  owner: symbol,
-) {
-  let event = getCustomEventsChangeDetail(target, owner);
-  let events = getCustomEventsDetails(target, owner);
-  return {
-    latest: event ? { event, events } : undefined,
-  };
-}
-
-function getCustomEventsChangeDetail(
-  target: EventTarget | undefined,
-  owner: symbol,
-) {
-  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
-  if (!detailsTarget) return customEventDescriptorChangeDetails.get(owner);
-
-  return customEventChangeDetails.get(detailsTarget)?.get(owner);
-}
-
-function setCustomEventsDetails(
-  target: EventTarget | undefined,
-  owner: symbol,
-  details: EventObject<EventDetails>,
-) {
-  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
-  if (!detailsTarget) {
-    customEventDescriptorDetails.set(owner, details);
-    return;
-  }
-
-  let detailsByOwner = customEventDetails.get(detailsTarget);
-  if (!detailsByOwner) {
-    detailsByOwner = new Map();
-    customEventDetails.set(detailsTarget, detailsByOwner);
-  }
-  detailsByOwner.set(owner, details);
-}
-
-function setCustomEventsChangeDetail(
-  target: EventTarget | undefined,
-  owner: symbol,
-  detail: ChangeEventDetailFromMap<EventDetails>,
-) {
-  let detailsTarget = getCustomEventsDetailsTarget(target, owner);
-  if (!detailsTarget) {
-    customEventDescriptorChangeDetails.set(owner, detail);
-    return;
-  }
-
-  let detailsByOwner = customEventChangeDetails.get(detailsTarget);
-  if (!detailsByOwner) {
-    detailsByOwner = new Map();
-    customEventChangeDetails.set(detailsTarget, detailsByOwner);
-  }
-  detailsByOwner.set(owner, detail);
-}
-
-function updateCustomEventsDetails(
-  target: EventTarget | undefined,
-  owner: symbol | undefined,
-  entries: Array<[string, unknown]>,
-) {
-  let patchDetail = createCustomEventChangeDetail(entries);
-  if (!owner) return patchDetail;
-
-  let current = getCustomEventsDetails(target, owner);
-  let details: EventObject<EventDetails> = { ...current };
-  for (let [type, detail] of entries) {
-    details[type] = detail;
-  }
-  let changeDetail = createCustomEventChangeDetail(entries, details);
-  setCustomEventsDetails(target, owner, details);
-  setCustomEventsChangeDetail(target, owner, changeDetail);
-  return changeDetail;
-}
-
-function notifyCustomEventsHost(owner: symbol) {
-  for (let listener of customEventHostListeners.get(owner) ?? []) {
-    listener();
-  }
-}
-
-function notifyCustomEventsHostSoon(owner: symbol) {
-  queueMicrotask(() => notifyCustomEventsHost(owner));
-}
-
-function subscribeCustomEventsHost(owner: symbol, listener: () => void) {
-  let listeners = customEventHostListeners.get(owner);
-  if (!listeners) {
-    listeners = new Set();
-    customEventHostListeners.set(owner, listeners);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-    if (!listeners.size) {
-      customEventHostListeners.delete(owner);
-    }
-  };
-}
-
-function getRuntimeEventName(runtime: CustomEventsRuntime, type: string) {
-  return `${CUSTOM_EVENTS_EVENT_PREFIX}:${runtime.ownerId}:${type}`;
-}
-
-function getRuntimeEventType(runtime: CustomEventsRuntime, eventName: string) {
-  let prefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${runtime.ownerId}:`;
+function getEventType(descriptor: CustomEventsDescriptorState, eventName: string) {
+  let prefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:`;
   if (!eventName.startsWith(prefix)) return undefined;
   return eventName.slice(prefix.length);
 }
 
-function addRuntimeEventType(runtime: CustomEventsRuntime, type: string) {
-  if (runtime.eventTypes.has(type)) return;
-  runtime.eventTypes.add(type);
-  for (let listener of runtime.eventTypeListeners) listener();
+function addEventType(descriptor: CustomEventsDescriptorState, type: string) {
+  if (descriptor.eventTypes.has(type)) return;
+  descriptor.eventTypes.add(type);
+  for (let listener of descriptor.typeListeners) listener();
 }
 
-function subscribeRuntimeEventTypes(
-  runtime: CustomEventsRuntime,
+function subscribeEventTypes(
+  descriptor: CustomEventsDescriptorState,
   listener: () => void,
 ) {
-  runtime.eventTypeListeners.add(listener);
-  return () => runtime.eventTypeListeners.delete(listener);
+  descriptor.typeListeners.add(listener);
+  return () => descriptor.typeListeners.delete(listener);
 }
 
+// Change detail helpers
+//
+// Every source event derives a change event. A source change event behaves as a
+// batch: it records all provided details and expands into individual product
+// events. The change detail always contains the current patch in detail and the
+// accumulated memory in details.
 function createCustomEventChangeDetail(
   entries: Array<[string, unknown]>,
   details = getEntriesObject(entries),
@@ -853,6 +992,11 @@ function getEventInit(init: EventInit | undefined): EventInit {
   };
 }
 
+// Event construction and metadata
+//
+// Event factory methods return normal CustomEvent instances for native
+// dispatchEvent(). Metadata is attached with symbols so product code sees a
+// normal event object plus optional public source/originTarget properties.
 type CustomEventMetadata = {
   hasSource: boolean;
   kind: CustomEventKind;
@@ -906,44 +1050,56 @@ function dispatchSingleCustomEvent(
   );
 }
 
+// Initial event projection
+//
+// Initial values are descriptor-created Event objects. A single product event
+// can initialize a change renderer, and a change initial event can initialize
+// the matching product-event renderer. Initial projection never dispatches.
 function createInitialEvent(
   type: string,
-  runtime: CustomEventsRuntime,
-  initial: unknown,
+  descriptor: CustomEventsDescriptorState,
+  initial: Event | undefined,
 ) {
-  let eventName = getRuntimeEventName(runtime, type);
-  if (initial instanceof CustomEvent) {
-    if (initial.type === eventName) {
-      return initial;
-    }
+  if (!(initial instanceof CustomEvent)) return undefined;
+
+  let eventName = getEventName(descriptor, type);
+  let initialType = getEventType(descriptor, initial.type);
+  if (!initialType) return undefined;
+
+  if (initialType === type) {
+    return initial;
   }
 
-  if (!initial || typeof initial !== "object") return undefined;
-
-  let initialMap = initial as Record<string, unknown>;
-  if (Object.hasOwn(initialMap, type)) {
+  if (type === CHANGE_EVENT_NAME) {
     return new CustomEvent(eventName, {
-      detail: initialMap[type],
+      detail: createCustomEventChangeDetail([
+        [initialType, initial.detail],
+      ]),
     });
   }
 
-  if (type !== CHANGE_EVENT_NAME) return undefined;
+  if (initialType !== CHANGE_EVENT_NAME) return undefined;
 
-  let entries = Object.entries(initialMap).filter(
-    ([eventType]) => eventType !== CHANGE_EVENT_NAME,
-  );
-  if (!entries.length) return undefined;
+  let detail = initial.detail as ChangeEventDetailFromMap<EventDetails>;
+  if (Array.isArray(detail.type)) {
+    if (!Object.hasOwn(detail.details, type)) return undefined;
+    return new CustomEvent(eventName, {
+      detail: detail.details[type],
+    });
+  }
+
+  if (detail.type !== type) return undefined;
 
   return new CustomEvent(eventName, {
-    detail: createCustomEventChangeDetail(entries),
+    detail: detail.detail,
   });
 }
 
 function getInitialEventEntriesFromEvent(
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
   initial: CustomEvent,
 ) {
-  let type = getRuntimeEventType(runtime, initial.type);
+  let type = getEventType(descriptor, initial.type);
   if (!type) return undefined;
   if (type !== CHANGE_EVENT_NAME) {
     return [[type, initial.detail]] satisfies Array<[string, unknown]>;
@@ -958,49 +1114,20 @@ function getInitialEventEntriesFromEvent(
   return [[detail.type, detail.detail]] satisfies Array<[string, unknown]>;
 }
 
-function getInitialEventEntriesFromValue(runtime: CustomEventsRuntime) {
-  let initial = runtime.initial;
-  if (!initial) return undefined;
-
+function getInitialEventEntries(descriptor: CustomEventsDescriptorState) {
+  let initial = descriptor.initial;
   if (initial instanceof CustomEvent) {
-    return getInitialEventEntriesFromEvent(runtime, initial);
+    return getInitialEventEntriesFromEvent(descriptor, initial);
   }
-
-  if (initial instanceof Event) return undefined;
-  if (!initial || typeof initial !== "object") return undefined;
-  return resolveCustomEventsDispatchEntries(initial as EventDetails);
+  return undefined;
 }
 
-function getInitialEventEntries(
-  target: EventTarget | undefined,
-  runtime: CustomEventsRuntime,
-) {
-  return getInitialEventEntriesFromValue(runtime);
-}
-
-function seedInitialCustomEventsDetails(
-  target: EventTarget | undefined,
-  runtime: CustomEventsRuntime,
-) {
-  let entries = getInitialEventEntries(target, runtime);
-  if (!entries?.length) return;
-  updateCustomEventsDetails(
-    target,
-    runtime.owner,
-    entries,
-  );
-}
-
-function seedInitialCustomEventsDescriptorDetails(runtime: CustomEventsRuntime) {
-  seedInitialCustomEventsDetails(undefined, runtime);
-}
-
-function seedInitialCustomEventsRegisteredHosts(runtime: CustomEventsRuntime) {
-  forEachCustomEventsRegisteredHost(runtime.owner, (target) => {
-    seedInitialCustomEventsDetails(target, runtime);
-  });
-}
-
+// Event processing
+//
+// Source events are user-dispatched events. Processing a source event records
+// memory and dispatches the derived event(s) back on the original event target.
+// Derived events are marked by kind so they never recursively derive more
+// events.
 type CustomEventsDispatchTargetRegistration = {
   count: number;
   cleanup: () => void;
@@ -1022,7 +1149,7 @@ function getCustomEventMetadata(event: Event): CustomEventMetadata {
   let ownedEvent = event as OwnedEvent;
   return {
     hasSource: Object.hasOwn(event, "source"),
-    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "granular",
+    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "source-event",
     owner: ownedEvent[CUSTOM_EVENT_OWNER],
     origin: ownedEvent[CUSTOM_EVENT_ORIGIN],
     source: ownedEvent.source,
@@ -1031,7 +1158,7 @@ function getCustomEventMetadata(event: Event): CustomEventMetadata {
 
 function dispatchOwnedCustomEvent(
   target: EventTarget,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
   type: string,
   init: EventInit,
   detail: unknown,
@@ -1039,31 +1166,43 @@ function dispatchOwnedCustomEvent(
 ) {
   return dispatchSingleCustomEvent(
     target,
-    getRuntimeEventName(runtime, type),
+    getEventName(descriptor, type),
     init,
     detail,
     {
       ...metadata,
-      owner: runtime.owner,
+      owner: descriptor.owner,
     },
   );
 }
 
+function dispatchLocalTypedEvent(
+  target: EventTarget,
+  type: string,
+  init: EventInit,
+  detail: unknown,
+  metadata: CustomEventMetadata,
+) {
+  if (isElement(target)) return true;
+  if (typeof window !== "undefined" && target === window) return true;
+  return dispatchSingleCustomEvent(target, type, init, detail, metadata);
+}
+
 function dispatchDerivedChangeEvent(
   target: EventTarget,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
   entries: Array<[string, unknown]>,
   init: EventInit,
   metadata: CustomEventMetadata,
 ) {
-  let changeDetail = updateCustomEventsDetails(
+  let changeDetail = hostRegistry.record(
     target,
-    runtime.owner,
+    descriptor.owner,
     entries,
   );
-  return dispatchOwnedCustomEvent(
+  let result = dispatchOwnedCustomEvent(
     target,
-    runtime,
+    descriptor,
     CHANGE_EVENT_NAME,
     init,
     changeDetail,
@@ -1073,11 +1212,23 @@ function dispatchDerivedChangeEvent(
       origin: target,
     },
   );
+  return dispatchLocalTypedEvent(
+    target,
+    CHANGE_EVENT_NAME,
+    init,
+    changeDetail,
+    {
+      ...metadata,
+      kind: "derived-change",
+      owner: descriptor.owner,
+      origin: target,
+    },
+  ) && result;
 }
 
 function dispatchExpandedGranularEvents(
   target: EventTarget,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
   entries: Array<[string, unknown]>,
   init: EventInit,
   metadata: CustomEventMetadata,
@@ -1085,9 +1236,16 @@ function dispatchExpandedGranularEvents(
   let result = true;
   for (let [type, detail] of entries) {
     result =
-      dispatchOwnedCustomEvent(target, runtime, type, init, detail, {
+      dispatchOwnedCustomEvent(target, descriptor, type, init, detail, {
         ...metadata,
-        kind: "expanded-granular",
+        kind: "derived-event",
+        origin: target,
+      }) && result;
+    result =
+      dispatchLocalTypedEvent(target, type, init, detail, {
+        ...metadata,
+        kind: "derived-event",
+        owner: descriptor.owner,
         origin: target,
       }) && result;
   }
@@ -1096,13 +1254,13 @@ function dispatchExpandedGranularEvents(
 
 function processCustomEventsEvent(
   event: CustomEvent,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
 ) {
-  if (!ownsEvent(event, runtime.owner)) return true;
+  if (!ownsEvent(event, descriptor.owner)) return true;
   if (hasProcessedCustomEvent(event)) return true;
 
   let kind = getCustomEventKind(event);
-  if (kind !== "granular" && kind !== "batch-change") return true;
+  if (kind !== "source-event" && kind !== "source-change") return true;
 
   let origin = event.target instanceof EventTarget ? event.target : undefined;
   if (!origin) return true;
@@ -1111,12 +1269,12 @@ function processCustomEventsEvent(
   let metadata = getCustomEventMetadata(event);
   let init = getEventInit(event);
 
-  if (kind === "granular") {
-    let type = getRuntimeEventType(runtime, event.type);
+  if (kind === "source-event") {
+    let type = getEventType(descriptor, event.type);
     if (!type || type === CHANGE_EVENT_NAME) return true;
     let result = dispatchDerivedChangeEvent(
       origin,
-      runtime,
+      descriptor,
       [[type, event.detail]],
       init,
       metadata,
@@ -1131,14 +1289,27 @@ function processCustomEventsEvent(
     : ([[detail.type, detail.detail]] satisfies Array<[string, unknown]>);
   if (!entries.length) return true;
 
-  updateCustomEventsDetails(origin, runtime.owner, entries);
+  let changeDetail = hostRegistry.record(origin, descriptor.owner, entries);
+  let localChangeResult = dispatchLocalTypedEvent(
+    origin,
+    CHANGE_EVENT_NAME,
+    init,
+    changeDetail,
+    {
+      ...metadata,
+      kind: "derived-change",
+      owner: descriptor.owner,
+      origin,
+    },
+  );
   let result = dispatchExpandedGranularEvents(
     origin,
-    runtime,
+    descriptor,
     entries,
     init,
     metadata,
   );
+  result = localChangeResult && result;
   if (!result) event.preventDefault();
   return result;
 }
@@ -1148,9 +1319,15 @@ let customEventsDispatchTargetRegistrations = new WeakMap<
   Map<symbol, CustomEventsDispatchTargetRegistration>
 >();
 
+// Dispatch-target registration
+//
+// A host target, non-DOM target, or window can process source events for one
+// descriptor. Registrations are reference-counted per target/descriptor pair;
+// individual event listeners are refreshed when the descriptor learns new event
+// types.
 function registerCustomEventsDispatchTarget(
   target: EventTarget,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
   options?: { hosted?: boolean },
 ) {
   let registrations = customEventsDispatchTargetRegistrations.get(target);
@@ -1159,7 +1336,7 @@ function registerCustomEventsDispatchTarget(
     customEventsDispatchTargetRegistrations.set(target, registrations);
   }
 
-  let registration = registrations.get(runtime.owner);
+  let registration = registrations.get(descriptor.owner);
   if (registration) {
     registration.count += 1;
     let activeRegistration = registration;
@@ -1167,7 +1344,7 @@ function registerCustomEventsDispatchTarget(
       activeRegistration.count -= 1;
       if (activeRegistration.count > 0) return;
       activeRegistration.cleanup();
-      registrations.delete(runtime.owner);
+      registrations.delete(descriptor.owner);
     };
   }
 
@@ -1178,22 +1355,22 @@ function registerCustomEventsDispatchTarget(
     controller?.abort();
     controller = new AbortController();
     let signal = controller.signal;
-    for (let type of runtime.eventTypes) {
+    for (let type of descriptor.eventTypes) {
       target.addEventListener(
-        getRuntimeEventName(runtime, type),
+        getEventName(descriptor, type),
         (event) => {
           if (!(event instanceof CustomEvent)) return;
           if (options?.hosted && event.composed !== true) {
             event.stopPropagation();
           }
-          processCustomEventsEvent(event, runtime);
+          processCustomEventsEvent(event, descriptor);
         },
         { signal },
       );
     }
   }
 
-  unsubscribeEventTypes = subscribeRuntimeEventTypes(runtime, listen);
+  unsubscribeEventTypes = subscribeEventTypes(descriptor, listen);
   listen();
 
   registration = {
@@ -1203,23 +1380,41 @@ function registerCustomEventsDispatchTarget(
       controller?.abort();
     },
   };
-  registrations.set(runtime.owner, registration);
+  registrations.set(descriptor.owner, registration);
 
   return () => {
     registration.count -= 1;
     if (registration.count > 0) return;
     registration.cleanup();
-    registrations.delete(runtime.owner);
+    registrations.delete(descriptor.owner);
   };
 }
 
-function enableWindowTarget(runtime: CustomEventsRuntime) {
-  if (typeof window === "undefined") return () => {};
-  if (enabledWindowTargetOwners.has(runtime.owner)) return () => {};
-  enabledWindowTargetOwners.add(runtime.owner);
-  return registerCustomEventsDispatchTarget(window, runtime);
+function enableWindowTarget(descriptor: CustomEventsDescriptorState) {
+  windowBridge.enable(descriptor);
 }
 
+export const __customEventsTest = {
+  hasWindowListener(eventName: string) {
+    return windowBridge.has(eventName);
+  },
+  expireWindowListener(eventName: string) {
+    return windowBridge.expire(eventName);
+  },
+  removeWindowListener(eventName: string) {
+    windowBridge.remove(eventName);
+  },
+  windowListenerCount() {
+    return windowBridge.count();
+  },
+};
+
+// Type guards and cloning helpers
+//
+// These helpers keep Remix handle detection, CustomEvents init detection, and
+// bridged event creation local to the implementation. Bridged events are
+// non-bubbling clones dispatched on a mixin host so Remix on(...) listeners see
+// the host as currentTarget.
 function isRemixHandle(value: unknown): value is Handle<any> {
   return (
     value !== null &&
@@ -1243,7 +1438,7 @@ function isCustomEventsInit(value: unknown): value is CustomEventsInit {
   );
 }
 
-function cloneCustomEvent(event: Event) {
+function createBridgedEvent(event: Event) {
   let clone = new CustomEvent(event.type, {
     bubbles: false,
     cancelable: event.cancelable,
@@ -1253,7 +1448,7 @@ function cloneCustomEvent(event: Event) {
   let ownedEvent = event as OwnedEvent;
   attachCustomEventMetadata(clone, {
     hasSource: Object.hasOwn(event, "source"),
-    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "granular",
+    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "source-event",
     owner: ownedEvent[CUSTOM_EVENT_OWNER],
     origin: ownedEvent[CUSTOM_EVENT_ORIGIN],
     source: ownedEvent.source,
@@ -1275,16 +1470,22 @@ function defineEventValue(
   });
 }
 
-const forwardRuntimeEventsMixin = createMixin<
+// Remix mixins
+//
+// listen() bridges descriptor events from the nearest host/window to the element
+// that owns the mixin. It depends on host discovery for default targeting and
+// on event-type subscriptions so newly discovered product events are bridged
+// without remounting user elements.
+const forwardEventsMixin = createMixin<
   Element,
   [
     target: EventTarget | undefined,
-    runtime: CustomEventsRuntime,
+    descriptor: CustomEventsDescriptorState,
   ]
 >((handle) => {
   let currentElement: Element | undefined;
   let currentExplicitTarget: EventTarget | undefined;
-  let currentRuntime: CustomEventsRuntime | undefined;
+  let currentState: CustomEventsDescriptorState | undefined;
   let controller: AbortController | undefined;
   let unsubscribeHost: (() => void) | undefined;
   let unsubscribeEventTypes: (() => void) | undefined;
@@ -1293,16 +1494,16 @@ const forwardRuntimeEventsMixin = createMixin<
     unsubscribeHost?.();
     unsubscribeHost = undefined;
 
-    if (!currentExplicitTarget && currentRuntime) {
-      unsubscribeHost = subscribeCustomEventsHost(currentRuntime.owner, listen);
+    if (!currentExplicitTarget && currentState) {
+      unsubscribeHost = hostRegistry.subscribe(currentState.owner, listen);
     }
   }
 
   function syncEventTypeSubscription() {
     unsubscribeEventTypes?.();
     unsubscribeEventTypes = undefined;
-    if (currentRuntime) {
-      unsubscribeEventTypes = subscribeRuntimeEventTypes(currentRuntime, listen);
+    if (currentState) {
+      unsubscribeEventTypes = subscribeEventTypes(currentState, listen);
     }
   }
 
@@ -1311,23 +1512,23 @@ const forwardRuntimeEventsMixin = createMixin<
     controller = undefined;
     let target =
       currentExplicitTarget ??
-      (currentRuntime
-        ? getDefaultHostTarget(currentElement, currentRuntime.owner)
+      (currentState
+        ? hostRegistry.getDefaultTarget(currentElement, currentState.owner)
         : undefined);
 
-    if (!currentElement || !target || !currentRuntime) return;
+    if (!currentElement || !target || !currentState) return;
 
-    let runtime = currentRuntime;
+    let descriptor = currentState;
     controller = new AbortController();
     let signal = controller.signal;
-    for (let type of runtime.eventTypes) {
+    for (let type of descriptor.eventTypes) {
       target.addEventListener(
-        getRuntimeEventName(runtime, type),
+        getEventName(descriptor, type),
         (event) => {
-          if (!ownsEvent(event, runtime.owner)) return;
+          if (!ownsEvent(event, descriptor.owner)) return;
           let element = currentElement;
-          if (!shouldForwardToHost(event, element)) return;
-          element.dispatchEvent(cloneCustomEvent(event));
+          if (!shouldBridgeEventToElement(event, element)) return;
+          element.dispatchEvent(createBridgedEvent(event));
         },
         { signal },
       );
@@ -1356,13 +1557,13 @@ const forwardRuntimeEventsMixin = createMixin<
     currentElement = undefined;
   });
 
-  return (target, runtime) => {
+  return (target, descriptor) => {
     let needsListen =
       currentExplicitTarget !== target ||
-      currentRuntime !== runtime;
+      currentState !== descriptor;
 
     currentExplicitTarget = target;
-    currentRuntime = runtime;
+    currentState = descriptor;
 
     if (needsListen) {
       syncHostSubscription();
@@ -1374,26 +1575,57 @@ const forwardRuntimeEventsMixin = createMixin<
   };
 });
 
+const customEventsOnMixin = createMixin<
+  Element,
+  [
+    target: EventTarget | undefined,
+    descriptor: CustomEventsDescriptorState,
+    type: string,
+    listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
+  ]
+>((handle) => {
+  return (target, descriptor, type, listener) => {
+    addEventType(descriptor, type);
+    return (
+      <handle.element
+        mix={[
+          forwardEventsMixin(target, descriptor),
+          remixOn(
+            getEventName(descriptor, type) as AnyCustomEventsName,
+            listener as (event: CustomEventWithMetadata<any>, signal: AbortSignal) => void,
+          ),
+        ]}
+      />
+    );
+  };
+});
+
+// Event components
+//
+// Descriptor event components render from the latest matching event. They depend
+// on host discovery to choose a default target and on initial event projection
+// for SSR/first-render output. A hidden marker discovers the parent host element;
+// rendering itself remains owned by Remix.
 function createCustomEventsOnElement<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 >(
   type: Type,
-  runtime: CustomEventsRuntime,
+  descriptor: CustomEventsDescriptorState,
 ): CustomEventsOnElement<Events, Type> {
-  addRuntimeEventType(runtime, type);
+  addEventType(descriptor, type);
   return function CustomEventsOnElement(
     handle: Handle<{
-      initial?: EventObject<Events> | Event;
+      initial?: Event;
       target?: EventTarget;
       render: (event: CustomEventsEvent<Events, Type>) => RemixNode;
     }>,
   ) {
-    let eventName = getRuntimeEventName(runtime, type);
+    let eventName = getEventName(descriptor, type);
     let initialEvent = createInitialEvent(
       type,
-      runtime,
-      handle.props.initial ?? runtime.initial,
+      descriptor,
+      handle.props.initial ?? descriptor.initial,
     );
     let hostElement: HTMLElement | undefined;
     let currentEvent: Event | undefined = initialEvent;
@@ -1402,13 +1634,13 @@ function createCustomEventsOnElement<
     let unsubscribeHost: (() => void) | undefined;
 
     function canRender(event: Event) {
-      return event === initialEvent || ownsEvent(event, runtime.owner);
+      return event === initialEvent || ownsEvent(event, descriptor.owner);
     }
 
     function syncDefaultTarget() {
       syncTarget(
         handle.props.target ??
-          getDefaultHostTarget(hostElement, runtime.owner),
+          hostRegistry.getDefaultTarget(hostElement, descriptor.owner),
       );
     }
 
@@ -1417,8 +1649,8 @@ function createCustomEventsOnElement<
       unsubscribeHost = undefined;
 
       if (!handle.props.target) {
-        unsubscribeHost = subscribeCustomEventsHost(
-          runtime.owner,
+        unsubscribeHost = hostRegistry.subscribe(
+          descriptor.owner,
           syncDefaultTarget,
         );
       }
@@ -1528,14 +1760,20 @@ export type CustomEvents<Events extends EventDetails> =
 export const CustomEvents: CustomEventsConstructor =
   CustomEventsBase as unknown as CustomEventsConstructor;
 
+// Descriptor construction
+//
+// CustomEvents instances are proxy-backed descriptors. Property access creates
+// event factory/render members lazily, while types exposes stable event-name
+// strings for Remix on(...). The proxy keeps the public API type-shaped without
+// requiring users to duplicate event names at runtime.
 function createCustomEventsDescriptor<
   Events extends EventDetails,
 >(): CustomEventsDescriptor<Events> {
-  let runtime: CustomEventsRuntime = {
+  let state: CustomEventsDescriptorState = {
     owner: Symbol("customEvents.descriptor"),
     ownerId: createCustomEventsOwnerId(),
     eventTypes: new Set(),
-    eventTypeListeners: new Set(),
+    typeListeners: new Set(),
   };
 
   function createAbortedEvent() {
@@ -1551,17 +1789,17 @@ function createCustomEventsDescriptor<
     }
 
     let entries = resolveCustomEventsDispatchEntries(events);
-    for (let [type] of entries) addRuntimeEventType(runtime, type);
-    addRuntimeEventType(runtime, CHANGE_EVENT_NAME);
-    enableWindowTarget(runtime);
+    for (let [type] of entries) addEventType(state, type);
+    addEventType(state, CHANGE_EVENT_NAME);
+    enableWindowTarget(state);
     return createOwnedCustomEvent(
-      getRuntimeEventName(runtime, CHANGE_EVENT_NAME),
+      getEventName(state, CHANGE_EVENT_NAME),
       getEventInit(init),
       createCustomEventChangeDetail(entries),
       {
         hasSource: Boolean(init && hasDispatchSource(init)),
-        kind: "batch-change",
-        owner: runtime.owner,
+        kind: "source-change",
+        owner: state.owner,
         source: init?.source,
       },
     );
@@ -1574,17 +1812,17 @@ function createCustomEventsDescriptor<
   ) {
     if (init?.signal?.aborted) return createAbortedEvent();
 
-    addRuntimeEventType(runtime, type);
-    addRuntimeEventType(runtime, CHANGE_EVENT_NAME);
-    enableWindowTarget(runtime);
+    addEventType(state, type);
+    addEventType(state, CHANGE_EVENT_NAME);
+    enableWindowTarget(state);
     return createOwnedCustomEvent(
-      getRuntimeEventName(runtime, type),
+      getEventName(state, type),
       getEventInit(init),
       detail,
       {
         hasSource: Boolean(init && hasDispatchSource(init)),
-        kind: "granular",
-        owner: runtime.owner,
+        kind: "source-event",
+        owner: state.owner,
         source: init?.source,
       },
     );
@@ -1601,21 +1839,21 @@ function createCustomEventsDescriptor<
     let cleanupHost: () => void;
     let cleanupDispatchTarget = registerCustomEventsDispatchTarget(
       target,
-      runtime,
+      state,
       { hosted: isElement(target) },
     );
     if (isElement(target)) {
-      addCustomEventsHost(target, runtime.owner);
-      seedInitialCustomEventsDetails(target, runtime);
+      hostRegistry.addHost(target, state.owner);
+      hostRegistry.seedInitialMemory(target, state);
       cleanupHost = () => {
-        removeCustomEventsHost(target, runtime.owner);
+        hostRegistry.removeHost(target, state.owner);
       };
     } else {
-      addCustomEventsRegisteredHost(target, runtime.owner);
-      seedInitialCustomEventsDetails(target, runtime);
+      hostRegistry.addRegisteredHost(target, state.owner);
+      hostRegistry.seedInitialMemory(target, state);
       cleanupHost = () => {
-        removeCustomEventsRegisteredHost(target, runtime.owner);
-        removeCustomEventsHostDetails(target, runtime.owner);
+        hostRegistry.removeRegisteredHost(target, state.owner);
+        hostRegistry.removeMemory(target, state.owner);
       };
     }
 
@@ -1632,13 +1870,13 @@ function createCustomEventsDescriptor<
   }
 
   function getEventMember(property: string) {
-    addRuntimeEventType(runtime, property);
+    addEventType(state, property);
     let member = eventMembers.get(property);
     if (member) return member;
 
     let element = createCustomEventsOnElement(
       property as CustomEventsEventType<Events>,
-      runtime,
+      state,
     );
     member =
       property === CHANGE_EVENT_NAME
@@ -1677,33 +1915,46 @@ function createCustomEventsDescriptor<
     return member;
   }
 
-  let names = new Proxy(
+  let types = new Proxy(
     {},
     {
       get(_, property) {
         if (typeof property !== "string") return undefined;
-        addRuntimeEventType(runtime, property);
-        return getRuntimeEventName(runtime, property);
+        addEventType(state, property);
+        return getEventName(state, property);
       },
     },
-  ) as CustomEventsNames<Events>;
+  ) as CustomEventsTypes<Events>;
 
   let listen = ((options?: CustomEventsListenOptions) =>
-    forwardRuntimeEventsMixin(
+    forwardEventsMixin(
       options?.target,
-      runtime,
+      state,
     )) as CustomEventsListenFunction<Events>;
+
+  let on = ((
+    type: CustomEventsEventType<Events>,
+    listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
+    options?: CustomEventsListenOptions,
+  ) =>
+    customEventsOnMixin(
+      options?.target,
+      state,
+      type,
+      listener,
+    )) as CustomEventsOnFunction<Events>;
 
   let proxy: CustomEventsDescriptor<Events>;
   let descriptor = {
     map: undefined,
     listen,
-    names,
-    seedInitialEvent(event: CustomEventsInitial<Events>) {
-      runtime.initial = event as CustomEventsInitial<EventDetails>;
-      seedInitialCustomEventsDescriptorDetails(runtime);
-      seedInitialCustomEventsRegisteredHosts(runtime);
-      notifyCustomEventsHostSoon(runtime.owner);
+    on,
+    types,
+    seed(event: CustomEventsInitial<Events>) {
+      state.initial = event as CustomEventsInitial<EventDetails>;
+      hostRegistry.seedInitialDescriptorMemory(state);
+      hostRegistry.seedInitialRegisteredHosts(state);
+      hostRegistry.notifySoon(state.owner);
     },
     setHost(target: EventTarget, signal?: AbortSignal) {
       return registerHost(target, signal);
@@ -1712,9 +1963,9 @@ function createCustomEventsDescriptor<
       return ref((target, signal) => registerHost(target, signal));
     },
     getHost(target: EventTarget) {
-      return getCustomEventsHostReference(
+      return hostRegistry.getReference(
         target,
-        runtime.owner,
+        state.owner,
       ) as CustomEventsHostReference<Events>;
     },
   };
