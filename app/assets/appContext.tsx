@@ -26,7 +26,7 @@ class AppContext extends TypedEventTarget<
   }
 
   get value() {
-    return this.events.getHost(this).latest?.events as AppContextValue;
+    return this.events.getHost(this).latest?.events!
   }
 
   patch(value: Partial<AppContextValue>) {

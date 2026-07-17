@@ -28,23 +28,20 @@ class GestureEvents extends CustomEvents<{
   moved: { x: number; y: number };
   released: null;
 }> {}
-type GestureEventMap = GestureEvents["map"];
 
 class PlayerEvents extends CustomEvents<{
   loaded: { track: string };
   played: { track: string };
   stopped: null;
 }> {}
-type PlayerEventMap = PlayerEvents["map"];
 
 class ScopedActionEvents extends CustomEvents<{
   actionSubmitted: null;
   actionSucceeded: null;
   actionErrored: { error: Error };
 }> {}
-type ScopedActionEventMap = ScopedActionEvents["map"];
 
-type AppContext = {
+type AppContextValue = {
   user: { name: string; age: number } | null;
   settings: {
     theme: "dark" | "light" | "system";
@@ -52,27 +49,27 @@ type AppContext = {
   };
 };
 
-class TestAppContext extends TypedEventTarget<CustomEvents<AppContext>["map"]> {
-  events = new CustomEvents<AppContext>();
+class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map"]> {
+  events = new CustomEvents<AppContextValue>();
 
-  constructor(initial: Partial<AppContext>) {
+  constructor(initial: Partial<AppContextValue>) {
     super();
     this.events.seed(this.events.change(initial));
     this.events.setHost(this);
   }
 
-  get value(): AppContext {
-    return this.events.getHost(this).latest?.events as AppContext;
+  get value(): AppContextValue {
+    return this.events.getHost(this).latest?.events as AppContextValue;
   }
 
-  patch(value: Partial<AppContext>) {
+  patch(value: Partial<AppContextValue>) {
     this.dispatchEvent(this.events.change(value));
   }
 }
 
 let gestureEvents = new GestureEvents();
 
-const gestureMixin = createMixin<HTMLElement>((handle) => {
+const gestureMixin = Object.assign(createMixin<HTMLElement>((handle) => {
   let target: HTMLElement | null = null;
 
   handle.addEventListener("insert", (event) => {
@@ -99,10 +96,10 @@ const gestureMixin = createMixin<HTMLElement>((handle) => {
       ]}
     />
   );
-});
+}), gestureEvents);
 
 function GesturePad(handle: Handle) {
-  let events: GestureEventMap["change"]["detail"][] = [];
+  let events: GestureEvents["map"]["change"]["detail"][] = [];
 
   return () => (
     <button
@@ -110,7 +107,7 @@ function GesturePad(handle: Handle) {
       data-testid="gesture-pad"
       mix={[
         gestureMixin(),
-        gestureEvents.on("change", ({ detail }) => {
+        gestureMixin.on("change", ({ detail }) => {
           events.push(detail);
           handle.update();
         }),
@@ -121,7 +118,7 @@ function GesturePad(handle: Handle) {
   );
 }
 
-class TestPlayer extends TypedEventTarget<PlayerEventMap> {
+class TestPlayer extends TypedEventTarget<PlayerEvents["map"]> {
   #track: string | null = null;
   events = new PlayerEvents();
 
@@ -149,11 +146,11 @@ class TestPlayer extends TypedEventTarget<PlayerEventMap> {
 
 function PlayerUI(handle: Handle) {
   let player = new TestPlayer(handle.signal);
-  let events: PlayerEventMap["change"]["detail"][] = [];
+  let events: PlayerEvents["map"]["change"]["detail"][] = [];
 
   player.addEventListener(
     player.events.types.change,
-    (({ detail }: PlayerEventMap["change"]) => {
+    (({ detail }: PlayerEvents["map"]["change"]) => {
       events.push(detail);
       handle.update();
     }) as EventListener,
@@ -192,7 +189,7 @@ function ScopedActionForms(handle: Handle) {
 
   let changeStatus =
     (statusFor: "first" | "second") =>
-    ({ detail }: ScopedActionEventMap["change"]) => {
+    ({ detail }: ScopedActionEvents["map"]["change"]) => {
       if (Array.isArray(detail.type)) return;
 
       if (statusFor === "first") {
