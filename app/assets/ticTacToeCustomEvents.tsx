@@ -45,10 +45,14 @@ export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
     let ticTacToeEvents = new CustomEvents<{
-      turn: { result: Result; position: Map<number, Player>; nextPlayer: Player };
+      turn: {
+        result: Result;
+        position: Map<number, Player>;
+        nextPlayer: Player;
+      };
       focus: { cellId: number };
-    }>()
-    let {turn, focus, events} = ticTacToeEvents
+    }>();
+    let { turn, focus, change } = ticTacToeEvents;
     ticTacToeEvents.seedInitialEvent(
       turn({
         result: "Pending",
@@ -90,7 +94,7 @@ export const TicTacToeCustomEvents = clientEntry(
               }
 
               currentTarget.dispatchEvent(
-                events({
+                change({
                   turn: {
                     position: nextPosition,
                     nextPlayer: nextPlayer === "X" ? "O" : "X",
@@ -123,9 +127,7 @@ export const TicTacToeCustomEvents = clientEntry(
                   break;
                 }
               }
-              currentTarget.dispatchEvent(
-                focus({ cellId: nextFreeCellIdx }),
-              );
+              currentTarget.dispatchEvent(focus({ cellId: nextFreeCellIdx }));
             }),
           ]}
         >
@@ -145,22 +147,21 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                ticTacToeEvents.listen(
-                  on("turn", ({ currentTarget, detail }) => {
-                    currentTarget.toggleAttribute(
-                      "disabled",
-                      detail.position.has(index) || detail.result !== "Pending",
-                    );
-                    currentTarget.classList.toggle(
-                      detail.position.get(index)!,
-                      detail.position.has(index),
-                    );
-                  }),
-                  on("focus", ({ detail, currentTarget }) => {
-                    if (detail.cellId !== index) return;
-                    currentTarget.focus();
-                  }),
-                ),
+                ticTacToeEvents.listen(),
+                on(ticTacToeEvents.names.turn, ({ currentTarget, detail }) => {
+                  currentTarget.toggleAttribute(
+                    "disabled",
+                    detail.position.has(index) || detail.result !== "Pending",
+                  );
+                  currentTarget.classList.toggle(
+                    detail.position.get(index)!,
+                    detail.position.has(index),
+                  );
+                }),
+                on(ticTacToeEvents.names.focus, ({ detail, currentTarget }) => {
+                  if (detail.cellId !== index) return;
+                  currentTarget.focus();
+                }),
               ]}
             >
               <ticTacToeEvents.turn
@@ -172,15 +173,14 @@ export const TicTacToeCustomEvents = clientEntry(
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            ticTacToeEvents.listen(
-              on("turn", ({ detail, currentTarget }) => {
-                if (detail.result === "Pending") return;
-                currentTarget.focus();
-              }),
-            ),
+            ticTacToeEvents.listen(),
+            on(ticTacToeEvents.names.turn, ({ detail, currentTarget }) => {
+              if (detail.result === "Pending") return;
+              currentTarget.focus();
+            }),
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                ticTacToeEvents.events({
+                ticTacToeEvents.change({
                   turn: {
                     result: "Pending",
                     position: new Map(),

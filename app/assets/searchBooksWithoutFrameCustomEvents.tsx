@@ -1,4 +1,4 @@
-import { clientEntry, css, on, type Handle } from "remix/ui";
+import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
@@ -12,7 +12,7 @@ let searchEvents = new CustomEvents<{
   errorOccurred: Error;
   queryEmpty: null;
   querySubmitted: { query: string };
-}>()
+}>();
 
 async function fetchBooks(
   query: string,
@@ -77,7 +77,7 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
     }
 
     return () => (
-      <div>
+      <>
         <label>
           Search{" "}
           <input
@@ -106,8 +106,9 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                     : searchEvents.queryEmpty(),
                 );
               }),
-              searchEvents.listen(
-                on("change", ({ currentTarget, detail }, signal) => {
+              on(
+                searchEvents.names.change,
+                ({ currentTarget, detail }, signal) => {
                   currentTarget.classList.toggle(
                     "pending",
                     detail.type === "querySubmitted",
@@ -120,8 +121,9 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                     );
                   }
                   currentTarget.select();
-                }),
+                },
               ),
+              ref((input) => input.dispatchEvent(new InputEvent('input')))
             ]}
           />
         </label>
@@ -166,7 +168,7 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
             }
           }}
         />
-      </div>
+      </>
     );
   },
 );

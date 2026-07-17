@@ -26,7 +26,8 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
   return () => (
     <div
       mix={[
-        todoEvents.listen(on("change", ({ detail }) => console.log(detail))),
+        todoEvents.listen(),
+        on(todoEvents.names.change, ({ detail }) => console.log(detail)),
       ]}
     >
       <AddTodo />

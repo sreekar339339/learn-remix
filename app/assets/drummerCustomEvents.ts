@@ -7,7 +7,7 @@ class DrummerEvents extends CustomEvents<{
   tempo: { tempoBpm: number };
 }> {}
 
-export class Drummer extends TypedEventTarget<DrummerEvents["__eventMap"]> {
+export class Drummer extends TypedEventTarget<DrummerEvents["map"]> {
   #isPlaying = false;
   #tempoBpm = 90;
   events: DrummerEvents;

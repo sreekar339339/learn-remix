@@ -1,66 +1,72 @@
 import {
   createMixin,
   ref,
-  TypedEventTarget,
   type Handle,
   type MixinDescriptor,
   type RemixNode,
 } from "remix/ui";
 
-const CUSTOM_EVENTS_DISPATCH = "rmx:custom-events:dispatch";
+const CUSTOM_EVENTS_EVENT_PREFIX = "rmx:custom-events";
+const CUSTOM_EVENTS_ABORTED = `${CUSTOM_EVENTS_EVENT_PREFIX}:aborted`;
 const CHANGE_EVENT_NAME = "change";
 const CUSTOM_EVENT_OWNER = Symbol("customEvents.owner");
 const CUSTOM_EVENT_ORIGIN = Symbol("customEvents.origin");
 const CUSTOM_EVENT_FORWARDED = Symbol("customEvents.forwarded");
+const CUSTOM_EVENT_KIND = Symbol("customEvents.kind");
+const CUSTOM_EVENT_PROCESSED = Symbol("customEvents.processed");
+let customEventsOwnerId = 0;
 
 type EventDetails = Record<string, unknown>;
 type EventObject<Events extends EventDetails> = Partial<Events>;
-type NamespacedEventName<EventName extends string, Namespace extends string> =
-  `${Namespace}:${EventName}`;
 type OwnedEvent = Event & {
   [CUSTOM_EVENT_OWNER]?: symbol;
   [CUSTOM_EVENT_ORIGIN]?: EventTarget;
   [CUSTOM_EVENT_FORWARDED]?: true;
+  [CUSTOM_EVENT_KIND]?: CustomEventKind;
+  [CUSTOM_EVENT_PROCESSED]?: true;
   originTarget?: EventTarget;
   source?: unknown;
 };
-type OnCustomEventGuard = (
-  event: Event,
-  element: Element,
-  signal: AbortSignal,
-) => boolean | void;
-
+type CustomEventKind =
+  | "granular"
+  | "batch-change"
+  | "derived-change"
+  | "expanded-granular";
 type CustomEventWithMetadata<Detail, Source = unknown> =
   CustomEvent<Detail> & {
     originTarget?: EventTarget;
     source?: Source;
   };
 
-type ChangeDetailName<
-  EventName extends string,
-  Namespace extends string | undefined,
-> = Namespace extends string
-  ? { name: NamespacedEventName<EventName, Namespace> }
-  : {};
+type AnyCustomEventsName = `${typeof CUSTOM_EVENTS_EVENT_PREFIX}:${string}:${string}`;
+
+declare global {
+  interface HTMLElementEventMap {
+    [eventName: AnyCustomEventsName]: CustomEventWithMetadata<any>;
+  }
+
+  interface SVGElementEventMap {
+    [eventName: AnyCustomEventsName]: CustomEventWithMetadata<any>;
+  }
+
+  interface ElementEventMap {
+    [eventName: AnyCustomEventsName]: CustomEventWithMetadata<any>;
+  }
+}
 
 type ChangeEventDetailFromMap<
   EventMap extends EventDetails,
-  Namespace extends string | undefined = undefined,
 > = {
   [K in keyof EventMap & string]: {
     type: K;
     detail: EventMap[K];
     details: Partial<EventMap>;
-  } & ChangeDetailName<K, Namespace>;
+  };
 }[keyof EventMap & string] | ({
   type: Array<keyof EventMap & string>;
   detail: Partial<EventMap>;
   details: Partial<EventMap>;
-} & (
-  Namespace extends string
-    ? { name: Array<NamespacedEventName<keyof EventMap & string, Namespace>> }
-    : {}
-));
+});
 
 type LocalCustomEventTypes<EventMap extends EventDetails> = {
   [K in typeof CHANGE_EVENT_NAME]: CustomEventWithMetadata<
@@ -70,32 +76,18 @@ type LocalCustomEventTypes<EventMap extends EventDetails> = {
   [K in keyof EventMap & string]: CustomEventWithMetadata<EventMap[K]>;
 };
 
-type NamespacedCustomEventTypes<
-  EventMap extends EventDetails,
-  Namespace extends string,
-> = {
-  [K in typeof CHANGE_EVENT_NAME as NamespacedEventName<K, Namespace>]: CustomEventWithMetadata<
-    ChangeEventDetailFromMap<EventMap, Namespace>
-  >;
-} & {
-  [K in keyof EventMap & string as NamespacedEventName<K, Namespace>]: CustomEventWithMetadata<
-    EventMap[K]
-  >;
-};
-
 type EventMapReservedKeys<EventMap extends EventDetails> = Extract<
   keyof EventMap,
   | typeof CHANGE_EVENT_NAME
   | "listen"
   | "setHost"
   | "getHost"
-  | "events"
+  | "names"
   | "initial"
-  | "__eventMap"
-  | "__namespacedEventMap"
+  | "map"
 >;
 
-type EventMapNamespacedKeys<EventMap extends EventDetails> = Extract<
+type EventMapColonKeys<EventMap extends EventDetails> = Extract<
   keyof EventMap & string,
   `${string}:${string}`
 >;
@@ -105,16 +97,16 @@ type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
   readonly reservedEventKeys: Keys;
 };
 
-type NamespacedCustomEventMapKeyError<Keys extends PropertyKey> = {
-  readonly __customEventMapNamespacedKeyError: "CustomEventMap event maps cannot define namespaced event keys. Use CustomEvents with a namespace generic for namespaced DOM/global events.";
-  readonly namespacedEventKeys: Keys;
+type ColonCustomEventMapKeyError<Keys extends PropertyKey> = {
+  readonly __customEventMapColonKeyError: "CustomEventMap event names cannot contain colons.";
+  readonly colonEventKeys: Keys;
 };
 
 type CustomEventMapError<EventMap extends EventDetails> =
   EventMapReservedKeys<EventMap> extends never
-    ? EventMapNamespacedKeys<EventMap> extends never
+    ? EventMapColonKeys<EventMap> extends never
       ? never
-      : NamespacedCustomEventMapKeyError<EventMapNamespacedKeys<EventMap>>
+      : ColonCustomEventMapKeyError<EventMapColonKeys<EventMap>>
     : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
 
 type CustomEventMap<EventMap extends EventDetails> =
@@ -136,12 +128,6 @@ type CustomEventsInit<Source = unknown> = EventInit & {
   source?: Source;
 };
 
-type CustomEventsDispatchDetail<Events extends EventDetails> = {
-  events: CustomEventsDispatchInput<Events>;
-  init?: CustomEventsInit;
-  namespace?: string;
-  owner?: symbol;
-};
 type CustomEventsDispatchEvents<Events extends EventDetails> = {
   [K in keyof Events]?: Events[K];
 };
@@ -149,48 +135,30 @@ type CustomEventsDispatchInput<Events extends EventDetails> =
   CustomEventsDispatchEvents<Events>;
 
 type CustomEventsRuntime = {
-  namespace: string | undefined;
   owner: symbol;
+  ownerId: string;
   initial?: CustomEventsInitial<EventDetails>;
+  eventTypes: Set<string>;
+  eventTypeListeners: Set<() => void>;
 };
 
 type CustomEventsInitial<Events extends EventDetails> = Event;
 
-type CustomEventsOptions<Namespace extends string | undefined = undefined> = {
-  /**
-   * Optional DOM event namespace.
-   *
-   * Product code still uses local names such as
-   * `events.listen(on("submitted", ...))`, `<events.submitted render={...} />`, and
-   * `events.submitted(detail)`. The namespace is only for DOM event-map
-   * augmentation and raw DOM listeners that need namespaced event names.
-   */
-  namespace?: Namespace;
-};
-
-type CustomEventsConstructorOptions<
-  Namespace extends string | undefined,
-> = Namespace extends string ? { namespace: Namespace } : { namespace?: undefined };
-
-type CustomEventsConstructorArgs<
-  Namespace extends string | undefined,
-> = Namespace extends string
-  ? [options: CustomEventsConstructorOptions<Namespace>]
-  : [options?: CustomEventsConstructorOptions<Namespace>];
-
 interface CustomEventsConstructor {
-  new <
-    Events extends EventDetails,
-    const Namespace extends string | undefined = undefined,
-  >(
-    ...args: CustomEventsConstructorArgs<Namespace>
-  ): CustomEventsDescriptor<Events, Namespace>;
+  new <Events extends EventDetails>(): CustomEventsDescriptor<Events>;
 }
 
 type CustomEventsEventType<Events extends EventDetails> = Extract<
   keyof CustomEventMap<Events>,
   string
 >;
+
+type CustomEventsName<Type extends string> =
+  `${typeof CUSTOM_EVENTS_EVENT_PREFIX}:${string}:${Type}`;
+
+type CustomEventsNames<Events extends EventDetails> = {
+  readonly [Type in CustomEventsEventType<Events>]: CustomEventsName<Type>;
+};
 
 type CustomEventsEvent<
   Events extends EventDetails,
@@ -202,37 +170,18 @@ type CustomEventsRenderProps<
   Type extends CustomEventsEventType<Events>,
 > = {
   /**
-   * Optional predicate for deciding whether this render component should react
-   * to an event.
-   *
-   * By default, every event from the same `CustomEvents` definition is
-   * allowed. That makes sibling branches in one component easy to coordinate.
-   * Return `false` when this render component should ignore an event, such as
-   * when a row or form should only react to its own work.
-   */
-  guard?: OnCustomEventGuard;
-  /**
-   * Initial event object used only for the first render. It does not dispatch
-   * and therefore does not run `.listen(...)` side effects.
-   *
-   * Prefer `events.seedInitialEvent(...)` when the same initial event should be
-   * shared across all render components for this event set.
+   * Event object used for the first render only. It does not dispatch.
    *
    * @example
    * <searchEvents.change initial={searchEvents.queryEmpty()} render={...} />
-   *
-   * @example
-   * <searchEvents.change initial={searchEvents.events({ queryEmpty: null })} render={...} />
    */
   initial?: EventObject<Events> | Event;
   /**
-   * Explicit event target to observe. Most DOM components do not need this;
-   * use `events.host()` on the nearest form, row, or widget root when the UI
-   * needs a local DOM event boundary.
+   * Explicit target to observe. Most DOM components can omit this.
    */
   target?: EventTarget;
   /**
-   * Renders children for the matching custom event.
+   * Renders children for the matching event.
    *
    * @example
    * <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
@@ -259,9 +208,35 @@ type ExactEventDetail<Expected, Actual> =
 type CustomEventsOnMember<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = Type extends keyof Events & string
+> = Type extends typeof CHANGE_EVENT_NAME
+  ? CustomEventsChangeMember<Events>
+  : Type extends keyof Events & string
   ? CustomEventsEventMember<Events, Type>
   : CustomEventsOnElement<Events, Type>;
+
+type CustomEventsChangeMember<Events extends EventDetails> = {
+  /**
+   * Creates a batch change event for native `dispatchEvent(...)`.
+   *
+   * @example
+   * target.dispatchEvent(events.change({ user, settings }));
+   */
+  (
+    events: CustomEventsDispatchInput<Events>,
+    init?: CustomEventsInit,
+  ): Event;
+  /**
+   * Renders the latest change event in JSX.
+   */
+  (
+    handle: Handle<
+      CustomEventsRenderProps<
+        Events,
+        Extract<CustomEventsEventType<Events>, typeof CHANGE_EVENT_NAME>
+      >
+    >,
+  ): () => RemixNode;
+};
 
 type CustomEventsEventMember<
   Events extends EventDetails,
@@ -301,16 +276,7 @@ type CustomEventsEventMember<
 
 type CustomEventsOnDescriptor<Events extends EventDetails> = {
   /**
-   * Event-aware render component and single-event creator for this product
-   * event.
-   *
-   * In JSX, use it to render from the latest matching event without mirrored
-   * component state. In event handlers, call it to create an event for native
-   * `dispatchEvent(...)`.
-   *
-   * Sibling branches can react to each other by default. Add `events.host()`
-   * to a form, row, or widget root when that branch should keep its events
-   * local.
+   * Creates this event for `dispatchEvent(...)`, or renders from it in JSX.
    *
    * @example
    * <checkoutEvents.submitted render={({ detail }) => detail.id} />
@@ -324,118 +290,30 @@ type CustomEventsOnDescriptor<Events extends EventDetails> = {
   >;
 };
 
-type OnMixinArgs<Type extends string> = [
-  type: Type,
-  listener: (...args: Array<any>) => void | Promise<void>,
-  captureBoolean?: boolean,
-];
-
-type CustomEventsElementTarget<
-  Events extends EventDetails,
-  Namespace extends string | undefined,
-  HostElement extends Element,
-> = TypedEventTarget<
-  CustomEventMap<Events> &
-    (Namespace extends string
-      ? NamespacedCustomEventTypes<Events, Namespace>
-      : {})
-> &
-  HostElement;
-
-type CustomEventsListenEventType<
-  Events extends EventDetails,
-  Namespace extends string | undefined,
-> =
-  | CustomEventsEventType<Events>
-  | (Namespace extends string
-    ? Extract<keyof NamespacedCustomEventTypes<Events, Namespace>, string>
-    : never);
-
-type CustomEventsListenDescriptor<
-  Events extends EventDetails,
-  Namespace extends string | undefined,
-  HostElement extends Element,
-  Type extends CustomEventsListenEventType<Events, Namespace>,
-> = MixinDescriptor<
-  CustomEventsElementTarget<Events, Namespace, HostElement>,
-  OnMixinArgs<Type>
->;
-
-type CustomEventsListenDescriptorFor<
-  Events extends EventDetails,
-  Namespace extends string | undefined,
-  HostElement extends Element,
-> = CustomEventsListenDescriptor<
-  Events,
-  Namespace,
-  HostElement,
-  any
->;
-
 /**
- * Builds mixins that let DOM elements react to this event set.
- *
- * Use it for DOM reactions: add a pending class, disable a button, focus an
- * input, reset a form, or write a data attribute. Event names are the product
- * names from your event map, such as `"submitted"` or `"actionSucceeded"`.
- *
- * By default, sibling branches using the same event set can react to each
- * other's events. Put `events.host()` on a form, row, or widget root when a
- * branch should keep its events local. A hosted branch keeps events inside that
- * boundary unless the event is created with `{ composed: true }`.
- *
- * @example
- * checkoutEvents.listen(
- *   on("submitted", ({ detail, currentTarget }) => {
- *     currentTarget.dataset.orderId = detail.id;
- *   }),
- * )
+ * DOM effect mixin for this event set.
  */
 type CustomEventsListenFunction<
   Events extends EventDetails,
-  Namespace extends string | undefined,
 > = {
   /**
-   * Lets the host element react to one or more product events.
-   *
-   * Pass Remix `on(...)` mixins and place the result in an element's `mix`
-   * prop. The event object has the usual DOM shape, so `currentTarget` is the
-   * element that owns this mixin.
+   * Enables Remix `on(events.names.someEvent, ...)` on this element.
    *
    * @example
-   * mix={checkoutEvents.listen(
-   *   on("submitted", handleSubmitted),
-   *   on("paid", handlePaid),
-   * )}
-   *
-   * Use this for DOM effects. Use `<events.someEvent render={...} />` when the
-   * reaction should render children.
-   *
-   * Use `guard` only when host boundaries are not enough to express the product
-   * rule for whether this element should react.
+   * mix={[
+   *   checkoutEvents.listen(),
+   *   on(checkoutEvents.names.submitted, handleSubmitted),
+   *   on(checkoutEvents.names.paid, handlePaid),
+   * ]}
    */
   <HostElement extends Element>(
-    descriptor: CustomEventsListenDescriptorFor<
-      Events,
-      Namespace,
-      HostElement
-    >,
-    ...args: Array<
-      | CustomEventsListenDescriptorFor<Events, Namespace, HostElement>
-      | CustomEventsListenOptions
-    >
-  ): Array<MixinDescriptor<HostElement, any>>;
+    options?: CustomEventsListenOptions,
+  ): MixinDescriptor<HostElement, any>;
 };
 
 type CustomEventsListenOptions = {
   /**
-   * Optional predicate for deciding whether this element should react to an
-   * event. Return `false` to ignore the event.
-   */
-  guard?: OnCustomEventGuard;
-  /**
-   * Explicit event target to observe. Most DOM components do not need this;
-   * prefer `events.host()` on the closest DOM product boundary.
+   * Explicit target to observe. Most DOM components can omit this.
    */
   target?: EventTarget;
 };
@@ -451,33 +329,13 @@ type CustomEventsHostReference<Events extends EventDetails> = {
 
 type HostableCustomEventsDescriptor<
   Events extends EventDetails,
-  Namespace extends string | undefined,
 > = {
   /**
-   * DOM mixin that makes an element the local boundary for this event set.
+   * Makes an element the local event boundary for this event set.
    *
-   * Use `host()` in a DOM element's `mix` prop at the root of a widget when all
-   * branches inside should share one event stream. Use it at each repeated form
-   * or row when each instance should stay independent.
-   *
-   * The host owns the latest event memory used by `events.getHost(element)` and
-   * gives all branches inside that element one local event stream.
-   *
-   * Without a host, `listen(...)` and render components observe the window
-   * fallback. That is convenient for single widgets where sibling branches
-   * should react to each other without passing a target around. Use `host()`
-   * when repeated rows/forms need isolation or when a component wants to keep
-   * event traffic local.
-   *
-   * A host keeps events local by default: listeners and render components inside
-   * the host can react, while ancestors outside the host do not. This is usually
-   * what product code wants for pending, success, error, and optimistic UI owned
-   * by one form or row.
-   *
-   * When an ancestor outside the host should also observe the event, dispatch
-   * with `{ composed: true }`. That keeps local UI working and also lets the
-   * product event escape for page-level status, logging, analytics, or
-   * coordination.
+   * Use it on a widget root to share events inside the widget, or on each
+   * repeated row/form to keep instances independent. Events stay inside the
+   * host unless created with `{ composed: true }`.
    *
    * @example
    * <section mix={gameEvents.host()}>
@@ -488,7 +346,10 @@ type HostableCustomEventsDescriptor<
    *
    * @example
    * <form mix={todoEvents.host()}>
-   *   <button mix={todoEvents.listen(on("change", updatePendingUi))} />
+   *   <button mix={[
+   *     todoEvents.listen(),
+   *     on(todoEvents.names.change, updatePendingUi),
+   *   ]} />
    * </form>
    *
    * @example
@@ -499,16 +360,10 @@ type HostableCustomEventsDescriptor<
   host(): MixinDescriptor<Element, any>;
 
   /**
-   * Enables this event definition on an existing non-JSX `EventTarget`.
+   * Enables this event set on an existing `EventTarget`.
    *
-   * Use this when a `TypedEventTarget` subclass or plain `EventTarget` owns its
-   * own event stream. For DOM component subtrees, prefer `events.host()` in the
-   * host element's `mix` prop because it handles insert/remove cleanup for you.
-   *
-   * `setHost(...)` returns a cleanup function. Pass an `AbortSignal` when one is
-   * available, or call the cleanup yourself when the target is no longer in use.
-   * The descriptor stays target-agnostic; dispatch on the target itself and read
-   * its latest event memory with `events.getHost(target).latest`.
+   * Use this for plain `EventTarget` or `TypedEventTarget` owners. Pass a
+   * signal or call the returned cleanup when the target is no longer used.
    *
    * @example
    * class Drummer extends TypedEventTarget<DrummerEventMap> {
@@ -527,17 +382,10 @@ type HostableCustomEventsDescriptor<
   setHost(target: EventTarget, signal?: AbortSignal): () => void;
 
   /**
-   * Finds the event boundary for a target and reads its latest product events.
+   * Reads the latest event memory for the nearest host.
    *
-   * Use this from a normal DOM event when it needs to react to the latest
-   * custom-event activity without mirroring that state into `dataset` or
-   * component state.
-   *
-   * `latest.event` is the latest `"change"` detail for the boundary:
-   * `{ type, detail, details }`. `latest.events` is the accumulated detail map
-   * for the same boundary. Use `latest.event` when you care what just happened;
-   * use `latest.events` when the next action depends on previously dispatched
-   * details.
+   * `latest.event` is what just happened. `latest.events` is the accumulated
+   * detail map.
    *
    * @example
    * on("focusout", ({ currentTarget }) => {
@@ -553,74 +401,44 @@ type HostableCustomEventsDescriptor<
   getHost(target: EventTarget): CustomEventsHostReference<Events>;
 
   /**
-   * Local event map for class targets and product event details.
+   * Event map for `TypedEventTarget`.
    *
    * @example
-   * type GameEventMap = (typeof gameEvents)["__eventMap"];
+   * type GameEventMap = (typeof gameEvents)["map"];
    */
-  readonly __eventMap: CustomEventMap<Events>;
-  /**
-   * Namespaced DOM event map for TypeScript DOM event-map augmentation.
-   *
-   * Only available when `CustomEvents` is used with a namespace generic.
-   *
-   * @example
-   * declare global {
-   *   interface HTMLElementEventMap
-   *     extends (typeof checkoutEvents)["__namespacedEventMap"] {}
-   * }
-   */
-  readonly __namespacedEventMap: Namespace extends string
-    ? NamespacedCustomEventTypes<Events, Namespace>
-    : never;
+  readonly map: CustomEventMap<Events>;
 };
 
 type CustomEventsDescriptor<
   Events extends EventDetails,
-  Namespace extends string | undefined = undefined,
 > = {
   /**
-   * Creates an aggregate event object for the native `dispatchEvent(...)` API.
-   *
-   * Pass one key for a single product event, or several keys when one action
-   * changes several product events at once. The browser dispatches a `"change"`
-   * event for the whole action, then the individual product events.
-   *
-   * Use `events.getHost(target).latest` before dispatching when the next event
-   * depends on the latest details.
+   * Enables `on(events.names.someEvent, ...)` on a DOM element.
+   */
+  listen: CustomEventsListenFunction<Events>;
+
+  /**
+   * Event names for Remix `on(...)`.
    *
    * @example
-   * button.dispatchEvent(checkoutEvents.events({ submitted: { id: "order-1" } }));
+   * <button mix={[
+   *   checkoutEvents.listen(),
+   *   on(checkoutEvents.names.submitted, handleSubmitted),
+   * ]} />
    */
-  events<Source = unknown>(
-    events: CustomEventsDispatchInput<Events>,
-    init?: CustomEventsInit<Source>,
-  ): Event;
+  readonly names: CustomEventsNames<Events>;
 
   /**
-   * Lets a DOM element react to this event set using Remix `on(...)`.
+   * Sets the initial event for render components and latest-event memory.
    *
-   * This is for DOM effects such as toggling classes, disabling controls,
-   * focusing elements, resetting forms, or writing attributes. Use product event
-   * names from your event map even when this event set has a DOM namespace.
-   */
-  listen: CustomEventsListenFunction<Events, Namespace>;
-
-  /**
-   * Seeds the first product event for render components and latest-event memory.
-   *
-   * Pass an event object created by this descriptor, such as
-   * `events.ready()` or `events.events({ user, settings })`. This records the
-   * initial value without dispatching a DOM event, so
-   * `events.listen(on(...))` effects do not run. If an effect should run too,
-   * dispatch an event explicitly with native `target.dispatchEvent(...)`.
+   * This does not dispatch. Dispatch explicitly when DOM effects should run.
    *
    * @example
    * searchEvents.seedInitialEvent(searchEvents.queryEmpty());
    *
    * @example
    * appContextEvents.seedInitialEvent(
-   *   appContextEvents.events({ user: null, settings }),
+   *   appContextEvents.change({ user: null, settings }),
    * );
    */
   seedInitialEvent(event: CustomEventsInitial<Events>): void;
@@ -628,18 +446,11 @@ type CustomEventsDescriptor<
   /**
    * Local event map for class targets and product event details.
    */
-  readonly __eventMap: CustomEventMap<Events>;
-  /**
-   * Namespaced DOM event map for TypeScript DOM event-map augmentation.
-   */
-  readonly __namespacedEventMap: Namespace extends string
-    ? NamespacedCustomEventTypes<Events, Namespace>
-    : never;
+  readonly map: CustomEventMap<Events>;
 } & CustomEventsOnDescriptor<Events> &
-  HostableCustomEventsDescriptor<Events, Namespace>;
+  HostableCustomEventsDescriptor<Events>;
 
-let enabledTargets = new WeakSet<EventTarget>();
-let didEnableWindowTarget = false;
+let enabledWindowTargetOwners = new Set<symbol>();
 let customEventHosts = new WeakMap<Element, Map<symbol, number>>();
 let customEventRegisteredHosts = new Map<symbol, Set<WeakRef<EventTarget>>>();
 let customEventDetails = new WeakMap<
@@ -659,6 +470,11 @@ let customEventDescriptorChangeDetails = new Map<
   ChangeEventDetailFromMap<EventDetails>
 >();
 let customEventHostListeners = new Map<symbol, Set<() => void>>();
+
+function createCustomEventsOwnerId() {
+  customEventsOwnerId += 1;
+  return customEventsOwnerId.toString(36);
+}
 
 function hasDispatchSource(options: { source?: unknown }) {
   return Object.hasOwn(options, "source");
@@ -690,23 +506,11 @@ function eventPathIncludes(event: Event, target: EventTarget) {
 function shouldForwardToHost(
   event: Event,
   element: Element | undefined,
-  guard: OnCustomEventGuard | undefined,
-  signal: AbortSignal,
 ): element is Element {
   if (!element) return false;
   if (isForwardedCustomEvent(event)) return false;
   if (eventPathIncludes(event, element)) return false;
-  return guard?.(event, element, signal) !== false;
-}
-
-function createCustomEventsGuard(
-  runtime: CustomEventsRuntime,
-  guard: OnCustomEventGuard | undefined,
-): OnCustomEventGuard {
-  return (event, element, signal) => {
-    if (!ownsEvent(event, runtime.owner)) return false;
-    return guard?.(event, element, signal) !== false;
-  };
+  return true;
 }
 
 function addCustomEventsRegisteredHost(target: EventTarget, owner: symbol) {
@@ -932,17 +736,19 @@ function updateCustomEventsDetails(
   target: EventTarget | undefined,
   owner: symbol | undefined,
   entries: Array<[string, unknown]>,
-  changeDetail: ChangeEventDetailFromMap<EventDetails>,
 ) {
-  if (!owner) return;
+  let patchDetail = createCustomEventChangeDetail(entries);
+  if (!owner) return patchDetail;
 
   let current = getCustomEventsDetails(target, owner);
   let details: EventObject<EventDetails> = { ...current };
   for (let [type, detail] of entries) {
     details[type] = detail;
   }
+  let changeDetail = createCustomEventChangeDetail(entries, details);
   setCustomEventsDetails(target, owner, details);
   setCustomEventsChangeDetail(target, owner, changeDetail);
+  return changeDetail;
 }
 
 function notifyCustomEventsHost(owner: symbol) {
@@ -970,42 +776,39 @@ function subscribeCustomEventsHost(owner: symbol, listener: () => void) {
   };
 }
 
-function getEventName(type: string, namespace: string | undefined) {
-  return namespace ? `${namespace}:${type}` : type;
-}
-
 function getRuntimeEventName(runtime: CustomEventsRuntime, type: string) {
-  return getEventName(type, runtime.namespace);
+  return `${CUSTOM_EVENTS_EVENT_PREFIX}:${runtime.ownerId}:${type}`;
 }
 
-function getListenEventName(runtime: CustomEventsRuntime, type: string) {
-  if (!runtime.namespace) return type;
-  if (type.startsWith(`${runtime.namespace}:`)) return type;
-  return getRuntimeEventName(runtime, type);
-}
-
-function getLocalEventType(
-  eventName: string,
-  namespace: string | undefined,
-) {
-  if (!namespace) return eventName;
-  let prefix = `${namespace}:`;
+function getRuntimeEventType(runtime: CustomEventsRuntime, eventName: string) {
+  let prefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${runtime.ownerId}:`;
   if (!eventName.startsWith(prefix)) return undefined;
   return eventName.slice(prefix.length);
 }
 
+function addRuntimeEventType(runtime: CustomEventsRuntime, type: string) {
+  if (runtime.eventTypes.has(type)) return;
+  runtime.eventTypes.add(type);
+  for (let listener of runtime.eventTypeListeners) listener();
+}
+
+function subscribeRuntimeEventTypes(
+  runtime: CustomEventsRuntime,
+  listener: () => void,
+) {
+  runtime.eventTypeListeners.add(listener);
+  return () => runtime.eventTypeListeners.delete(listener);
+}
+
 function createCustomEventChangeDetail(
   entries: Array<[string, unknown]>,
-  namespace?: string,
+  details = getEntriesObject(entries),
 ) {
-  let details = getEntriesObject(entries);
 
   if (entries.length === 1) {
     let [[type, detail]] = entries;
-    let name = namespace ? `${namespace}:${type}` : undefined;
     return {
       type,
-      ...(name ? { name } : {}),
       detail,
       details,
     };
@@ -1014,9 +817,6 @@ function createCustomEventChangeDetail(
   let type = entries.map(([type]) => type);
   return {
     type,
-    ...(namespace
-      ? { name: type.map((eventType) => `${namespace}:${eventType}`) }
-      : {}),
     detail: details,
     details,
   };
@@ -1055,6 +855,7 @@ function getEventInit(init: EventInit | undefined): EventInit {
 
 type CustomEventMetadata = {
   hasSource: boolean;
+  kind: CustomEventKind;
   owner?: symbol;
   origin?: EventTarget;
   source?: unknown;
@@ -1083,6 +884,8 @@ function attachCustomEventMetadata(
     defineEventValue(event, CUSTOM_EVENT_OWNER, metadata.owner);
   }
 
+  defineEventValue(event, CUSTOM_EVENT_KIND, metadata.kind);
+
   if (metadata.origin) {
     defineEventValue(event, CUSTOM_EVENT_ORIGIN, metadata.origin);
     defineEventValue(event, "originTarget", metadata.origin, {
@@ -1103,89 +906,14 @@ function dispatchSingleCustomEvent(
   );
 }
 
-function createCustomEventsDispatchEvent<Events extends EventDetails>(
-  events: CustomEventsDispatchInput<Events>,
-  init: CustomEventsInit | undefined,
-  namespace: string | undefined,
-  owner: symbol,
-) {
-  return new CustomEvent<CustomEventsDispatchDetail<Events>>(
-    CUSTOM_EVENTS_DISPATCH,
-    {
-      bubbles: init?.bubbles ?? true,
-      cancelable: true,
-      ...(init?.composed === undefined ? {} : { composed: init.composed }),
-      detail: {
-        events,
-        init,
-        namespace,
-        owner,
-      },
-    },
-  );
-}
-
-function dispatchEventObject(
-  target: EventTarget,
-  namespace: string | undefined,
-  events: object,
-  init: CustomEventsInit | undefined,
-  metadata: CustomEventMetadata,
-) {
-  if (init?.signal?.aborted) return true;
-
-  let entries = resolveCustomEventsDispatchEntries(events);
-  if (!entries.length) return true;
-
-  let changeDetail = createCustomEventChangeDetail(entries, namespace);
-  updateCustomEventsDetails(target, metadata.owner, entries, changeDetail);
-
-  let eventInit = getEventInit(init);
-  let changeResult = dispatchSingleCustomEvent(
-    target,
-    getEventName(CHANGE_EVENT_NAME, namespace),
-    eventInit,
-    changeDetail,
-    metadata,
-  );
-
-  let eventsResult = true;
-  for (let [type, detail] of entries) {
-    if (init?.signal?.aborted) break;
-
-    eventsResult =
-      dispatchSingleCustomEvent(
-        target,
-        getEventName(type, namespace),
-        eventInit,
-        detail,
-        metadata,
-      ) && eventsResult;
-  }
-
-  return changeResult && eventsResult;
-}
-
-function getHostEventInit(init: CustomEventsInit | undefined) {
-  if (init?.composed === true) return init;
-  return {
-    ...init,
-    bubbles: false,
-  };
-}
-
 function createInitialEvent(
   type: string,
-  namespace: string | undefined,
+  runtime: CustomEventsRuntime,
   initial: unknown,
 ) {
+  let eventName = getRuntimeEventName(runtime, type);
   if (initial instanceof CustomEvent) {
-    if (initial.type === CUSTOM_EVENTS_DISPATCH) {
-      let detail = initial.detail as Partial<CustomEventsDispatchDetail<EventDetails>>;
-      return createInitialEvent(type, detail.namespace ?? namespace, detail.events);
-    }
-
-    if (initial.type === getEventName(type, namespace)) {
+    if (initial.type === eventName) {
       return initial;
     }
   }
@@ -1194,7 +922,7 @@ function createInitialEvent(
 
   let initialMap = initial as Record<string, unknown>;
   if (Object.hasOwn(initialMap, type)) {
-    return new CustomEvent(getEventName(type, namespace), {
+    return new CustomEvent(eventName, {
       detail: initialMap[type],
     });
   }
@@ -1206,49 +934,48 @@ function createInitialEvent(
   );
   if (!entries.length) return undefined;
 
-  return new CustomEvent(getEventName(type, namespace), {
-    detail: createCustomEventChangeDetail(entries, namespace),
+  return new CustomEvent(eventName, {
+    detail: createCustomEventChangeDetail(entries),
   });
 }
 
-function getInitialCustomEventsDispatch(runtime: CustomEventsRuntime) {
+function getInitialEventEntriesFromEvent(
+  runtime: CustomEventsRuntime,
+  initial: CustomEvent,
+) {
+  let type = getRuntimeEventType(runtime, initial.type);
+  if (!type) return undefined;
+  if (type !== CHANGE_EVENT_NAME) {
+    return [[type, initial.detail]] satisfies Array<[string, unknown]>;
+  }
+
+  let detail = initial.detail as ChangeEventDetailFromMap<EventDetails>;
+  if (Array.isArray(detail.type)) {
+    return Object.entries(
+      detail.detail as EventObject<EventDetails>,
+    );
+  }
+  return [[detail.type, detail.detail]] satisfies Array<[string, unknown]>;
+}
+
+function getInitialEventEntriesFromValue(runtime: CustomEventsRuntime) {
   let initial = runtime.initial;
   if (!initial) return undefined;
 
   if (initial instanceof CustomEvent) {
-    if (initial.type !== CUSTOM_EVENTS_DISPATCH) {
-      let type = getLocalEventType(initial.type, runtime.namespace);
-      if (!type || type === CHANGE_EVENT_NAME) return undefined;
-
-      return {
-        events: { [type]: initial.detail },
-        namespace: runtime.namespace,
-        owner: runtime.owner,
-      };
-    }
-
-    let detail =
-      initial.detail as Partial<CustomEventsDispatchDetail<EventDetails>>;
-    if (!detail.events) return undefined;
-
-    return {
-      events: detail.events,
-      init: detail.init,
-      namespace: detail.namespace ?? runtime.namespace,
-      owner: detail.owner ?? runtime.owner,
-    };
+    return getInitialEventEntriesFromEvent(runtime, initial);
   }
 
   if (initial instanceof Event) return undefined;
+  if (!initial || typeof initial !== "object") return undefined;
+  return resolveCustomEventsDispatchEntries(initial as EventDetails);
 }
 
 function getInitialEventEntries(
   target: EventTarget | undefined,
   runtime: CustomEventsRuntime,
 ) {
-  let detail = getInitialCustomEventsDispatch(runtime);
-  if (!detail) return undefined;
-  return resolveCustomEventsDispatchEntries(detail.events);
+  return getInitialEventEntriesFromValue(runtime);
 }
 
 function seedInitialCustomEventsDetails(
@@ -1261,7 +988,6 @@ function seedInitialCustomEventsDetails(
     target,
     runtime.owner,
     entries,
-    createCustomEventChangeDetail(entries, runtime.namespace),
   );
 }
 
@@ -1275,113 +1001,223 @@ function seedInitialCustomEventsRegisteredHosts(runtime: CustomEventsRuntime) {
   });
 }
 
-function expandCustomEventsDispatch(
+type CustomEventsDispatchTargetRegistration = {
+  count: number;
+  cleanup: () => void;
+};
+
+function getCustomEventKind(event: Event) {
+  return (event as OwnedEvent)[CUSTOM_EVENT_KIND];
+}
+
+function hasProcessedCustomEvent(event: Event) {
+  return (event as OwnedEvent)[CUSTOM_EVENT_PROCESSED] === true;
+}
+
+function markCustomEventProcessed(event: Event) {
+  defineEventValue(event, CUSTOM_EVENT_PROCESSED, true);
+}
+
+function getCustomEventMetadata(event: Event): CustomEventMetadata {
+  let ownedEvent = event as OwnedEvent;
+  return {
+    hasSource: Object.hasOwn(event, "source"),
+    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "granular",
+    owner: ownedEvent[CUSTOM_EVENT_OWNER],
+    origin: ownedEvent[CUSTOM_EVENT_ORIGIN],
+    source: ownedEvent.source,
+  };
+}
+
+function dispatchOwnedCustomEvent(
   target: EventTarget,
-  namespace: string | undefined,
-  event: CustomEvent<CustomEventsDispatchDetail<EventDetails>>,
-  options?: { hosted?: boolean },
+  runtime: CustomEventsRuntime,
+  type: string,
+  init: EventInit,
+  detail: unknown,
+  metadata: Omit<CustomEventMetadata, "owner">,
 ) {
-  let detail = event.detail;
-  let origin = event.target instanceof EventTarget ? event.target : target;
-  let init = detail.init;
-  let eventInit = options?.hosted ? getHostEventInit(init) : init;
-  let eventNamespace = detail.namespace ?? namespace;
-  let result = dispatchEventObject(
+  return dispatchSingleCustomEvent(
     target,
-    eventNamespace,
-    detail.events,
-    eventInit,
+    getRuntimeEventName(runtime, type),
+    init,
+    detail,
     {
-      hasSource: Boolean(init && hasDispatchSource(init)),
-      owner: detail.owner,
-      origin,
-      source: init?.source,
+      ...metadata,
+      owner: runtime.owner,
     },
+  );
+}
+
+function dispatchDerivedChangeEvent(
+  target: EventTarget,
+  runtime: CustomEventsRuntime,
+  entries: Array<[string, unknown]>,
+  init: EventInit,
+  metadata: CustomEventMetadata,
+) {
+  let changeDetail = updateCustomEventsDetails(
+    target,
+    runtime.owner,
+    entries,
+  );
+  return dispatchOwnedCustomEvent(
+    target,
+    runtime,
+    CHANGE_EVENT_NAME,
+    init,
+    changeDetail,
+    {
+      ...metadata,
+      kind: "derived-change",
+      origin: target,
+    },
+  );
+}
+
+function dispatchExpandedGranularEvents(
+  target: EventTarget,
+  runtime: CustomEventsRuntime,
+  entries: Array<[string, unknown]>,
+  init: EventInit,
+  metadata: CustomEventMetadata,
+) {
+  let result = true;
+  for (let [type, detail] of entries) {
+    result =
+      dispatchOwnedCustomEvent(target, runtime, type, init, detail, {
+        ...metadata,
+        kind: "expanded-granular",
+        origin: target,
+      }) && result;
+  }
+  return result;
+}
+
+function processCustomEventsEvent(
+  event: CustomEvent,
+  runtime: CustomEventsRuntime,
+) {
+  if (!ownsEvent(event, runtime.owner)) return true;
+  if (hasProcessedCustomEvent(event)) return true;
+
+  let kind = getCustomEventKind(event);
+  if (kind !== "granular" && kind !== "batch-change") return true;
+
+  let origin = event.target instanceof EventTarget ? event.target : undefined;
+  if (!origin) return true;
+
+  markCustomEventProcessed(event);
+  let metadata = getCustomEventMetadata(event);
+  let init = getEventInit(event);
+
+  if (kind === "granular") {
+    let type = getRuntimeEventType(runtime, event.type);
+    if (!type || type === CHANGE_EVENT_NAME) return true;
+    let result = dispatchDerivedChangeEvent(
+      origin,
+      runtime,
+      [[type, event.detail]],
+      init,
+      metadata,
+    );
+    if (!result) event.preventDefault();
+    return result;
+  }
+
+  let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
+  let entries = Array.isArray(detail.type)
+    ? Object.entries(detail.detail as EventObject<EventDetails>)
+    : ([[detail.type, detail.detail]] satisfies Array<[string, unknown]>);
+  if (!entries.length) return true;
+
+  updateCustomEventsDetails(origin, runtime.owner, entries);
+  let result = dispatchExpandedGranularEvents(
+    origin,
+    runtime,
+    entries,
+    init,
+    metadata,
   );
   if (!result) event.preventDefault();
   return result;
 }
 
-function enableWindowTarget() {
-  if (didEnableWindowTarget || typeof window === "undefined") return;
-  didEnableWindowTarget = true;
+let customEventsDispatchTargetRegistrations = new WeakMap<
+  EventTarget,
+  Map<symbol, CustomEventsDispatchTargetRegistration>
+>();
 
-  window.addEventListener(CUSTOM_EVENTS_DISPATCH, (event) => {
-    if (!(event instanceof CustomEvent)) return;
-    if (!(event.target instanceof EventTarget)) return;
-    expandCustomEventsDispatch(event.target, undefined, event);
-  });
-}
-
-function enableCustomEventsDispatchTarget(
+function registerCustomEventsDispatchTarget(
   target: EventTarget,
-  namespace: string | undefined,
+  runtime: CustomEventsRuntime,
+  options?: { hosted?: boolean },
 ) {
-  if (typeof window !== "undefined" && target === window) {
-    enableWindowTarget();
-    return;
+  let registrations = customEventsDispatchTargetRegistrations.get(target);
+  if (!registrations) {
+    registrations = new Map();
+    customEventsDispatchTargetRegistrations.set(target, registrations);
   }
-  enableCustomEventsHost(target, namespace);
-}
 
-function enableCustomEventsHost(
-  target: EventTarget,
-  namespace: string | undefined,
-) {
-  if (enabledTargets.has(target)) return;
-  enabledTargets.add(target);
+  let registration = registrations.get(runtime.owner);
+  if (registration) {
+    registration.count += 1;
+    let activeRegistration = registration;
+    return () => {
+      activeRegistration.count -= 1;
+      if (activeRegistration.count > 0) return;
+      activeRegistration.cleanup();
+      registrations.delete(runtime.owner);
+    };
+  }
 
-  target.addEventListener(
-    CUSTOM_EVENTS_DISPATCH,
-    (event) => {
-      if (!(event instanceof CustomEvent)) return;
-      event.stopPropagation();
-      expandCustomEventsDispatch(
-        target,
-        namespace,
-        event as CustomEvent<CustomEventsDispatchDetail<EventDetails>>,
-        { hosted: true },
+  let controller: AbortController | undefined;
+  let unsubscribeEventTypes: (() => void) | undefined;
+
+  function listen() {
+    controller?.abort();
+    controller = new AbortController();
+    let signal = controller.signal;
+    for (let type of runtime.eventTypes) {
+      target.addEventListener(
+        getRuntimeEventName(runtime, type),
+        (event) => {
+          if (!(event instanceof CustomEvent)) return;
+          if (options?.hosted && event.composed !== true) {
+            event.stopPropagation();
+          }
+          processCustomEventsEvent(event, runtime);
+        },
+        { signal },
       );
-    },
-  );
-}
-
-function getOnDescriptorType(descriptor: MixinDescriptor<any, any>) {
-  let [type] = descriptor.args;
-  if (typeof type !== "string") {
-    throw new TypeError("CustomEvents.listen() expects a Remix on() descriptor.");
+    }
   }
-  return type;
-}
 
-function adaptOnDescriptor<
-  HostElement extends Element,
-  Args extends OnMixinArgs<string>,
->(
-  descriptor: MixinDescriptor<HostElement, Args>,
-  type: string,
-  owner: symbol,
-) {
-  let [, listener, captureBoolean] = descriptor.args;
-  let adaptedListener = (event: Event, signal: AbortSignal) => {
-    if (!ownsEvent(event, owner)) return;
-    return listener(event, signal);
+  unsubscribeEventTypes = subscribeRuntimeEventTypes(runtime, listen);
+  listen();
+
+  registration = {
+    count: 1,
+    cleanup() {
+      unsubscribeEventTypes?.();
+      controller?.abort();
+    },
   };
+  registrations.set(runtime.owner, registration);
 
-  return {
-    ...descriptor,
-    args: [type, adaptedListener, captureBoolean],
-  } as unknown as MixinDescriptor<HostElement, Args>;
+  return () => {
+    registration.count -= 1;
+    if (registration.count > 0) return;
+    registration.cleanup();
+    registrations.delete(runtime.owner);
+  };
 }
 
-function isMixinDescriptor(value: unknown): value is MixinDescriptor<any, any> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "type" in value &&
-    "args" in value &&
-    Array.isArray((value as MixinDescriptor<any, any>).args)
-  );
+function enableWindowTarget(runtime: CustomEventsRuntime) {
+  if (typeof window === "undefined") return () => {};
+  if (enabledWindowTargetOwners.has(runtime.owner)) return () => {};
+  enabledWindowTargetOwners.add(runtime.owner);
+  return registerCustomEventsDispatchTarget(window, runtime);
 }
 
 function isRemixHandle(value: unknown): value is Handle<any> {
@@ -1407,31 +1243,6 @@ function isCustomEventsInit(value: unknown): value is CustomEventsInit {
   );
 }
 
-function isListenOptions(value: unknown): value is CustomEventsListenOptions {
-  return Boolean(value) && !isMixinDescriptor(value);
-}
-
-function getListenOptions(
-  args: Array<MixinDescriptor<Element, OnMixinArgs<string>> | CustomEventsListenOptions>,
-) {
-  let options: CustomEventsListenOptions = {};
-  let descriptors: Array<MixinDescriptor<Element, OnMixinArgs<string>>> = [];
-  let last = args[args.length - 1];
-  let end = args.length;
-
-  if (isListenOptions(last)) {
-    options = last;
-    end -= 1;
-  }
-
-  for (let index = 0; index < end; index++) {
-    let arg = args[index];
-    if (isMixinDescriptor(arg)) descriptors.push(arg);
-  }
-
-  return { descriptors, options };
-}
-
 function cloneCustomEvent(event: Event) {
   let clone = new CustomEvent(event.type, {
     bubbles: false,
@@ -1442,6 +1253,7 @@ function cloneCustomEvent(event: Event) {
   let ownedEvent = event as OwnedEvent;
   attachCustomEventMetadata(clone, {
     hasSource: Object.hasOwn(event, "source"),
+    kind: ownedEvent[CUSTOM_EVENT_KIND] ?? "granular",
     owner: ownedEvent[CUSTOM_EVENT_OWNER],
     origin: ownedEvent[CUSTOM_EVENT_ORIGIN],
     source: ownedEvent.source,
@@ -1463,29 +1275,34 @@ function defineEventValue(
   });
 }
 
-const forwardTargetEventsMixin = createMixin<
+const forwardRuntimeEventsMixin = createMixin<
   Element,
   [
     target: EventTarget | undefined,
-    owner: symbol,
-    eventName: string,
-    guard: OnCustomEventGuard,
+    runtime: CustomEventsRuntime,
   ]
 >((handle) => {
   let currentElement: Element | undefined;
   let currentExplicitTarget: EventTarget | undefined;
-  let currentOwner: symbol | undefined;
-  let currentEventName = "";
-  let currentGuard: OnCustomEventGuard | undefined;
+  let currentRuntime: CustomEventsRuntime | undefined;
   let controller: AbortController | undefined;
   let unsubscribeHost: (() => void) | undefined;
+  let unsubscribeEventTypes: (() => void) | undefined;
 
   function syncHostSubscription() {
     unsubscribeHost?.();
     unsubscribeHost = undefined;
 
-    if (!currentExplicitTarget && currentOwner) {
-      unsubscribeHost = subscribeCustomEventsHost(currentOwner, listen);
+    if (!currentExplicitTarget && currentRuntime) {
+      unsubscribeHost = subscribeCustomEventsHost(currentRuntime.owner, listen);
+    }
+  }
+
+  function syncEventTypeSubscription() {
+    unsubscribeEventTypes?.();
+    unsubscribeEventTypes = undefined;
+    if (currentRuntime) {
+      unsubscribeEventTypes = subscribeRuntimeEventTypes(currentRuntime, listen);
     }
   }
 
@@ -1494,28 +1311,33 @@ const forwardTargetEventsMixin = createMixin<
     controller = undefined;
     let target =
       currentExplicitTarget ??
-      (currentOwner
-        ? getDefaultHostTarget(currentElement, currentOwner)
+      (currentRuntime
+        ? getDefaultHostTarget(currentElement, currentRuntime.owner)
         : undefined);
 
-    if (!currentElement || !target || !currentEventName) return;
+    if (!currentElement || !target || !currentRuntime) return;
 
+    let runtime = currentRuntime;
     controller = new AbortController();
     let signal = controller.signal;
-    target.addEventListener(
-      currentEventName,
-      (event) => {
-        let element = currentElement;
-        if (!shouldForwardToHost(event, element, currentGuard, signal)) return;
-        element.dispatchEvent(cloneCustomEvent(event));
-      },
-      { signal },
-    );
+    for (let type of runtime.eventTypes) {
+      target.addEventListener(
+        getRuntimeEventName(runtime, type),
+        (event) => {
+          if (!ownsEvent(event, runtime.owner)) return;
+          let element = currentElement;
+          if (!shouldForwardToHost(event, element)) return;
+          element.dispatchEvent(cloneCustomEvent(event));
+        },
+        { signal },
+      );
+    }
   }
 
   function mount(element: Element) {
     currentElement = element;
     syncHostSubscription();
+    syncEventTypeSubscription();
     listen();
     queueMicrotask(() => {
       if (currentElement === element) listen();
@@ -1527,25 +1349,24 @@ const forwardTargetEventsMixin = createMixin<
   handle.addEventListener("remove", () => {
     unsubscribeHost?.();
     unsubscribeHost = undefined;
+    unsubscribeEventTypes?.();
+    unsubscribeEventTypes = undefined;
     controller?.abort();
     controller = undefined;
     currentElement = undefined;
   });
 
-  return (target, owner, eventName, guard) => {
+  return (target, runtime) => {
     let needsListen =
       currentExplicitTarget !== target ||
-      currentOwner !== owner ||
-      currentEventName !== eventName ||
-      currentGuard !== guard;
+      currentRuntime !== runtime;
 
     currentExplicitTarget = target;
-    currentOwner = owner;
-    currentEventName = eventName;
-    currentGuard = guard;
+    currentRuntime = runtime;
 
     if (needsListen) {
       syncHostSubscription();
+      syncEventTypeSubscription();
       listen();
     }
 
@@ -1560,9 +1381,9 @@ function createCustomEventsOnElement<
   type: Type,
   runtime: CustomEventsRuntime,
 ): CustomEventsOnElement<Events, Type> {
+  addRuntimeEventType(runtime, type);
   return function CustomEventsOnElement(
     handle: Handle<{
-      guard?: OnCustomEventGuard;
       initial?: EventObject<Events> | Event;
       target?: EventTarget;
       render: (event: CustomEventsEvent<Events, Type>) => RemixNode;
@@ -1571,11 +1392,9 @@ function createCustomEventsOnElement<
     let eventName = getRuntimeEventName(runtime, type);
     let initialEvent = createInitialEvent(
       type,
-      runtime.namespace,
+      runtime,
       handle.props.initial ?? runtime.initial,
     );
-    let currentGuardProp = handle.props.guard;
-    let guard = createCustomEventsGuard(runtime, handle.props.guard);
     let hostElement: HTMLElement | undefined;
     let currentEvent: Event | undefined = initialEvent;
     let currentTarget: EventTarget | undefined;
@@ -1584,16 +1403,6 @@ function createCustomEventsOnElement<
 
     function canRender(event: Event) {
       return event === initialEvent || ownsEvent(event, runtime.owner);
-    }
-
-    function isAllowedByHost(event: Event, signal: AbortSignal) {
-      return !hostElement || guard(event, hostElement, signal) !== false;
-    }
-
-    function syncGuard() {
-      if (currentGuardProp === handle.props.guard) return;
-      currentGuardProp = handle.props.guard;
-      guard = createCustomEventsGuard(runtime, handle.props.guard);
     }
 
     function syncDefaultTarget() {
@@ -1627,14 +1436,6 @@ function createCustomEventsOnElement<
           syncDefaultTarget();
         }
       });
-      if (
-        currentEvent &&
-        currentEvent !== initialEvent &&
-        !isAllowedByHost(currentEvent, handle.signal)
-      ) {
-        currentEvent = undefined;
-        void handle.update();
-      }
     }
 
     function syncTarget(nextTarget: EventTarget | undefined) {
@@ -1652,7 +1453,6 @@ function createCustomEventsOnElement<
         (event) => {
           if (isForwardedCustomEvent(event)) return;
           if (!canRender(event)) return;
-          if (!isAllowedByHost(event, signal)) return;
           currentEvent = event;
           void handle.update();
         },
@@ -1673,7 +1473,6 @@ function createCustomEventsOnElement<
     );
 
     return () => {
-      syncGuard();
       syncHostSubscription();
       syncDefaultTarget();
 
@@ -1695,28 +1494,11 @@ function createCustomEventsOnElement<
 }
 
 /**
- * Base class for a product event set used by a component, widget, or class.
+ * Base class for a component or object event set.
  *
- * Extend it with your event-detail map, then create an instance wherever a
- * component or object owns an event stream. Instances work with native
- * `target.dispatchEvent(...)`, Remix `on(...)` mixins, and JSX render
- * components:
- *
- * - `events.submitted(detail)` creates one event
- * - `events.events({ submitted, paid })` creates several events from one action
- * - `events.listen(on(...))` lets elements react with DOM effects
- * - `<events.submitted render={...} />` renders from the latest event
- * - `events.host()` creates a local DOM boundary for repeated forms, rows, and
- *   widgets
- *
- * Sibling branches can react to each other by default, which is useful for
- * cohesive widgets such as a board, reset button, and status display. Put
- * `events.host()` on each repeated form or row when each instance should
- * stay independent, as in a todo list.
- *
- * `events.seedInitialEvent(...)` gives render components and latest-event memory
- * an initial value without firing listeners. Dispatch explicitly when a DOM
- * effect should run.
+ * Use event methods with native `dispatchEvent(...)`, `listen()` with Remix
+ * `on(...)` for DOM effects, and `<events.someEvent render={...} />` for local
+ * rendering.
  *
  * @example
  * class GameEvents extends CustomEvents<{
@@ -1728,71 +1510,83 @@ function createCustomEventsOnElement<
  * <section mix={gameEvents.host()}>
  *   <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
  * </section>
- *
- * @example
- * class CheckoutEvents extends CustomEvents<
- *   { submitted: { id: string } },
- *   "checkout"
- * > {}
- *
- * let checkoutEvents = new CheckoutEvents({ namespace: "checkout" });
- *
- * declare global {
- *   interface HTMLElementEventMap
- *     extends CheckoutEvents["__namespacedEventMap"] {}
- * }
  */
 class CustomEventsBase<
   Events extends EventDetails,
-  const Namespace extends string | undefined = undefined,
 > {
-  declare readonly __eventMap: CustomEventMap<Events>;
-  declare readonly __namespacedEventMap: Namespace extends string
-    ? NamespacedCustomEventTypes<Events, Namespace>
-    : never;
+  declare readonly map: CustomEventMap<Events>;
 
-  constructor(...args: CustomEventsConstructorArgs<Namespace>) {
-    let options = args[0];
-    let descriptor = createCustomEventsDescriptor<Events, Namespace>(
-      options as CustomEventsOptions<Namespace> | undefined,
-    );
+  constructor() {
+    let descriptor = createCustomEventsDescriptor<Events>();
     return descriptor as unknown as this;
   }
 }
 
-export type CustomEvents<
-  Events extends EventDetails,
-  Namespace extends string | undefined = undefined,
-> = CustomEventsDescriptor<Events, Namespace>;
+export type CustomEvents<Events extends EventDetails> =
+  CustomEventsDescriptor<Events>;
 
 export const CustomEvents: CustomEventsConstructor =
   CustomEventsBase as unknown as CustomEventsConstructor;
 
 function createCustomEventsDescriptor<
   Events extends EventDetails,
-  const Namespace extends string | undefined = undefined,
->(
-  options?: CustomEventsOptions<Namespace>,
-): CustomEventsDescriptor<Events, Namespace> {
+>(): CustomEventsDescriptor<Events> {
   let runtime: CustomEventsRuntime = {
-    namespace: options?.namespace,
     owner: Symbol("customEvents.descriptor"),
+    ownerId: createCustomEventsOwnerId(),
+    eventTypes: new Set(),
+    eventTypeListeners: new Set(),
   };
 
-  function createCustomEvents<Source = unknown>(
+  function createAbortedEvent() {
+    return new Event(CUSTOM_EVENTS_ABORTED);
+  }
+
+  function createBatchChangeEvent<Source = unknown>(
     events: CustomEventsDispatchInput<Events>,
     init?: CustomEventsInit<Source>,
   ) {
     if (init?.signal?.aborted) {
-      return new Event(CUSTOM_EVENTS_DISPATCH);
+      return createAbortedEvent();
     }
 
-    enableWindowTarget();
-    return createCustomEventsDispatchEvent(
-      events,
-      init,
-      runtime.namespace,
-      runtime.owner,
+    let entries = resolveCustomEventsDispatchEntries(events);
+    for (let [type] of entries) addRuntimeEventType(runtime, type);
+    addRuntimeEventType(runtime, CHANGE_EVENT_NAME);
+    enableWindowTarget(runtime);
+    return createOwnedCustomEvent(
+      getRuntimeEventName(runtime, CHANGE_EVENT_NAME),
+      getEventInit(init),
+      createCustomEventChangeDetail(entries),
+      {
+        hasSource: Boolean(init && hasDispatchSource(init)),
+        kind: "batch-change",
+        owner: runtime.owner,
+        source: init?.source,
+      },
+    );
+  }
+
+  function createGranularEvent<Source = unknown>(
+    type: string,
+    detail: unknown,
+    init?: CustomEventsInit<Source>,
+  ) {
+    if (init?.signal?.aborted) return createAbortedEvent();
+
+    addRuntimeEventType(runtime, type);
+    addRuntimeEventType(runtime, CHANGE_EVENT_NAME);
+    enableWindowTarget(runtime);
+    return createOwnedCustomEvent(
+      getRuntimeEventName(runtime, type),
+      getEventInit(init),
+      detail,
+      {
+        hasSource: Boolean(init && hasDispatchSource(init)),
+        kind: "granular",
+        owner: runtime.owner,
+        source: init?.source,
+      },
     );
   }
 
@@ -1805,7 +1599,11 @@ function createCustomEventsDescriptor<
     if (signal?.aborted) return () => {};
 
     let cleanupHost: () => void;
-    enableCustomEventsHost(target, runtime.namespace);
+    let cleanupDispatchTarget = registerCustomEventsDispatchTarget(
+      target,
+      runtime,
+      { hosted: isElement(target) },
+    );
     if (isElement(target)) {
       addCustomEventsHost(target, runtime.owner);
       seedInitialCustomEventsDetails(target, runtime);
@@ -1826,6 +1624,7 @@ function createCustomEventsDescriptor<
       if (!isActive) return;
       isActive = false;
       signal?.removeEventListener("abort", cleanup);
+      cleanupDispatchTarget();
       cleanupHost();
     };
     signal?.addEventListener("abort", cleanup, { once: true });
@@ -1833,6 +1632,7 @@ function createCustomEventsDescriptor<
   }
 
   function getEventMember(property: string) {
+    addRuntimeEventType(runtime, property);
     let member = eventMembers.get(property);
     if (member) return member;
 
@@ -1842,10 +1642,19 @@ function createCustomEventsDescriptor<
     );
     member =
       property === CHANGE_EVENT_NAME
-        ? (element as CustomEventsOnMember<
-            Events,
-            CustomEventsEventType<Events>
-          >)
+        ? (function createChangeMember(
+            eventsOrHandle?: unknown,
+            init?: CustomEventsInit,
+          ) {
+            if (isRemixHandle(eventsOrHandle)) {
+              return element(eventsOrHandle);
+            }
+
+            return createBatchChangeEvent(
+              (eventsOrHandle ?? {}) as CustomEventsDispatchInput<Events>,
+              init,
+            );
+          } as CustomEventsOnMember<Events, CustomEventsEventType<Events>>)
         : (function createEventMember(
             detailOrHandle?: unknown,
             init?: CustomEventsInit,
@@ -1855,58 +1664,41 @@ function createCustomEventsDescriptor<
             }
 
             if (arguments.length === 0) {
-              return createCustomEvents(
-                { [property]: null } as EventObject<Events>,
-                init,
-              );
+              return createGranularEvent(property, null, init);
             }
 
             if (init === undefined && isCustomEventsInit(detailOrHandle)) {
-              return createCustomEvents(
-                { [property]: null } as EventObject<Events>,
-                detailOrHandle,
-              );
+              return createGranularEvent(property, null, detailOrHandle);
             }
 
-            return createCustomEvents(
-              { [property]: detailOrHandle } as CustomEventsDispatchEvents<Events>,
-              init,
-            );
+            return createGranularEvent(property, detailOrHandle, init);
           } as CustomEventsOnMember<Events, CustomEventsEventType<Events>>);
     eventMembers.set(property, member);
     return member;
   }
 
-  let listenToOnDescriptors = ((
-    ...args: Array<
-      MixinDescriptor<Element, OnMixinArgs<string>> | CustomEventsListenOptions
-    >
-  ) => {
-    let { descriptors, options } = getListenOptions(args);
-    let guard = createCustomEventsGuard(runtime, options.guard);
-    let mixins: Array<MixinDescriptor<Element, any>> = [];
+  let names = new Proxy(
+    {},
+    {
+      get(_, property) {
+        if (typeof property !== "string") return undefined;
+        addRuntimeEventType(runtime, property);
+        return getRuntimeEventName(runtime, property);
+      },
+    },
+  ) as CustomEventsNames<Events>;
 
-    for (let descriptor of descriptors) {
-      let type = getOnDescriptorType(descriptor);
-      let eventName = getListenEventName(runtime, type);
-      mixins.push(
-        forwardTargetEventsMixin(
-          options.target,
-          runtime.owner,
-          eventName,
-          guard,
-        ),
-        adaptOnDescriptor(descriptor, eventName, runtime.owner),
-      );
-    }
+  let listen = ((options?: CustomEventsListenOptions) =>
+    forwardRuntimeEventsMixin(
+      options?.target,
+      runtime,
+    )) as CustomEventsListenFunction<Events>;
 
-    return mixins;
-  }) as CustomEventsListenFunction<Events, Namespace>;
-
-  let proxy: CustomEventsDescriptor<Events, Namespace>;
+  let proxy: CustomEventsDescriptor<Events>;
   let descriptor = {
-    events: createCustomEvents,
-    listen: listenToOnDescriptors,
+    map: undefined,
+    listen,
+    names,
     seedInitialEvent(event: CustomEventsInitial<Events>) {
       runtime.initial = event as CustomEventsInitial<EventDetails>;
       seedInitialCustomEventsDescriptorDetails(runtime);
@@ -1938,6 +1730,6 @@ function createCustomEventsDescriptor<
 
       return getEventMember(property);
     },
-  }) as unknown as CustomEventsDescriptor<Events, Namespace>;
+  }) as unknown as CustomEventsDescriptor<Events>;
   return proxy;
 }

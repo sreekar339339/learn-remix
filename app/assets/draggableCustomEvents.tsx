@@ -6,12 +6,10 @@ type DraggableCustomEventDetail = {
   top: number;
 };
 
-class DraggableEvents extends CustomEvents<{
+let draggableEvents = new CustomEvents<{
   start: DraggableCustomEventDetail;
   end: DraggableCustomEventDetail;
-}> {}
-
-const draggableEvents = new DraggableEvents();
+}>();
 
 type DraggableCustomEventsProps = {
   on?: Record<string, (event: Event) => void>;
@@ -91,28 +89,32 @@ export const draggable_ = createMixin<
     return (
       <handle.element
         {...props}
-        mix={[on("pointerdown", (event) => startDrag(event))]}
+        mix={[
+          on("pointerdown", (event) => startDrag(event)),
+        ]}
       />
     );
   };
 });
 
-export const draggable: typeof draggable_ & typeof draggableEvents =
-  Object.assign(draggable_, draggableEvents);
+export const draggable: typeof draggable_ & typeof draggableEvents.names =
+  Object.assign(draggable_, {
+    change: draggableEvents.names.change,
+    start: draggableEvents.names.start,
+    end: draggableEvents.names.end,
+  });
 
 function DraggableCard() {
   return () => (
     <div
       mix={[
         draggable(true),
-        draggable.listen(
-          on("start", ({ detail: { left, top } }) => {
-            console.log("draggable start with:", { left }, { top });
-          }),
-          on("end", ({ detail: { left, top } }) => {
-            console.log("draggable end with:", { left }, { top });
-          }),
-        ),
+        on(draggable.start, ({ detail: { left, top } }) => {
+          console.log("draggable start with:", { left }, { top });
+        }),
+        on(draggable.end, ({ detail: { left, top } }) => {
+          console.log("draggable end with:", { left }, { top });
+        }),
       ]}
     />
   );

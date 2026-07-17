@@ -1,10 +1,4 @@
-import {
-  clientEntry,
-  css,
-  on,
-  type Dispatched,
-  type Handle,
-} from "remix/ui";
+import { clientEntry, css, on, type Dispatched, type Handle } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
 import { todoEvents, type TodoActionDetail } from "./todoList.tsx";
@@ -153,19 +147,12 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[
                 todoActionButtonCss,
                 deleteTodoButtonCss,
-                todoEvents.listen(
-                  on("change", ({ currentTarget, detail }) => {
-                    let isActionSubmitted = detail.type === "actionSubmitted";
-                    currentTarget.classList.toggle(
-                      "pending",
-                      isActionSubmitted,
-                    );
-                    currentTarget.toggleAttribute(
-                      "disabled",
-                      isActionSubmitted,
-                    );
-                  }),
-                ),
+                todoEvents.listen(),
+                on(todoEvents.names.change, ({ currentTarget, detail }) => {
+                  let isActionSubmitted = detail.type === "actionSubmitted";
+                  currentTarget.classList.toggle("pending", isActionSubmitted);
+                  currentTarget.toggleAttribute("disabled", isActionSubmitted);
+                }),
               ]}
               name="intent"
               value="delete"
@@ -177,10 +164,8 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             mix={[
               todoEvents.host(),
-              todoEvents.listen(
-                on("actionErrored", ({ currentTarget }) =>
-                  currentTarget.reset(),
-                ),
+              on(todoEvents.names.actionErrored, ({ currentTarget }) =>
+                currentTarget.reset(),
               ),
               on("focusout", ({ currentTarget }) => {
                 if (
@@ -199,18 +184,17 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             <input hidden name="id" value={id} />
             <input
               mix={[
-                todoEvents.listen(
-                  on("change", ({ currentTarget, detail }) => {
-                    currentTarget.classList.toggle(
-                      "pending",
-                      detail.type === "actionSubmitted",
-                    );
-                    currentTarget.toggleAttribute(
-                      "disabled",
-                      detail.type === "actionSubmitted",
-                    );
-                  }),
-                ),
+                todoEvents.listen(),
+                on(todoEvents.names.change, ({ currentTarget, detail }) => {
+                  currentTarget.classList.toggle(
+                    "pending",
+                    detail.type === "actionSubmitted",
+                  );
+                  currentTarget.toggleAttribute(
+                    "disabled",
+                    detail.type === "actionSubmitted",
+                  );
+                }),
                 editTodoInputCss,
               ]}
               defaultValue={text}
@@ -228,19 +212,12 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[
                 todoActionButtonCss,
                 completeTodoButtonCss,
-                todoEvents.listen(
-                  on("change", ({ currentTarget, detail }) => {
-                    let isActionSubmitted = detail.type === "actionSubmitted";
-                    currentTarget.classList.toggle(
-                      "pending",
-                      isActionSubmitted,
-                    );
-                    currentTarget.toggleAttribute(
-                      "disabled",
-                      isActionSubmitted,
-                    );
-                  }),
-                ),
+                todoEvents.listen(),
+                on(todoEvents.names.change, ({ currentTarget, detail }) => {
+                  let isActionSubmitted = detail.type === "actionSubmitted";
+                  currentTarget.classList.toggle("pending", isActionSubmitted);
+                  currentTarget.toggleAttribute("disabled", isActionSubmitted);
+                }),
               ]}
               name="intent"
               value="update"

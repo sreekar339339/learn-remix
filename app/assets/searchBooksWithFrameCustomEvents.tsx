@@ -1,15 +1,17 @@
-import { clientEntry, css, Frame, on, type Handle } from "remix/ui";
+import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
 let searchEvents = new CustomEvents<{
   queryEmpty: null;
   querySubmitted: string;
-}>()
+}>();
 
 export const SearchBooksWithFrameCustomEvents = clientEntry(
   import.meta.url,
-  function SearchBooksWithFrameCustomEvents(handle: Handle<{ initialQuery?: string }>) {
+  function SearchBooksWithFrameCustomEvents(
+    handle: Handle<{ initialQuery?: string }>,
+  ) {
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
     searchEvents.seedInitialEvent(
       initialQuery
@@ -41,6 +43,7 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
               name="q"
               type="text"
               defaultValue={initialQuery}
+              autofocus
               mix={[
                 css({
                   padding: 4,
@@ -51,16 +54,14 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
                     animation: "glimmer 1.15s linear infinite",
                   },
                 }),
-                searchEvents.listen(
-                  on("change", ({ currentTarget, detail }) => {
-                    currentTarget.classList.toggle(
-                      "pending",
-                      detail.type === "querySubmitted",
-                    );
-                    if (detail.type !== "querySubmitted")
-                      currentTarget.select();
-                  }),
-                ),
+                searchEvents.listen(),
+                on(searchEvents.names.change, ({ currentTarget, detail }) => {
+                  currentTarget.classList.toggle(
+                    "pending",
+                    detail.type === "querySubmitted",
+                  );
+                  if (detail.type !== "querySubmitted") currentTarget.select();
+                }),
               ]}
             />
           </label>

@@ -15,14 +15,14 @@ type AppContextValue = {
 };
 
 class AppContext extends TypedEventTarget<
-  CustomEvents<AppContextValue>["__eventMap"]
+  CustomEvents<AppContextValue>["map"]
 > {
   events: CustomEvents<AppContextValue>;
 
   constructor(initial: Partial<AppContextValue>) {
     super();
     this.events = new CustomEvents<AppContextValue>();
-    this.events.seedInitialEvent(this.events.events(initial));
+    this.events.seedInitialEvent(this.events.change(initial));
     this.events.setHost(this);
   }
 
@@ -31,7 +31,7 @@ class AppContext extends TypedEventTarget<
   }
 
   set value(value: Partial<AppContextValue>) {
-    this.dispatchEvent(this.events.events(value));
+    this.dispatchEvent(this.events.change(value));
   }
 }
 
