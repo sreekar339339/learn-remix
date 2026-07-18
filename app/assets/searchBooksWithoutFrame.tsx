@@ -109,7 +109,7 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
               case "querySubmitted":
                 return (
                   <p>
-                    {`fetching books with title containing "${detail.event.detail.query}"...`}
+                    {`fetching books with title containing "${event.detail.query}"...`}
                   </p>
                 );
               case "booksFound":
