@@ -72,11 +72,11 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
         <label>
           Search{" "}
           <searchEvents.change
-            render={({ detail: { type } }) => (
+            render={({ detail: { event } }) => (
               <input
                 type="text"
                 defaultValue={initialQuery}
-                class={type === "querySubmitted" ? "pending" : ""}
+                class={event?.type === "querySubmitted" ? "pending" : ""}
                 mix={[
                   inputCss,
                   on("input", ({ currentTarget }, signal) => {
@@ -91,8 +91,9 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                     fetchBooks(query, currentTarget, signal);
                   }),
                   searchEvents.on("change", ({ detail, currentTarget }) => {
-                    if (detail.type !== "querySubmitted")
+                    if (detail.event?.type !== "querySubmitted") {
                       currentTarget.select();
+                    }
                   }),
                   ref((input) => input.dispatchEvent(new InputEvent("input"))),
                 ]}
@@ -101,26 +102,26 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
           />
         </label>
         <searchEvents.change
-          render={({ detail }) => {
-            switch (detail.type) {
+          render={({ detail: { event } }) => {
+            switch (event?.type) {
               case "queryEmpty":
                 return <p>Enter the title of any book.</p>;
               case "querySubmitted":
                 return (
                   <p>
-                    {`fetching books with title containing "${detail.detail.query}"...`}
+                    {`fetching books with title containing "${detail.event.detail.query}"...`}
                   </p>
                 );
               case "booksFound":
                 return (
                   <ul>
-                    {detail.detail.map((book) => (
+                    {event.detail.map((book) => (
                       <li>{book.title}</li>
                     ))}
                   </ul>
                 );
               case "booksNotFound":
-                if (detail.detail.reason === "emptyList") {
+                if (event.detail.reason === "emptyList") {
                   return (
                     <p>No books were found for this title at this time.</p>
                   );
@@ -128,14 +129,14 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
                 return (
                   <p>
                     Could not fetch books for this title. Reason:{" "}
-                    {detail.detail.reason.other}.
+                    {event.detail.reason.other}.
                   </p>
                 );
               case "errorOccurred":
                 return (
                   <p>
-                    Unexpected error occured, try again! {detail.detail.message}
-                    Cause: {detail.detail.cause as string}.
+                    Unexpected error occured, try again! {event.detail.message}
+                    Cause: {event.detail.cause as string}.
                   </p>
                 );
             }

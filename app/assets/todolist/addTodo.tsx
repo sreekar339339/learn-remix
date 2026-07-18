@@ -18,7 +18,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     let form = evt.currentTarget;
     let submitter = evt.submitter as HTMLButtonElement;
     let formData = new FormData(form, submitter);
-    if (formData.get("text") === "") return;
+    if (formData.get("text") === "") return form.focus();
     formData.set("redirectTo", "none");
     let opts = { composed: true, signal };
     try {
@@ -59,14 +59,14 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       <label>
         Enter a todo{" "}
         <todoEvents.change
-          render={({ detail: { type } }, handle) => (
+          render={({ detail: { event } }, handle) => (
             <input
-              disabled={type === "actionSubmitted"}
-              class={type === "actionSubmitted" ? "pending" : ""}
+              disabled={event?.type === "actionSubmitted"}
+              class={event?.type === "actionSubmitted" ? "pending" : ""}
               mix={[
                 inputCss,
                 todoEvents.on("change", ({ currentTarget, detail }) => {
-                  if (detail.type !== "actionSubmitted") {
+                  if (detail.event?.type !== "actionSubmitted") {
                     handle.queueTask(() => currentTarget.select());
                   }
                 }),

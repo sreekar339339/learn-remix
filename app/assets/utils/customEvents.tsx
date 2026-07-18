@@ -47,12 +47,12 @@ type CustomEventKind =
   | "product-change"
   | "derived-change"
   | "derived-event";
-type CustomEventWithMetadata<Detail> =
-  CustomEvent<Detail> & {
-    originTarget?: EventTarget;
-  };
+type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
+  originTarget?: EventTarget;
+};
 
-type AnyCustomEventsName = `${typeof CUSTOM_EVENTS_EVENT_PREFIX}:${string}:${string}`;
+type AnyCustomEventsName =
+  `${typeof CUSTOM_EVENTS_EVENT_PREFIX}:${string}:${string}`;
 
 declare global {
   interface HTMLElementEventMap {
@@ -68,19 +68,20 @@ declare global {
   }
 }
 
-type ChangeEventDetailFromMap<
-  EventMap extends EventDetails,
-> = {
-  [K in keyof EventMap & string]: {
-    type: K;
-    detail: EventMap[K];
-    details: Partial<EventMap>;
-  };
-}[keyof EventMap & string] | ({
-  type: Array<keyof EventMap & string>;
-  detail: Partial<EventMap>;
-  details: Partial<EventMap>;
-});
+type ChangeEventDetailFromMap<EventMap extends EventDetails> =
+  | {
+      event: {
+        [K in keyof EventMap & string]: {
+          type: K;
+          detail: EventMap[K];
+        };
+      }[keyof EventMap & string];
+      events: null;
+    }
+  | {
+      event: null;
+      events: Partial<EventMap>;
+    };
 
 type LocalCustomEventTypes<EventMap extends EventDetails> = {
   [K in typeof CHANGE_EVENT_NAME]: CustomEventWithMetadata<
@@ -198,7 +199,7 @@ type CustomEventsRenderProps<
    *
    * `seed` is render-only; it does not dispatch or run DOM listeners. Use the
    * descriptor's `.seed(...)` method when the same starting event should also
-   * initialize latest-event memory.
+   * initialize `getHost(...).latest`.
    *
    * @example
    * <searchEvents.change seed={searchEvents.queryEmpty()} render={...} />
@@ -218,7 +219,7 @@ type CustomEventsRenderProps<
    * @example
    * <todoEvents.change render={({ detail }, handle) => (
    *   <input
-   *     disabled={detail.type === "actionSubmitted"}
+   *     disabled={detail.event?.type === "actionSubmitted"}
    *     mix={todoEvents.on("change", ({ currentTarget }) => {
    *       handle.queueTask(() => currentTarget.select());
    *     })}
@@ -236,16 +237,15 @@ type CustomEventsOnElement<
   Type extends CustomEventsEventType<Events>,
 > = (handle: Handle<CustomEventsRenderProps<Events, Type>>) => () => RemixNode;
 
-type ExactEventDetail<Expected, Actual> =
-  Actual extends Expected
-    ? Expected extends object
-      ? Actual extends object
-        ? Exclude<keyof Actual, keyof Expected> extends never
-          ? Actual
-          : never
-        : Actual
+type ExactEventDetail<Expected, Actual> = Actual extends Expected
+  ? Expected extends object
+    ? Actual extends object
+      ? Exclude<keyof Actual, keyof Expected> extends never
+        ? Actual
+        : never
       : Actual
-    : never;
+    : Actual
+  : never;
 
 type CustomEventsOnMember<
   Events extends EventDetails,
@@ -253,8 +253,8 @@ type CustomEventsOnMember<
 > = Type extends typeof CHANGE_EVENT_NAME
   ? CustomEventsChangeMember<Events>
   : Type extends keyof Events & string
-  ? CustomEventsEventMember<Events, Type>
-  : CustomEventsOnElement<Events, Type>;
+    ? CustomEventsEventMember<Events, Type>
+    : CustomEventsOnElement<Events, Type>;
 
 type CustomEventsChangeMember<Events extends EventDetails> = {
   /**
@@ -266,15 +266,12 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * @example
    * target.dispatchEvent(events.change({ user, settings }));
    */
-  (
-    events: CustomEventsDispatchInput<Events>,
-    init?: CustomEventsInit,
-  ): Event;
+  (events: CustomEventsDispatchInput<Events>, init?: CustomEventsInit): Event;
   /**
    * Renders from the latest event in this event set.
    *
-   * Use this when a view can switch over `detail.type` and render one local
-   * child region from the component's event flow.
+   * Use this when a view can switch over `detail.event?.type` for a single
+   * product event, or handle `detail.events` for a batch event.
    */
   (
     handle: Handle<
@@ -347,10 +344,7 @@ type CustomEventsOnDescriptor<Events extends EventDetails> = {
    * @example
    * button.dispatchEvent(checkoutEvents.submitted({ id: "order-1" }));
    */
-  [Type in CustomEventsEventType<Events>]: CustomEventsOnMember<
-    Events,
-    Type
-  >;
+  [Type in CustomEventsEventType<Events>]: CustomEventsOnMember<Events, Type>;
 };
 
 type CustomEventsOnOptions = {
@@ -390,9 +384,10 @@ type CustomEventsOnFunction<Events extends EventDetails> = {
    *
    * @example
    * <input mix={searchEvents.on("change", ({ detail, currentTarget }) => {
+   *   if (!detail.event) return;
    *   currentTarget.classList.toggle(
    *     "pending",
-   *     detail.type === "querySubmitted",
+   *     detail.event.type === "querySubmitted",
    *   );
    * })} />
    */
@@ -412,15 +407,13 @@ type CustomEventsOnFunction<Events extends EventDetails> = {
 type CustomEventsHostReference<Events extends EventDetails> = {
   readonly latest:
     | {
-        readonly event: ChangeEventDetailFromMap<Events>;
-        readonly events: Partial<Events>;
+        readonly change: ChangeEventDetailFromMap<Events>;
+        readonly eventMap: Partial<Events>;
       }
     | undefined;
 };
 
-type HostableCustomEventsDescriptor<
-  Events extends EventDetails,
-> = {
+type HostableCustomEventsDescriptor<Events extends EventDetails> = {
   /**
    * Makes an element the local event boundary for this event set.
    *
@@ -478,13 +471,14 @@ type HostableCustomEventsDescriptor<
    * Reads the latest event memory for this event set.
    *
    * For DOM elements, this resolves the nearest host. For plain event targets,
-   * it reads the target registered with `setHost(...)`. `latest.event` is the
-   * latest change detail. `latest.events` is the accumulated detail map.
+   * it reads the target registered with `setHost(...)`. `latest.change` is the
+   * most recent change detail. `latest.eventMap` is the latest known detail for
+   * each event type.
    *
    * @example
    * on("focusout", ({ currentTarget }) => {
    *   if (
-   *     todoEvents.getHost(currentTarget).latest?.event.type ===
+   *     todoEvents.getHost(currentTarget).latest?.change.event?.type ===
    *     "actionSubmitted"
    *   ) {
    *     return;
@@ -503,9 +497,7 @@ type HostableCustomEventsDescriptor<
   readonly map: CustomEventMap<Events>;
 };
 
-type CustomEventsDescriptor<
-  Events extends EventDetails,
-> = {
+type CustomEventsDescriptor<Events extends EventDetails> = {
   /**
    * Reacts to a product event from this descriptor.
    *
@@ -531,7 +523,7 @@ type CustomEventsDescriptor<
   readonly types: CustomEventsTypes<Events>;
 
   /**
-   * Seeds render components and latest-event memory with a descriptor event.
+   * Seeds render components and host memory with a descriptor event.
    *
    * This does not dispatch. It gives `<events.someEvent render={...} />` and
    * `getHost(...).latest` a starting point. Dispatch explicitly when DOM
@@ -560,11 +552,11 @@ type CustomEventsDescriptor<
 // registered with setHost() are tracked separately so event components and
 // descriptor-owned on() mixins can discover the sole active target when there is
 // no DOM parent.
-// Latest memory stores both the last change detail and the accumulated event
-// detail map in one record.
+// Latest memory stores both the last change detail and the accumulated map of
+// latest detail payloads by event type.
 type CustomEventsMemory = {
-  event?: ChangeEventDetailFromMap<EventDetails>;
-  events: EventObject<EventDetails>;
+  change?: ChangeEventDetailFromMap<EventDetails>;
+  eventMap: EventObject<EventDetails>;
 };
 
 class HostRegistry {
@@ -723,8 +715,8 @@ class HostRegistry {
   getReference(target: EventTarget, owner: symbol) {
     let memory = this.getMemory(target, owner);
     return {
-      latest: memory?.event
-        ? { event: memory.event, events: memory.events }
+      latest: memory?.change
+        ? { change: memory.change, eventMap: memory.eventMap }
         : undefined,
     };
   }
@@ -756,15 +748,15 @@ class HostRegistry {
     let patchDetail = createCustomEventChangeDetail(entries);
     if (!owner) return patchDetail;
 
-    let current = this.getMemory(target, owner)?.events ?? {};
-    let details: EventObject<EventDetails> = { ...current };
+    let current = this.getMemory(target, owner)?.eventMap ?? {};
+    let eventMap: EventObject<EventDetails> = { ...current };
     for (let [type, detail] of entries) {
-      details[type] = detail;
+      eventMap[type] = detail;
     }
-    let changeDetail = createCustomEventChangeDetail(entries, details);
+    let changeDetail = createCustomEventChangeDetail(entries);
     this.setMemory(target, owner, {
-      event: changeDetail,
-      events: details,
+      change: changeDetail,
+      eventMap,
     });
     return changeDetail;
   }
@@ -908,8 +900,7 @@ function isCustomEvent(event: Event) {
 
 function ownsEvent(event: Event, owner: symbol) {
   return (
-    isCustomEvent(event) &&
-    (event as OwnedEvent)[CUSTOM_EVENT_OWNER] === owner
+    isCustomEvent(event) && (event as OwnedEvent)[CUSTOM_EVENT_OWNER] === owner
   );
 }
 
@@ -945,7 +936,10 @@ function getEventName(descriptor: CustomEventsDescriptorState, type: string) {
   return `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:${type}`;
 }
 
-function getEventType(descriptor: CustomEventsDescriptorState, eventName: string) {
+function getEventType(
+  descriptor: CustomEventsDescriptorState,
+  eventName: string,
+) {
   let prefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:`;
   if (!eventName.startsWith(prefix)) return undefined;
   return eventName.slice(prefix.length);
@@ -969,28 +963,31 @@ function subscribeEventTypes(
 //
 // Every product event derives a change event. A product change event behaves as a
 // batch: it records all provided details and expands into individual product
-// events. The change detail always contains the current patch in detail and the
-// accumulated memory in details.
-function createCustomEventChangeDetail(
-  entries: Array<[string, unknown]>,
-  details = getEntriesObject(entries),
-) {
-
+// events. The change detail contains only the event envelope for what happened.
+function createCustomEventChangeDetail(entries: Array<[string, unknown]>) {
   if (entries.length === 1) {
     let [[type, detail]] = entries;
     return {
-      type,
-      detail,
-      details,
+      event: {
+        type,
+        detail,
+      },
+      events: null,
     };
   }
 
-  let type = entries.map(([type]) => type);
   return {
-    type,
-    detail: details,
-    details,
+    event: null,
+    events: getEntriesObject(entries),
   };
+}
+
+function getChangeEventEntries(detail: ChangeEventDetailFromMap<EventDetails>) {
+  if (!detail.event) return Object.entries(detail.events);
+
+  return [[detail.event.type, detail.event.detail]] satisfies Array<
+    [string, unknown]
+  >;
 }
 
 function getEntriesObject(entries: Array<[string, unknown]>) {
@@ -1098,26 +1095,24 @@ function createInitialEvent(
 
   if (type === CHANGE_EVENT_NAME) {
     return new CustomEvent(eventName, {
-      detail: createCustomEventChangeDetail([
-        [initialType, initial.detail],
-      ]),
+      detail: createCustomEventChangeDetail([[initialType, initial.detail]]),
     });
   }
 
   if (initialType !== CHANGE_EVENT_NAME) return undefined;
 
   let detail = initial.detail as ChangeEventDetailFromMap<EventDetails>;
-  if (Array.isArray(detail.type)) {
-    if (!Object.hasOwn(detail.details, type)) return undefined;
+  if (!detail.event) {
+    if (!Object.hasOwn(detail.events, type)) return undefined;
     return new CustomEvent(eventName, {
-      detail: detail.details[type],
+      detail: detail.events[type],
     });
   }
 
-  if (detail.type !== type) return undefined;
+  if (detail.event.type !== type) return undefined;
 
   return new CustomEvent(eventName, {
-    detail: detail.detail,
+    detail: detail.event.detail,
   });
 }
 
@@ -1132,12 +1127,7 @@ function getInitialEventEntriesFromEvent(
   }
 
   let detail = initial.detail as ChangeEventDetailFromMap<EventDetails>;
-  if (Array.isArray(detail.type)) {
-    return Object.entries(
-      detail.detail as EventObject<EventDetails>,
-    );
-  }
-  return [[detail.type, detail.detail]] satisfies Array<[string, unknown]>;
+  return getChangeEventEntries(detail);
 }
 
 function getInitialEventEntries(descriptor: CustomEventsDescriptorState) {
@@ -1219,11 +1209,7 @@ function dispatchDerivedChangeEvent(
   init: EventInit,
   metadata: CustomEventMetadata,
 ) {
-  let changeDetail = hostRegistry.record(
-    target,
-    descriptor.owner,
-    entries,
-  );
+  let changeDetail = hostRegistry.record(target, descriptor.owner, entries);
   let result = dispatchOwnedCustomEvent(
     target,
     descriptor,
@@ -1236,18 +1222,14 @@ function dispatchDerivedChangeEvent(
       origin: target,
     },
   );
-  return dispatchLocalTypedEvent(
-    target,
-    CHANGE_EVENT_NAME,
-    init,
-    changeDetail,
-    {
+  return (
+    dispatchLocalTypedEvent(target, CHANGE_EVENT_NAME, init, changeDetail, {
       ...metadata,
       kind: "derived-change",
       owner: descriptor.owner,
       origin: target,
-    },
-  ) && result;
+    }) && result
+  );
 }
 
 function dispatchExpandedGranularEvents(
@@ -1310,9 +1292,7 @@ function processCustomEventsEvent(
   }
 
   let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
-  let entries = Array.isArray(detail.type)
-    ? Object.entries(detail.detail as EventObject<EventDetails>)
-    : ([[detail.type, detail.detail]] satisfies Array<[string, unknown]>);
+  let entries = getChangeEventEntries(detail);
   if (!entries.length) return true;
 
   queueMicrotask(() => {
@@ -1489,10 +1469,7 @@ function defineEventValue(
 // are bridged without remounting user elements.
 const forwardEventsMixin = createMixin<
   Element,
-  [
-    target: EventTarget | undefined,
-    descriptor: CustomEventsDescriptorState,
-  ]
+  [target: EventTarget | undefined, descriptor: CustomEventsDescriptorState]
 >((handle) => {
   let currentElement: Element | undefined;
   let currentExplicitTarget: EventTarget | undefined;
@@ -1570,8 +1547,7 @@ const forwardEventsMixin = createMixin<
 
   return (target, descriptor) => {
     let needsListen =
-      currentExplicitTarget !== target ||
-      currentState !== descriptor;
+      currentExplicitTarget !== target || currentState !== descriptor;
 
     currentExplicitTarget = target;
     currentState = descriptor;
@@ -1648,9 +1624,7 @@ function createCustomEventsOnElement<
     }
 
     function syncDefaultTarget() {
-      syncTarget(
-        hostRegistry.getDefaultTarget(hostElement, descriptor.owner),
-      );
+      syncTarget(hostRegistry.getDefaultTarget(hostElement, descriptor.owner));
     }
 
     function syncHostSubscription() {
@@ -1762,9 +1736,7 @@ function createCustomEventsOnElement<
  *   <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
  * </section>
  */
-class CustomEventsBase<
-  Events extends EventDetails,
-> {
+class CustomEventsBase<Events extends EventDetails> {
   declare readonly map: CustomEventMap<Events>;
 
   constructor(options?: CustomEventsConstructorOptions<Events>) {
@@ -1785,9 +1757,7 @@ export const CustomEvents: CustomEventsConstructor =
 // event factory/render members lazily, while types exposes stable event-name
 // strings for Remix on(...). The proxy keeps the public API type-shaped without
 // requiring users to duplicate event names at runtime.
-function createCustomEventsDescriptor<
-  Events extends EventDetails,
->(
+function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsConstructorOptions<Events>,
 ): CustomEventsDescriptor<Events> {
   let state: CustomEventsDescriptorState = {

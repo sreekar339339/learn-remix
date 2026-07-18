@@ -89,7 +89,7 @@ export const TicTacToeCustomEvents = clientEntry(
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.value);
               let { position, nextPlayer, result } =
-                ticTacToeEvents.getHost(currentTarget).latest?.events.turn!;
+                ticTacToeEvents.getHost(currentTarget).latest?.eventMap.turn!;
               if (position.has(cellId) || result !== "Pending") return;
               let nextPosition = new Map(position).set(cellId, nextPlayer);
               let nextResult = deriveResult(nextPosition);
@@ -119,7 +119,7 @@ export const TicTacToeCustomEvents = clientEntry(
               let boundIdx = idxIncrement < 0 ? 0 : 8;
               let nextFreeCellIdx = cellId;
               let { position } =
-                ticTacToeEvents.getHost(currentTarget).latest?.events.turn!;
+                ticTacToeEvents.getHost(currentTarget).latest?.eventMap.turn!;
               while (
                 nextFreeCellIdx === cellId ||
                 position.has(nextFreeCellIdx)

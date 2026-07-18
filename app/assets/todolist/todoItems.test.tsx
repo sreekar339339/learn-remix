@@ -1,7 +1,6 @@
 import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { renderToString } from "remix/ui/server";
-
 import { TodoItems } from "./todoItems.tsx";
 
 describe("TodoItems SSR", () => {

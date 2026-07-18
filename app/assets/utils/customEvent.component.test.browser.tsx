@@ -58,7 +58,7 @@ class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map
   }
 
   get value(): AppContextValue {
-    return this.events.getHost(this).latest?.events as AppContextValue;
+    return this.events.getHost(this).latest?.eventMap as AppContextValue;
   }
 
   patch(value: Partial<AppContextValue>) {
@@ -189,12 +189,12 @@ function ScopedActionForms(handle: Handle) {
   let changeStatus =
     (statusFor: "first" | "second") =>
     ({ detail }: ScopedActionEvents["map"]["change"]) => {
-      if (Array.isArray(detail.type)) return;
+      if (!detail.event) return;
 
       if (statusFor === "first") {
-        firstStatus = detail.type;
+        firstStatus = detail.event.type;
       } else {
-        secondStatus = detail.type;
+        secondStatus = detail.event.type;
       }
 
       handle.update();
@@ -304,9 +304,9 @@ function SearchForm(handle: Handle<Props<"div">>) {
               );
             }),
             searchEvents.on("change", ({ currentTarget, detail }, signal) => {
-              if (detail.type === "querySubmitted") {
+              if (detail.event?.type === "querySubmitted") {
                 return void fetchBooks(
-                  detail.detail.query,
+                  detail.event.detail.query,
                   currentTarget,
                   signal,
                 );
@@ -463,9 +463,11 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: "activated",
-            detail: { pointerId: 7 },
-            details: { activated: { pointerId: 7 } },
+            event: {
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+            events: null,
           },
         ],
         null,
@@ -488,17 +490,18 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: "activated",
-            detail: { pointerId: 7 },
-            details: { activated: { pointerId: 7 } },
+            event: {
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+            events: null,
           },
           {
-            type: "moved",
-            detail: { x: 20, y: 35 },
-            details: {
-              activated: { pointerId: 7 },
-              moved: { x: 20, y: 35 },
+            event: {
+              type: "moved",
+              detail: { x: 20, y: 35 },
             },
+            events: null,
           },
         ],
         null,
@@ -515,26 +518,25 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: "activated",
-            detail: { pointerId: 7 },
-            details: { activated: { pointerId: 7 } },
+            event: {
+              type: "activated",
+              detail: { pointerId: 7 },
+            },
+            events: null,
           },
           {
-            type: "moved",
-            detail: { x: 20, y: 35 },
-            details: {
-              activated: { pointerId: 7 },
-              moved: { x: 20, y: 35 },
+            event: {
+              type: "moved",
+              detail: { x: 20, y: 35 },
             },
+            events: null,
           },
           {
-            type: "released",
-            detail: null,
-            details: {
-              activated: { pointerId: 7 },
-              moved: { x: 20, y: 35 },
-              released: null,
+            event: {
+              type: "released",
+              detail: null,
             },
+            events: null,
           },
         ],
         null,
@@ -567,12 +569,8 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: ["loaded", "played"],
-            detail: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
-            },
-            details: {
+            event: null,
+            events: {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
@@ -590,23 +588,18 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: ["loaded", "played"],
-            detail: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
-            },
-            details: {
+            event: null,
+            events: {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
           },
           {
-            type: "played",
-            detail: { track: "North Star" },
-            details: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
+            event: {
+              type: "played",
+              detail: { track: "North Star" },
             },
+            events: null,
           },
         ],
         null,
@@ -621,32 +614,25 @@ describe("CustomEvents component usage", () => {
       JSON.stringify(
         [
           {
-            type: ["loaded", "played"],
-            detail: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
-            },
-            details: {
+            event: null,
+            events: {
               loaded: { track: "North Star" },
               played: { track: "North Star" },
             },
           },
           {
-            type: "played",
-            detail: { track: "North Star" },
-            details: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
+            event: {
+              type: "played",
+              detail: { track: "North Star" },
             },
+            events: null,
           },
           {
-            type: "stopped",
-            detail: null,
-            details: {
-              loaded: { track: "North Star" },
-              played: { track: "North Star" },
-              stopped: null,
+            event: {
+              type: "stopped",
+              detail: null,
             },
+            events: null,
           },
         ],
         null,
@@ -720,12 +706,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "dune" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "dune" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "dune" },
           },
+          events: null,
         },
         null,
         2,
@@ -739,12 +724,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "idle",
-          detail: null,
-          details: {
-            idle: null,
-            querySubmitted: { query: "dune" },
+          event: {
+            type: "idle",
+            detail: null,
           },
+          events: null,
         },
         null,
         2,
@@ -759,13 +743,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "errorOccurred",
-          detail: new Error("Network response was not ok"),
-          details: {
-            idle: null,
-            querySubmitted: { query: "offline" },
-            errorOccurred: new Error("Network response was not ok"),
+          event: {
+            type: "errorOccurred",
+            detail: new Error("Network response was not ok"),
           },
+          events: null,
         },
         null,
         2,
@@ -783,14 +765,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "booksNotFound",
-          detail: { reason: "emptyList" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "notfound" },
-            errorOccurred: new Error("Network response was not ok"),
-            booksNotFound: { reason: "emptyList" },
+          event: {
+            type: "booksNotFound",
+            detail: { reason: "emptyList" },
           },
+          events: null,
         },
         null,
         2,
@@ -871,12 +850,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "d" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "d" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "d" },
           },
+          events: null,
         },
         null,
         2,
@@ -892,12 +870,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "du" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "du" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "du" },
           },
+          events: null,
         },
         null,
         2,
@@ -913,12 +890,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "dun" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "dun" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "dun" },
           },
+          events: null,
         },
         null,
         2,
@@ -934,12 +910,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "dune" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "dune" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "dune" },
           },
+          events: null,
         },
         null,
         2,
@@ -957,12 +932,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "querySubmitted",
-          detail: { query: "dune" },
-          details: {
-            idle: null,
-            querySubmitted: { query: "dune" },
+          event: {
+            type: "querySubmitted",
+            detail: { query: "dune" },
           },
+          events: null,
         },
         null,
         2,
@@ -978,13 +952,11 @@ describe("CustomEvents component usage", () => {
       result.$("output")?.textContent,
       JSON.stringify(
         {
-          type: "booksFound",
-          detail: { books: ["Dune", "Dune Messiah"] },
-          details: {
-            idle: null,
-            querySubmitted: { query: "dune" },
-            booksFound: { books: ["Dune", "Dune Messiah"] },
+          event: {
+            type: "booksFound",
+            detail: { books: ["Dune", "Dune Messiah"] },
           },
+          events: null,
         },
         null,
         2,

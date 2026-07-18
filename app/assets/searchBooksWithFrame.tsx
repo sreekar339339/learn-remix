@@ -55,21 +55,21 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
                   },
                 }),
                 searchEvents.on("change", ({ currentTarget, detail }) => {
-                  if (detail.type !== "querySubmitted") currentTarget.select();
+                  if (detail.event?.type !== "querySubmitted") {
+                    currentTarget.select();
+                  }
                 }),
               ]}
             />
           </label>
         </form>
         <searchEvents.change
-          render={({ detail }) => {
-            if (Array.isArray(detail.type)) return null;
-            if (detail.type === "queryEmpty") {
+          render={({ detail: { event } }) => {
+            if (!event) return null;
+            if (event.type === "queryEmpty") {
               return <p>Enter the title of any book.</p>;
             }
-            if (detail.type !== "querySubmitted") return null;
-
-            let query = detail.detail;
+            let query = event.detail;
             return (
               <Frame
                 key={query}

@@ -21,19 +21,18 @@ describe("CustomEvents", () => {
           type="button"
           data-testid="checkout-button"
           mix={[
-            checkoutEvents.on("submitted", ({
-              currentTarget,
-              detail,
-              target,
-            }) => {
-              currentTarget.dataset.submittedId = detail.id;
-              currentTarget.dataset.currentTargetIsButton = String(
-                currentTarget.dataset.testid === "checkout-button",
-              );
-              currentTarget.dataset.eventTargetIsButton = String(
-                target === currentTarget,
-              );
-            }),
+            checkoutEvents.on(
+              "submitted",
+              ({ currentTarget, detail, target }) => {
+                currentTarget.dataset.submittedId = detail.id;
+                currentTarget.dataset.currentTargetIsButton = String(
+                  currentTarget.dataset.testid === "checkout-button",
+                );
+                currentTarget.dataset.eventTargetIsButton = String(
+                  target === currentTarget,
+                );
+              },
+            ),
             checkoutEvents.on("change", ({ currentTarget, target }) => {
               currentTarget.dataset.changeTargetIsButton = String(
                 target === currentTarget,
@@ -85,12 +84,12 @@ describe("CustomEvents", () => {
           <output
             data-testid="checkout-status"
             mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
-                if (Array.isArray(detail.type)) return;
-                currentTarget.dataset.eventType = detail.type;
-                currentTarget.textContent = String(
-                  detail.details.submitted?.id,
-                );
-              })}
+              if (detail.event?.type !== "submitted") {
+                return;
+              }
+              currentTarget.dataset.eventType = detail.event.type;
+              currentTarget.textContent = String(detail.event.detail.id);
+            })}
           />
         </section>
       );
@@ -175,8 +174,8 @@ describe("CustomEvents", () => {
               currentTarget.dispatchEvent(checkoutEvents.paid());
             }),
             checkoutEvents.on("change", ({ currentTarget, detail }) => {
-              if (Array.isArray(detail.type)) return;
-              currentTarget.dataset.latestEvent = detail.type;
+              if (!detail.event) return;
+              currentTarget.dataset.latestEvent = detail.event.type;
             }),
             ref((input) => input.dispatchEvent(new InputEvent("input"))),
           ]}
@@ -187,9 +186,7 @@ describe("CustomEvents", () => {
     let result = render(<CheckoutSearch />);
     t.after(() => result.cleanup());
 
-    let input = result.$(
-      '[data-testid="checkout-search"]',
-    ) as HTMLInputElement;
+    let input = result.$('[data-testid="checkout-search"]') as HTMLInputElement;
 
     await result.act(() => Promise.resolve());
 
@@ -223,13 +220,11 @@ describe("CustomEvents", () => {
             seed={checkoutEvents.submitted({ id: "initial-order" })}
             render={({ detail }) => {
               let text =
-                !Array.isArray(detail.type) && detail.type === "submitted"
-                  ? detail.detail.id
+                detail.event?.type === "submitted"
+                  ? detail.event.detail.id
                   : "many";
               return (
-                <output data-testid="checkout-change-summary">
-                  {text}
-                </output>
+                <output data-testid="checkout-change-summary">{text}</output>
               );
             }}
           />
@@ -267,7 +262,7 @@ describe("CustomEvents", () => {
     checkoutEvents.seed(checkoutEvents.submitted({ id: "seeded-order" }));
 
     assert.equal(
-      checkoutEvents.getHost(terminal).latest?.events.submitted?.id,
+      checkoutEvents.getHost(terminal).latest?.eventMap.submitted?.id,
       "seeded-order",
     );
 
@@ -319,10 +314,11 @@ describe("CustomEvents", () => {
         <section
           data-testid="checkout-root"
           mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
-              if (Array.isArray(detail.type)) return;
-              currentTarget.dataset.latestOrder =
-                detail.details.submitted?.id;
-            })}
+            if (detail.event?.type !== "submitted") {
+              return;
+            }
+            currentTarget.dataset.latestOrder = detail.event.detail.id;
+          })}
         >
           <form data-testid="checkout-row" mix={checkoutEvents.host()}>
             <button
@@ -358,9 +354,7 @@ describe("CustomEvents", () => {
     let result = render(<CheckoutRows />);
     t.after(() => result.cleanup());
 
-    let root = result.$(
-      '[data-testid="checkout-root"]',
-    ) as HTMLElement;
+    let root = result.$('[data-testid="checkout-root"]') as HTMLElement;
     let localButton = result.$(
       '[data-testid="local-submit"]',
     ) as HTMLButtonElement;
@@ -375,7 +369,7 @@ describe("CustomEvents", () => {
     assert.equal(root.dataset.latestOrder, "composed-order");
   });
 
-  it("stores latest change detail and aggregate event details on the host", async (t) => {
+  it("stores the latest change detail and event map on the host", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
     function CheckoutHost(handle: Handle) {
@@ -409,10 +403,16 @@ describe("CustomEvents", () => {
 
     await result.act(() => button.click());
 
-    let latest = checkoutEvents.getHost(host).latest;
-    assert.deepEqual(latest?.event.type, ["submitted", "paid"]);
-    assert.equal(latest?.events.submitted?.id, "aggregate-order");
-    assert.equal(latest?.events.paid, null);
+    let hostReference = checkoutEvents.getHost(host);
+    assert.deepEqual(hostReference.latest?.change, {
+      event: null,
+      events: { submitted: { id: "aggregate-order" }, paid: null },
+    });
+    assert.equal(
+      hostReference.latest?.eventMap.submitted?.id,
+      "aggregate-order",
+    );
+    assert.equal(hostReference.latest?.eventMap.paid, null);
   });
 
   it("expands batch change events into single product events", async (t) => {
@@ -437,18 +437,15 @@ describe("CustomEvents", () => {
           </button>
           <output
             data-testid="submitted-listener"
-            mix={checkoutEvents.on("submitted", ({
-                currentTarget,
-                detail,
-              }) => {
-                currentTarget.textContent = detail.id;
-              })}
+            mix={checkoutEvents.on("submitted", ({ currentTarget, detail }) => {
+              currentTarget.textContent = detail.id;
+            })}
           />
           <output
             data-testid="paid-listener"
             mix={checkoutEvents.on("paid", ({ currentTarget, detail }) => {
-                currentTarget.textContent = String(detail);
-              })}
+              currentTarget.textContent = String(detail);
+            })}
           />
         </section>
       );
@@ -501,9 +498,7 @@ describe("CustomEvents", () => {
     let result = render(<CheckoutButton />);
     t.after(() => result.cleanup());
 
-    let button = result.$(
-      '[data-testid="fake-checkout"]',
-    ) as HTMLButtonElement;
+    let button = result.$('[data-testid="fake-checkout"]') as HTMLButtonElement;
     await result.act(() => button.click());
 
     assert.equal(button.dataset.changed, undefined);
@@ -560,7 +555,7 @@ describe("CustomEvents", () => {
     ) as HTMLOutputElement;
     assert.equal(summary.textContent, "terminal-order");
     assert.equal(
-      terminal.events.getHost(terminal).latest?.events.submitted?.id,
+      terminal.events.getHost(terminal).latest?.eventMap.submitted?.id,
       "terminal-order",
     );
   });
@@ -624,15 +619,16 @@ describe("CustomEvents", () => {
           <output
             data-testid="checkout-status"
             mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
-                if (Array.isArray(detail.type)) return;
-                currentTarget.textContent = detail.details.submitted?.id ?? "";
-              })}
+              if (detail.event?.type === "submitted") {
+                currentTarget.textContent = detail.event.detail.id;
+              }
+            })}
           />
           <output
             data-testid="paid-status"
             mix={checkoutEvents.on("paid", ({ currentTarget, detail }) => {
-                currentTarget.textContent = String(detail);
-              })}
+              currentTarget.textContent = String(detail);
+            })}
           />
         </section>
       );
@@ -659,7 +655,7 @@ describe("CustomEvents", () => {
 
     assert.equal(status.textContent, "first-order");
     assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
       "first-order",
     );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
@@ -672,7 +668,7 @@ describe("CustomEvents", () => {
 
     assert.equal(status.textContent, "first-order");
     assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
       "first-order",
     );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), false);
@@ -682,7 +678,7 @@ describe("CustomEvents", () => {
 
     assert.equal(status.textContent, "recreated-order");
     assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.events.submitted?.id,
+      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
       "recreated-order",
     );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
@@ -694,7 +690,7 @@ describe("CustomEvents", () => {
 
     assert.equal(paidStatus.textContent, "");
     assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.events.submitted?.id,
+      checkoutEvents.getHost(patchButton).latest?.eventMap.submitted?.id,
       "recreated-order",
     );
     assert.equal(__customEventsTest.hasWindowListener(changeName), false);
@@ -704,11 +700,11 @@ describe("CustomEvents", () => {
 
     assert.equal(paidStatus.textContent, "null");
     assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.events.submitted?.id,
+      checkoutEvents.getHost(patchButton).latest?.eventMap.submitted?.id,
       "recreated-patch-order",
     );
     assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.events.paid,
+      checkoutEvents.getHost(patchButton).latest?.eventMap.paid,
       null,
     );
     assert.equal(__customEventsTest.hasWindowListener(changeName), true);
