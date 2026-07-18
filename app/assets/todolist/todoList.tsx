@@ -1,4 +1,4 @@
-import { clientEntry, css, Frame, on, type Handle } from "remix/ui";
+import { clientEntry, css, Frame, type Handle } from "remix/ui";
 import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
@@ -10,6 +10,8 @@ export const todoEvents = new CustomEvents<{
   actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
 }>();
+
+todoEvents.seed(todoEvents.actionSucceeded(null))
 
 export type TodoActionDetail = {
   completed?: boolean;
@@ -24,12 +26,7 @@ export const TodoList = clientEntry(
 
 export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
   return () => (
-    <div
-      mix={[
-        todoEvents.listen(),
-        on(todoEvents.types.change, ({ detail }) => console.log(detail)),
-      ]}
-    >
+    <div mix={todoEvents.on("change", ({ detail }) => console.log(detail))}>
       <AddTodo />
       <Frame
         name="TodoItems"

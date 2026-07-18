@@ -50,12 +50,11 @@ type AppContextValue = {
 };
 
 class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map"]> {
-  events = new CustomEvents<AppContextValue>();
+  events = new CustomEvents<AppContextValue>({host: this});
 
   constructor(initial: Partial<AppContextValue>) {
     super();
     this.events.seed(this.events.change(initial));
-    this.events.setHost(this);
   }
 
   get value(): AppContextValue {
@@ -107,7 +106,7 @@ function GesturePad(handle: Handle) {
       data-testid="gesture-pad"
       mix={[
         gestureMixin(),
-        gestureMixin.on("change", ({ detail }) => {
+        gestureMixin.on('change', ({ detail }) => {
           events.push(detail);
           handle.update();
         }),
@@ -304,19 +303,15 @@ function SearchForm(handle: Handle<Props<"div">>) {
                   : searchEvents.idle(),
               );
             }),
-            searchEvents.listen(),
-            on(
-              searchEvents.types.change,
-              ({ currentTarget, detail }, signal) => {
-                if (detail.type === "querySubmitted") {
-                  return void fetchBooks(
-                    detail.detail.query,
-                    currentTarget,
-                    signal,
-                  );
-                }
-              },
-            ),
+            searchEvents.on("change", ({ currentTarget, detail }, signal) => {
+              if (detail.type === "querySubmitted") {
+                return void fetchBooks(
+                  detail.detail.query,
+                  currentTarget,
+                  signal,
+                );
+              }
+            }),
           ]}
         />
         <button>Search</button>

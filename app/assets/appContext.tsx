@@ -17,12 +17,11 @@ type AppContextValue = {
 class AppContext extends TypedEventTarget<
   CustomEvents<AppContextValue>["map"]
 > {
-  events = new CustomEvents<AppContextValue>();
+  events = new CustomEvents<AppContextValue>({host: this});
 
   constructor(initial: Partial<AppContextValue>) {
     super();
     this.events.seed(this.events.change(initial));
-    this.events.setHost(this);
   }
 
   get value() {

@@ -97,24 +97,20 @@ export const draggable_ = createMixin<
   };
 });
 
-export const draggable: typeof draggable_ & typeof draggableEvents.types =
-  Object.assign(draggable_, {
-    change: draggableEvents.types.change,
-    start: draggableEvents.types.start,
-    end: draggableEvents.types.end,
-  });
+export const draggable: typeof draggable_ & typeof draggableEvents =
+  Object.assign(draggable_, draggableEvents);
 
 function DraggableCard() {
   return () => (
     <div
       mix={[
         draggable(true),
-        on(draggable.start, ({ detail: { left, top } }) => {
+        draggable.on('start', ({ detail: { left, top } }) => {
           console.log("draggable start with:", { left }, { top });
         }),
-        on(draggable.end, ({ detail: { left, top } }) => {
+        draggable.on('end', ({ detail: { left, top } }) => {
           console.log("draggable end with:", { left }, { top });
-        }),
+        })
       ]}
     />
   );

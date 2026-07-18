@@ -10,11 +10,10 @@ class DrummerEvents extends CustomEvents<{
 export class Drummer extends TypedEventTarget<DrummerEvents["map"]> {
   #isPlaying = false;
   #tempoBpm = 90;
-  events = new DrummerEvents();
+  events = new DrummerEvents({host: this});
 
   constructor() {
     super();
-    this.events.setHost(this);
   }
 
   get isPlaying() {

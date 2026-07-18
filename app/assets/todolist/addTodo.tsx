@@ -51,44 +51,30 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
         todoEvents.host(),
-        on(todoEvents.types.actionSucceeded, ({ currentTarget }) => {
+        todoEvents.on("actionSucceeded", ({ currentTarget }) => {
           currentTarget.reset();
         }),
       ]}
     >
       <label>
         Enter a todo{" "}
-        <input
-          mix={[
-            todoEvents.listen(),
-            on(todoEvents.types.change, ({ currentTarget, detail }) => {
-              let isActionSubmitted = detail.type === "actionSubmitted";
-              currentTarget.classList.toggle("pending", isActionSubmitted);
-              currentTarget.toggleAttribute("disabled", isActionSubmitted);
-              if (detail.type !== "actionSubmitted") currentTarget.select();
-            }),
-            ref((input) => input.select()),
-            css({
-              padding: 4,
-              font: "inherit",
-              color: "inherit",
-              "&.pending": {
-                color: "var(--text-primary)",
-                backgroundColor: "var(--surface-4)",
-                backgroundImage:
-                  "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
-                backgroundSize: "220% 100%",
-                animation: "glimmer 1.15s linear infinite",
-                borderColor: "var(--brand-blue)",
-              },
-              "@media (prefers-reduced-motion: reduce)": {
-                "&.pending": {
-                  animation: "none",
-                },
-              },
-            }),
-          ]}
-          name="text"
+        <todoEvents.change
+          render={({ detail: { type } }, handle) => (
+            <input
+              disabled={type === "actionSubmitted"}
+              class={type === "actionSubmitted" ? "pending" : ""}
+              mix={[
+                inputCss,
+                todoEvents.on("change", ({ currentTarget, detail }) => {
+                  if (detail.type !== "actionSubmitted") {
+                    handle.queueTask(() => currentTarget.select());
+                  }
+                }),
+                ref((input) => input.select()),
+              ]}
+              name="text"
+            />
+          )}
         />
       </label>
       <button name="intent" value="create">
@@ -97,3 +83,23 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     </form>
   );
 }
+
+const inputCss = css({
+  padding: 4,
+  font: "inherit",
+  color: "inherit",
+  "&.pending": {
+    color: "var(--text-primary)",
+    backgroundColor: "var(--surface-4)",
+    backgroundImage:
+      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+    backgroundSize: "220% 100%",
+    animation: "glimmer 1.15s linear infinite",
+    borderColor: "var(--brand-blue)",
+  },
+  "@media (prefers-reduced-motion: reduce)": {
+    "&.pending": {
+      animation: "none",
+    },
+  },
+});

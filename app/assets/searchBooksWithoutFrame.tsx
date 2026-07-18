@@ -71,43 +71,33 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
       <>
         <label>
           Search{" "}
-          <input
-            type="text"
-            defaultValue={initialQuery}
-            mix={[
-              css({
-                padding: 4,
-                "&.pending": {
-                  backgroundImage:
-                    "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
-                  backgroundSize: "220% 100%",
-                  animation: "glimmer 1.15s linear infinite",
-                  borderColor: "var(--brand-blue)",
-                },
-                "@media (prefers-reduced-motion: reduce)": {
-                  animation: "none",
-                },
-              }),
-              on("input", ({ currentTarget }, signal) => {
-                let query = currentTarget.value.trim();
-                if (!query)
-                  return void currentTarget.dispatchEvent(
-                    searchEvents.queryEmpty(),
-                  );
-                currentTarget.dispatchEvent(
-                  searchEvents.querySubmitted({ query }),
-                );
-                fetchBooks(query, currentTarget, signal);
-              }),
-              searchEvents.on("change", ({ detail, currentTarget }) => {
-                currentTarget.classList.toggle(
-                  "pending",
-                  detail.type === "querySubmitted",
-                );
-                if (detail.type !== "querySubmitted") currentTarget.select();
-              }),
-              ref((input) => input.dispatchEvent(new InputEvent("input"))),
-            ]}
+          <searchEvents.change
+            render={({ detail: { type } }) => (
+              <input
+                type="text"
+                defaultValue={initialQuery}
+                class={type === "querySubmitted" ? "pending" : ""}
+                mix={[
+                  inputCss,
+                  on("input", ({ currentTarget }, signal) => {
+                    let query = currentTarget.value.trim();
+                    if (!query)
+                      return void currentTarget.dispatchEvent(
+                        searchEvents.queryEmpty(),
+                      );
+                    currentTarget.dispatchEvent(
+                      searchEvents.querySubmitted({ query }),
+                    );
+                    fetchBooks(query, currentTarget, signal);
+                  }),
+                  searchEvents.on("change", ({ detail, currentTarget }) => {
+                    if (detail.type !== "querySubmitted")
+                      currentTarget.select();
+                  }),
+                  ref((input) => input.dispatchEvent(new InputEvent("input"))),
+                ]}
+              />
+            )}
           />
         </label>
         <searchEvents.change
@@ -155,3 +145,17 @@ export const SearchBooksWithoutFrameCustomEvents = clientEntry(
     );
   },
 );
+
+const inputCss = css({
+  padding: 4,
+  "&.pending": {
+    backgroundImage:
+      "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(45, 172, 249, 0.28) 50%, transparent 65%, transparent 100%)",
+    backgroundSize: "220% 100%",
+    animation: "glimmer 1.15s linear infinite",
+    borderColor: "var(--brand-blue)",
+  },
+  "@media (prefers-reduced-motion: reduce)": {
+    animation: "none",
+  },
+});

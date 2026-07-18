@@ -54,12 +54,7 @@ export const SearchBooksWithFrameCustomEvents = clientEntry(
                     animation: "glimmer 1.15s linear infinite",
                   },
                 }),
-                searchEvents.listen(),
-                on(searchEvents.types.change, ({ currentTarget, detail }) => {
-                  currentTarget.classList.toggle(
-                    "pending",
-                    detail.type === "querySubmitted",
-                  );
+                searchEvents.on("change", ({ currentTarget, detail }) => {
                   if (detail.type !== "querySubmitted") currentTarget.select();
                 }),
               ]}

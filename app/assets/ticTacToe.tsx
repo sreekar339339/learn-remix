@@ -174,8 +174,7 @@ export const TicTacToeCustomEvents = clientEntry(
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            ticTacToeEvents.listen(),
-            on(ticTacToeEvents.types.turn, ({ detail, currentTarget }) => {
+            ticTacToeEvents.on("turn", ({ detail, currentTarget }) => {
               if (detail.result === "Pending") return;
               currentTarget.focus();
             }),
