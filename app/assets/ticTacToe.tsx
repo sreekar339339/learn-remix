@@ -137,7 +137,7 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <ticTacToeEvents.turn
+            <ticTacToeEvents.on.turn
               key={index}
               render={({ detail }, turnHandle) => (
                 <button
@@ -202,7 +202,7 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <ticTacToeEvents.turn
+          <ticTacToeEvents.on.turn
             render={({ detail }) => {
               if (detail.result === "Pending") return "Game in progress";
               if (detail.result === "Draw") return "Game is drawn.";

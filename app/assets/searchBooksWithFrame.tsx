@@ -63,7 +63,7 @@ export const SearchBooksWithFrame = clientEntry(
             />
           </label>
         </form>
-        <searchEvents.change
+        <searchEvents.on.change
           render={({ detail: { event } }) => {
             if (!event) return null;
             if (event.type === "queryEmpty") {

@@ -71,7 +71,7 @@ export const SearchBooksWithoutFrame = clientEntry(
       <>
         <label>
           Search{" "}
-          <searchEvents.change
+          <searchEvents.on.change
             render={({ detail: { event } }) => (
               <input
                 type="text"
@@ -101,7 +101,7 @@ export const SearchBooksWithoutFrame = clientEntry(
             )}
           />
         </label>
-        <searchEvents.change
+        <searchEvents.on.change
           render={({ detail: { event } }) => {
             switch (event?.type) {
               case "queryEmpty":

@@ -58,7 +58,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     >
       <label>
         Enter a todo{" "}
-        <todoEvents.change
+        <todoEvents.on.change
           render={({ detail: { event } }, handle) => (
             <input
               disabled={event?.type === "actionSubmitted"}

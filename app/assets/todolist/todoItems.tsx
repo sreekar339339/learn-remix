@@ -143,7 +143,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             action={routes.todolist.todos.action.href()}
             mix={todoEvents.host()}
           >
-            <todoEvents.change
+            <todoEvents.on.change
               render={({ detail: { event } }) => (
                 <button
                   mix={[todoActionButtonCss, deleteTodoButtonCss]}
@@ -179,7 +179,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           >
             <button hidden name="intent" value="update" />
             <input hidden name="id" value={id} />
-            <todoEvents.change
+            <todoEvents.on.change
               render={({ detail: { event } }) => (
                 <input
                   mix={[editTodoInputCss]}
@@ -198,7 +198,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
-            <todoEvents.change
+            <todoEvents.on.change
               render={({ detail: { event } }) => (
                 <button
                   disabled={event?.type === "actionSubmitted"}

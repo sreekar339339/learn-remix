@@ -210,13 +210,13 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <checkoutEvents.submitted
+          <checkoutEvents.on.submitted
             seed={checkoutEvents.submitted({ id: "initial-order" })}
             render={({ detail }) => (
               <output data-testid="checkout-summary">{detail.id}</output>
             )}
           />
-          <checkoutEvents.change
+          <checkoutEvents.on.change
             seed={checkoutEvents.submitted({ id: "initial-order" })}
             render={({ detail }) => {
               let text =
@@ -280,7 +280,7 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <checkoutEvents.submitted
+          <checkoutEvents.on.submitted
             render={({ detail }) => (
               <output data-testid="terminal-summary">{detail.id}</output>
             )}
@@ -533,7 +533,7 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <terminal.events.submitted
+          <terminal.events.on.submitted
             render={({ detail }) => (
               <output data-testid="terminal-summary">{detail.id}</output>
             )}

@@ -21,11 +21,20 @@ let customEventsOwnerId = 0;
 //
 // The public descriptor surface is type-derived: product engineers declare an
 // event-detail map once, and the proxy-backed descriptor exposes event factory
-// methods, event components, event type strings, host helpers, and typed target
+// methods, render components, event type strings, host helpers, and typed target
 // maps.
 // These types also reserve descriptor method names so event maps cannot collide
 // with the public API.
 type EventDetails = Record<string, unknown>;
+type CustomEventsReservedKey =
+  | typeof CHANGE_EVENT_NAME
+  | "getHost"
+  | "host"
+  | "map"
+  | "on"
+  | "seed"
+  | "setHost"
+  | "types";
 type CustomEventProductKind = "event" | "change";
 type CustomEventProductMetadata = {
   kind: CustomEventProductKind;
@@ -81,13 +90,7 @@ type LocalCustomEventTypes<EventMap extends EventDetails> = {
 
 type EventMapReservedKeys<EventMap extends EventDetails> = Extract<
   keyof EventMap,
-  | typeof CHANGE_EVENT_NAME
-  | "on"
-  | "seed"
-  | "setHost"
-  | "getHost"
-  | "types"
-  | "map"
+  CustomEventsReservedKey
 >;
 
 type EventMapColonKeys<EventMap extends EventDetails> = Extract<
@@ -177,7 +180,7 @@ type CustomEventsRenderProps<
    * initialize `getHost(...).latest`.
    *
    * @example
-   * <searchEvents.change seed={searchEvents.queryEmpty()} render={...} />
+   * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
    */
   seed?: Event;
   /**
@@ -189,10 +192,10 @@ type CustomEventsRenderProps<
    * enabled.
    *
    * @example
-   * <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
+   * <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
    *
    * @example
-   * <todoEvents.change render={({ detail }, handle) => (
+   * <todoEvents.on.change render={({ detail }, handle) => (
    *   <input
    *     disabled={detail.event?.type === "actionSubmitted"}
    *     mix={todoEvents.on("change", ({ currentTarget }) => {
@@ -207,7 +210,7 @@ type CustomEventsRenderProps<
   ) => RemixNode;
 };
 
-type CustomEventsOnElement<
+type CustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > = (handle: Handle<CustomEventsRenderProps<Events, Type>>) => () => RemixNode;
@@ -222,15 +225,6 @@ type ExactEventDetail<Expected, Actual> = Actual extends Expected
     : Actual
   : never;
 
-type CustomEventsOnMember<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> = Type extends typeof CHANGE_EVENT_NAME
-  ? CustomEventsChangeMember<Events>
-  : Type extends keyof Events & string
-    ? CustomEventsEventMember<Events, Type>
-    : CustomEventsOnElement<Events, Type>;
-
 type CustomEventsChangeMember<Events extends EventDetails> = {
   /**
    * Creates a batch event for native `dispatchEvent(...)`.
@@ -242,20 +236,6 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * target.dispatchEvent(events.change({ user, settings }));
    */
   (events: Partial<Events>, init?: CustomEventsInit): Event;
-  /**
-   * Renders from the latest event in this event set.
-   *
-   * Use this when a view can switch over `detail.event?.type` for a single
-   * product event, or handle `detail.events` for a batch event.
-   */
-  (
-    handle: Handle<
-      CustomEventsRenderProps<
-        Events,
-        Extract<CustomEventsEventType<Events>, typeof CHANGE_EVENT_NAME>
-      >
-    >,
-  ): () => RemixNode;
 };
 
 type CustomEventsEventMember<
@@ -294,32 +274,45 @@ type CustomEventsEventMember<
     detail: ExactEventDetail<Events[Type], Detail>,
     init?: CustomEventsInit,
   ): Event;
+};
+
+type CustomEventsEventFactories<Events extends EventDetails> = {
   /**
-   * Renders from the latest matching product event.
+   * Event factory for this event type.
+   *
+   * Use root event members only to create events for native
+   * `dispatchEvent(...)`. Use `events.on.someEvent` for event-driven rendering.
+   *
+   * @example
+   * button.dispatchEvent(checkoutEvents.submitted({ id: "order-1" }));
+   *
+   * @example
+   * <checkoutEvents.on.submitted render={({ detail }) => detail.id} />
+   */
+  [Type in CustomEventsEventType<Events>]: Type extends typeof CHANGE_EVENT_NAME
+    ? CustomEventsChangeMember<Events>
+    : Type extends keyof Events & string
+      ? CustomEventsEventMember<Events, Type>
+      : never;
+};
+
+type CustomEventsRenderComponents<Events extends EventDetails> = {
+  /**
+   * Renders from the latest matching event.
    *
    * Event components do not take a target prop. They discover the nearest host
    * for this event set, or use the descriptor fallback when no host is present.
    *
    * @example
-   * <checkoutEvents.submitted render={({ detail }) => detail.id} />
-   */
-  (handle: Handle<CustomEventsRenderProps<Events, Type>>): () => RemixNode;
-};
-
-type CustomEventsOnDescriptor<Events extends EventDetails> = {
-  /**
-   * Event factory and render component for this event type.
-   *
-   * Use it as a function to create an event for `dispatchEvent(...)`. Use it as
-   * a JSX component to render from the latest matching event.
+   * <checkoutEvents.on.submitted render={({ detail }) => detail.id} />
    *
    * @example
-   * <checkoutEvents.submitted render={({ detail }) => detail.id} />
-   *
-   * @example
-   * button.dispatchEvent(checkoutEvents.submitted({ id: "order-1" }));
+   * <checkoutEvents.on.change render={({ detail }) => detail.event?.type} />
    */
-  [Type in CustomEventsEventType<Events>]: CustomEventsOnMember<Events, Type>;
+  [Type in CustomEventsEventType<Events>]: CustomEventsEventComponent<
+    Events,
+    Type
+  >;
 };
 
 type CustomEventsListenerEvent<
@@ -363,7 +356,7 @@ type CustomEventsOnFunction<Events extends EventDetails> = {
       signal: AbortSignal,
     ) => void | Promise<void>,
   ): MixinDescriptor<HostElement, any>;
-};
+} & CustomEventsRenderComponents<Events>;
 
 type CustomEventsHostReference<Events extends EventDetails> = {
   readonly latest:
@@ -390,7 +383,7 @@ type HostableCustomEventsDescriptor<Events extends EventDetails> = {
    * <section mix={gameEvents.host()}>
    *   <Board />
    *   <ResetButton />
-   *   <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
+   *   <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
    * </section>
    *
    * @example
@@ -449,13 +442,6 @@ type HostableCustomEventsDescriptor<Events extends EventDetails> = {
    */
   getHost(target: EventTarget): CustomEventsHostReference<Events>;
 
-  /**
-   * Event map for `TypedEventTarget`.
-   *
-   * @example
-   * type GameEventMap = (typeof gameEvents)["map"];
-   */
-  readonly map: CustomEventMap<Events>;
 };
 
 type CustomEventsDescriptor<Events extends EventDetails> = {
@@ -463,10 +449,14 @@ type CustomEventsDescriptor<Events extends EventDetails> = {
    * Reacts to a product event from this descriptor.
    *
    * Use this when an element should update itself from custom events in its
-   * host boundary, sibling branches, or the page-level fallback.
+   * host boundary, sibling branches, or the page-level fallback. Use
+   * `events.on.someEvent` when rendering children from the latest event.
    *
    * @example
    * <button mix={todoEvents.on("actionSubmitted", updatePendingUi)} />
+   *
+   * @example
+   * <todoEvents.on.change render={({ detail }) => detail.event?.type} />
    */
   on: CustomEventsOnFunction<Events>;
 
@@ -486,9 +476,9 @@ type CustomEventsDescriptor<Events extends EventDetails> = {
   /**
    * Seeds render components and host memory with a descriptor-created event.
    *
-   * This does not dispatch. It gives `<events.someEvent render={...} />` and
-   * `getHost(...).latest` a starting point. Dispatch explicitly when event
-   * listeners should run.
+   * This does not dispatch. It gives `<events.on.someEvent render={...} />`
+   * and `getHost(...).latest` a starting point. Dispatch explicitly when
+   * event listeners should run.
    *
    * @example
    * searchEvents.seed(searchEvents.queryEmpty());
@@ -504,7 +494,7 @@ type CustomEventsDescriptor<Events extends EventDetails> = {
    * Local event map for `TypedEventTarget` and strongly typed event details.
    */
   readonly map: CustomEventMap<Events>;
-} & CustomEventsOnDescriptor<Events> &
+} & CustomEventsEventFactories<Events> &
   HostableCustomEventsDescriptor<Events>;
 
 // Descriptor runtime
@@ -728,10 +718,7 @@ class CustomEventsRuntime {
     };
   }
 
-  setMemory(
-    target: EventTarget | undefined,
-    memory: CustomEventsMemory,
-  ) {
+  setMemory(target: EventTarget | undefined, memory: CustomEventsMemory) {
     let memoryTarget = this.getMemoryTarget(target);
     if (!memoryTarget) {
       this.#descriptorMemory = memory;
@@ -774,9 +761,7 @@ class CustomEventsRuntime {
     };
   }
 
-  seedInitialMemory(
-    target: EventTarget | undefined,
-  ) {
+  seedInitialMemory(target: EventTarget | undefined) {
     let entries = getInitialEventEntries(this);
     if (!entries?.length) return;
     this.record(target, entries);
@@ -809,7 +794,6 @@ class CustomEventsRuntime {
     }
 
     let controller: AbortController | undefined;
-    let unsubscribeEventTypes: (() => void) | undefined;
 
     let listen = () => {
       controller?.abort();
@@ -830,7 +814,7 @@ class CustomEventsRuntime {
       }
     };
 
-    unsubscribeEventTypes = subscribeEventTypes(this, listen);
+    let unsubscribeEventTypes = subscribeEventTypes(this, listen);
     listen();
 
     registration = {
@@ -1149,10 +1133,9 @@ function getInitialEventEntriesFromEvent(
 
 function getInitialEventEntries(descriptor: CustomEventsRuntime) {
   let initial = descriptor.initial;
-  if (initial instanceof CustomEvent) {
-    return getInitialEventEntriesFromEvent(descriptor, initial);
-  }
-  return undefined;
+  return initial instanceof CustomEvent
+    ? getInitialEventEntriesFromEvent(descriptor, initial)
+    : undefined;
 }
 
 // Event processing
@@ -1281,22 +1264,10 @@ export const __customEventsTest = {
   },
 };
 
-// Type guards and cloning helpers
+// Event cloning helpers
 //
-// These helpers keep Remix handle detection and bridged event creation local to
-// the implementation. Bridged events are non-bubbling clones dispatched on a
-// mixin host so Remix on(...) listeners see the host as currentTarget.
-function isRemixHandle(value: unknown): value is Handle<any> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "props" in value &&
-    "signal" in value &&
-    typeof (value as Handle).update === "function" &&
-    typeof (value as Handle).queueTask === "function"
-  );
-}
-
+// Bridged events are non-bubbling clones dispatched on a mixin host so Remix
+// on(...) listeners see the host as currentTarget.
 function createBridgedEvent(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
@@ -1460,15 +1431,15 @@ const customEventsOnMixin = createMixin<
 // on host discovery to choose a default target and on initial event projection
 // for SSR/first-render output. A hidden marker discovers the parent host element;
 // rendering itself remains owned by Remix.
-function createCustomEventsOnElement<
+function createCustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 >(
   type: Type,
   descriptor: CustomEventsRuntime,
-): CustomEventsOnElement<Events, Type> {
+): CustomEventsEventComponent<Events, Type> {
   addEventType(descriptor, type);
-  return function CustomEventsOnElement(
+  return function CustomEventsEventComponent(
     handle: Handle<CustomEventsRenderProps<Events, Type>>,
   ) {
     let eventName = getEventName(descriptor, type);
@@ -1491,10 +1462,8 @@ function createCustomEventsOnElement<
       syncTarget(descriptor.getDefaultTarget(hostElement));
     }
 
-    function syncHostSubscription() {
-      unsubscribeHost?.();
-      unsubscribeHost = undefined;
-
+    function ensureHostSubscription() {
+      if (unsubscribeHost) return;
       unsubscribeHost = descriptor.subscribe(syncDefaultTarget);
     }
 
@@ -1503,7 +1472,7 @@ function createCustomEventsOnElement<
       if (!nextHost || hostElement === nextHost) return;
 
       hostElement = nextHost;
-      syncHostSubscription();
+      ensureHostSubscription();
       syncDefaultTarget();
       queueMicrotask(() => {
         if (hostElement === nextHost) {
@@ -1547,7 +1516,7 @@ function createCustomEventsOnElement<
     );
 
     return () => {
-      syncHostSubscription();
+      ensureHostSubscription();
       syncDefaultTarget();
 
       let node =
@@ -1574,7 +1543,7 @@ function createCustomEventsOnElement<
  * Extend it with an event-detail map, create one descriptor instance for the
  * component/object, then use normal `dispatchEvent(...)` everywhere. Event
  * methods create product events, `on(...)` is the listener API, and
- * `<events.someEvent render={...} />` renders from the latest event.
+ * `<events.on.someEvent render={...} />` renders from the latest event.
  *
  * Use `host()` on a component root or repeated row/form when that part of the
  * page should own its event memory and boundary. Without a host, events fall
@@ -1594,7 +1563,7 @@ function createCustomEventsOnElement<
  *   })}>
  *     Play
  *   </button>
- *   <gameEvents.turn render={({ detail }) => detail.nextPlayer} />
+ *   <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
  * </section>
  */
 class CustomEventsBase<Events extends EventDetails> {
@@ -1614,10 +1583,11 @@ export const CustomEvents: CustomEventsConstructor =
 
 // Descriptor construction
 //
-// CustomEvents instances are proxy-backed descriptors. Property access creates
-// event factory/render members lazily, while types exposes stable event-name
-// strings for Remix on(...). The proxy keeps the public API type-shaped without
-// requiring users to duplicate event names at runtime.
+// CustomEvents instances are proxy-backed descriptors. Root property access
+// creates event factory members lazily, while `on.someEvent` creates render
+// components lazily. `types` exposes stable event-name strings for low-level
+// interop. The proxy keeps the public API type-shaped without requiring users to
+// duplicate event names at runtime.
 function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsConstructorOptions,
 ): CustomEventsDescriptor<Events> {
@@ -1669,7 +1639,11 @@ function createCustomEventsDescriptor<Events extends EventDetails>(
 
   let eventMembers = new Map<
     string,
-    CustomEventsOnMember<Events, CustomEventsEventType<Events>>
+    CustomEventsEventFactories<Events>[CustomEventsEventType<Events>]
+  >();
+  let renderComponents = new Map<
+    string,
+    CustomEventsEventComponent<Events, CustomEventsEventType<Events>>
   >();
 
   function registerHost(target: EventTarget, signal?: AbortSignal) {
@@ -1711,41 +1685,42 @@ function createCustomEventsDescriptor<Events extends EventDetails>(
     let member = eventMembers.get(property);
     if (member) return member;
 
-    let element = createCustomEventsOnElement(
-      property as CustomEventsEventType<Events>,
-      state,
-    );
     member =
       property === CHANGE_EVENT_NAME
         ? (function createChangeMember(
-            eventsOrHandle?: unknown,
+            events?: Partial<Events>,
             init?: CustomEventsInit,
           ) {
-            if (isRemixHandle(eventsOrHandle)) {
-              return element(eventsOrHandle);
-            }
-
             return createBatchChangeEvent(
-              (eventsOrHandle ?? {}) as Partial<Events>,
+              events ?? {},
               init,
             );
-          } as CustomEventsOnMember<Events, CustomEventsEventType<Events>>)
+          } as CustomEventsEventFactories<Events>[CustomEventsEventType<Events>])
         : (function createEventMember(
-            detailOrHandle?: unknown,
+            detail?: unknown,
             init?: CustomEventsInit,
           ) {
-            if (isRemixHandle(detailOrHandle)) {
-              return element(detailOrHandle);
-            }
-
             if (arguments.length === 0) {
               return createGranularEvent(property, null, init);
             }
 
-            return createGranularEvent(property, detailOrHandle, init);
-          } as CustomEventsOnMember<Events, CustomEventsEventType<Events>>);
+            return createGranularEvent(property, detail, init);
+          } as CustomEventsEventFactories<Events>[CustomEventsEventType<Events>]);
     eventMembers.set(property, member);
     return member;
+  }
+
+  function getRenderComponent(property: string) {
+    addEventType(state, property);
+    let component = renderComponents.get(property);
+    if (component) return component;
+
+    component = createCustomEventsEventComponent(
+      property as CustomEventsEventType<Events>,
+      state,
+    );
+    renderComponents.set(property, component);
+    return component;
   }
 
   let types = new Proxy(
@@ -1759,7 +1734,7 @@ function createCustomEventsDescriptor<Events extends EventDetails>(
     },
   ) as CustomEventsTypes<Events>;
 
-  let on = ((
+  let onFunction = ((
     type: CustomEventsEventType<Events>,
     listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
   ) =>
@@ -1768,6 +1743,19 @@ function createCustomEventsDescriptor<Events extends EventDetails>(
       type,
       listener,
     )) as CustomEventsOnFunction<Events>;
+  let on = new Proxy(onFunction, {
+    get(target, property, receiver) {
+      if (Reflect.has(target, property)) {
+        return Reflect.get(target, property, receiver);
+      }
+
+      if (typeof property !== "string") {
+        return Reflect.get(target, property, receiver);
+      }
+
+      return getRenderComponent(property);
+    },
+  }) as CustomEventsOnFunction<Events>;
 
   let descriptor = {
     map: undefined,
