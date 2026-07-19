@@ -55,9 +55,9 @@ async function fetchBooks(
   }
 }
 
-export const SearchBooksWithoutFrameCustomEvents = clientEntry(
+export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
-  function SearchBooksWithoutFrameCustomEvents(
+  function SearchBooksWithoutFrame(
     handle: Handle<{ initialQuery: string }>,
   ) {
     let initialQuery = handle.props.initialQuery.trim();

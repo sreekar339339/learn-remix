@@ -90,7 +90,7 @@ const gestureMixin = Object.assign(createMixin<HTMLElement>((handle) => {
           );
         }),
         on("pointerup", ({ currentTarget }, signal) => {
-          currentTarget.dispatchEvent(gestureEvents.released({ signal }));
+          currentTarget.dispatchEvent(gestureEvents.released(null, { signal }));
         }),
       ]}
     />
@@ -207,7 +207,7 @@ function ScopedActionForms(handle: Handle) {
     event.preventDefault();
     let form = event.currentTarget;
 
-    form.dispatchEvent(events.actionSubmitted({ signal }));
+    form.dispatchEvent(events.actionSubmitted(null, { signal }));
 
     if (form.dataset.result === "error") {
       form.dispatchEvent(
@@ -217,7 +217,7 @@ function ScopedActionForms(handle: Handle) {
         ),
       );
     } else {
-      form.dispatchEvent(events.actionSucceeded({ signal }));
+      form.dispatchEvent(events.actionSucceeded(null, { signal }));
     }
   };
 

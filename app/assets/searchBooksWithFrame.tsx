@@ -7,9 +7,9 @@ let searchEvents = new CustomEvents<{
   querySubmitted: string;
 }>();
 
-export const SearchBooksWithFrameCustomEvents = clientEntry(
+export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
-  function SearchBooksWithFrameCustomEvents(
+  function SearchBooksWithFrame(
     handle: Handle<{ initialQuery?: string }>,
   ) {
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
