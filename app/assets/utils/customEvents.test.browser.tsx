@@ -256,6 +256,281 @@ describe("CustomEvents", () => {
     assert.equal(changeSummary.textContent, "rendered-order");
   });
 
+  it("runs event-component-scoped listeners after the event render commits", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutStatus(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="submit-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                checkoutEvents.submitted({ id: "pending-order" }),
+              );
+            })}
+          >
+            Submit
+          </button>
+          <button
+            type="button"
+            data-testid="pay-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(checkoutEvents.paid());
+            })}
+          >
+            Pay
+          </button>
+          <checkoutEvents.on.change
+            render={(event) => (
+              <input
+                data-testid="checkout-input"
+                disabled={event?.detail.event?.type === "submitted"}
+                mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+                  if (detail.event?.type !== "paid") return;
+                  currentTarget.dataset.disabledWhenPaid = String(
+                    currentTarget.disabled,
+                  );
+                  currentTarget.dataset.paidCalls = String(
+                    Number(currentTarget.dataset.paidCalls ?? 0) + 1,
+                  );
+                })}
+              />
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutStatus />);
+    t.after(() => result.cleanup());
+
+    let submit = result.$(
+      '[data-testid="submit-checkout"]',
+    ) as HTMLButtonElement;
+    let pay = result.$('[data-testid="pay-checkout"]') as HTMLButtonElement;
+
+    await result.act(() => submit.click());
+
+    let pendingInput = result.$(
+      '[data-testid="checkout-input"]',
+    ) as HTMLInputElement;
+    assert.equal(pendingInput.disabled, true);
+
+    await result.act(() => pay.click());
+
+    let paidInput = result.$(
+      '[data-testid="checkout-input"]',
+    ) as HTMLInputElement;
+    assert.equal(paidInput.disabled, false);
+    assert.equal(paidInput.dataset.disabledWhenPaid, "false");
+    assert.equal(paidInput.dataset.paidCalls, "1");
+  });
+
+  it("defers sibling events even when they are dispatched before the render event", async (t) => {
+    type GameDetails = {
+      turn: { locked: boolean };
+      focus: { cellId: number };
+    };
+    class GameEvents extends CustomEvents<GameDetails> {}
+    let gameEvents = new GameEvents();
+
+    function GameBoard(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="reset-game"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                gameEvents.change({
+                  focus: { cellId: 0 },
+                  turn: { locked: false },
+                }),
+              );
+            })}
+          >
+            Reset
+          </button>
+          <gameEvents.on.turn
+            seed={gameEvents.turn({ locked: true })}
+            render={({ detail }) => (
+              <button
+                type="button"
+                data-testid="game-cell"
+                disabled={detail.locked}
+                mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+                  if (detail.cellId !== 0) return;
+                  currentTarget.dataset.disabledWhenFocused = String(
+                    currentTarget.disabled,
+                  );
+                  currentTarget.dataset.focusCalls = String(
+                    Number(currentTarget.dataset.focusCalls ?? 0) + 1,
+                  );
+                })}
+              >
+                Cell
+              </button>
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<GameBoard />);
+    t.after(() => result.cleanup());
+
+    let reset = result.$('[data-testid="reset-game"]') as HTMLButtonElement;
+    let initialCell = result.$('[data-testid="game-cell"]') as HTMLButtonElement;
+    assert.equal(initialCell.disabled, true);
+
+    await result.act(() => reset.click());
+
+    let updatedCell = result.$('[data-testid="game-cell"]') as HTMLButtonElement;
+    assert.equal(updatedCell.disabled, false);
+    assert.equal(updatedCell.dataset.disabledWhenFocused, "false");
+    assert.equal(updatedCell.dataset.focusCalls, "1");
+  });
+
+  it("keeps event-component-scoped listeners immediate for unrelated updates", async (t) => {
+    type GameDetails = {
+      turn: { locked: boolean };
+      focus: { cellId: number };
+    };
+    class GameEvents extends CustomEvents<GameDetails> {}
+    let gameEvents = new GameEvents();
+
+    function GameBoard(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="focus-game"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(gameEvents.focus({ cellId: 0 }));
+            })}
+          >
+            Focus
+          </button>
+          <gameEvents.on.turn
+            seed={gameEvents.turn({ locked: true })}
+            render={({ detail }) => (
+              <button
+                type="button"
+                data-testid="game-cell"
+                disabled={detail.locked}
+                mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+                  if (detail.cellId !== 0) return;
+                  currentTarget.dataset.disabledWhenFocused = String(
+                    currentTarget.disabled,
+                  );
+                  currentTarget.dataset.focusCalls = String(
+                    Number(currentTarget.dataset.focusCalls ?? 0) + 1,
+                  );
+                })}
+              >
+                Cell
+              </button>
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<GameBoard />);
+    t.after(() => result.cleanup());
+
+    let focus = result.$('[data-testid="focus-game"]') as HTMLButtonElement;
+    let cell = result.$('[data-testid="game-cell"]') as HTMLButtonElement;
+    assert.equal(cell.disabled, true);
+
+    await result.act(() => focus.click());
+
+    assert.equal(cell.dataset.disabledWhenFocused, "true");
+    assert.equal(cell.dataset.focusCalls, "1");
+  });
+
+  it("does not run stale event-component-scoped listeners for replaced nodes", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutStatus(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="pay-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(checkoutEvents.paid());
+            })}
+          >
+            Pay
+          </button>
+          <checkoutEvents.on.change
+            seed={checkoutEvents.submitted({ id: "pending-order" })}
+            render={({ detail }) =>
+              detail.event?.type === "paid" ? (
+                <output data-testid="paid-output">Paid</output>
+              ) : (
+                <input
+                  data-testid="stale-checkout-input"
+                  mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+                    if (detail.event?.type === "paid") {
+                      currentTarget.dataset.stalePaidCall = "true";
+                    }
+                  })}
+                />
+              )
+            }
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutStatus />);
+    t.after(() => result.cleanup());
+
+    let staleInput = result.$(
+      '[data-testid="stale-checkout-input"]',
+    ) as HTMLInputElement;
+    let pay = result.$('[data-testid="pay-checkout"]') as HTMLButtonElement;
+
+    await result.act(() => pay.click());
+
+    assert.equal(staleInput.dataset.stalePaidCall, undefined);
+    assert.ok(result.$('[data-testid="paid-output"]'));
+  });
+
+  it("does not fire event-component-scoped listeners for render-only seed", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutStatus(handle: Handle) {
+      return () => (
+        <checkoutEvents.on.submitted
+          seed={checkoutEvents.submitted({ id: "seed-order" })}
+          render={({ detail }) => (
+            <input
+              data-testid="seeded-checkout-input"
+              value={detail.id}
+              mix={checkoutEvents.on("submitted", ({ currentTarget }) => {
+                currentTarget.dataset.seedListenerCall = "true";
+              })}
+            />
+          )}
+        />
+      );
+    }
+
+    let result = render(<CheckoutStatus />);
+    t.after(() => result.cleanup());
+
+    let input = result.$(
+      '[data-testid="seeded-checkout-input"]',
+    ) as HTMLInputElement;
+    assert.equal(input.value, "seed-order");
+    assert.equal(input.dataset.seedListenerCall, undefined);
+  });
+
   it("renders with a null event before the first seed or matching event", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 

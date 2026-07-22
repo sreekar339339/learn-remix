@@ -184,21 +184,31 @@ type CustomEventsRenderProps<
   Seed extends CustomEventsSeedEvent<Events> | undefined = undefined,
 > = (undefined extends Seed
   ? {
+      /**
+       * Event object used to render before a matching event is received.
+       *
+       * `seed` is render-only; it does not dispatch or run DOM listeners. Use
+       * the descriptor's `.seed(...)` method when the same starting event should
+       * also initialize `getHost(...).latest`.
+       *
+       * @example
+       * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
+       */
       seed?: Seed;
     }
   : {
+      /**
+       * Event object used to render before a matching event is received.
+       *
+       * `seed` is render-only; it does not dispatch or run DOM listeners. Use
+       * the descriptor's `.seed(...)` method when the same starting event should
+       * also initialize `getHost(...).latest`.
+       *
+       * @example
+       * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
+       */
       seed: Seed;
     }) & {
-  /**
-   * Event object used to render before a matching event is received.
-   *
-   * `seed` is render-only; it does not dispatch or run DOM listeners. Use the
-   * descriptor's `.seed(...)` method when the same starting event should also
-   * initialize `getHost(...).latest`.
-   *
-   * @example
-   * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
-   */
   /**
    * Renders children for the matching event.
    *
@@ -209,22 +219,26 @@ type CustomEventsRenderProps<
    * The seed must be created by the same descriptor and be able to initialize
    * this event component.
    *
-   * The second argument is the local Remix handle for this render component.
-   * Use `handle.queueTask(...)` for DOM work that must run after the rendered
-   * child has been committed, such as selecting an input after it becomes
-   * enabled.
+   * Descriptor `events.on(...)` listeners inside this rendered subtree run after
+   * the event render commits when the same dispatch also updates this event
+   * component. This lets focus, selection, and measurement work see the updated
+   * DOM. Descriptor listeners outside event components remain immediate.
+   *
+   * Batched dispatches are treated as one UI transaction, so sibling events can
+   * be handled after render even when they appear before the render-driving
+   * event in the dispatched object.
    *
    * @example
    * <gameEvents.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
    *
    * @example
-   * <todoEvents.on.change render={(event, handle) => {
+   * <todoEvents.on.change render={(event) => {
    *   let pending = event?.detail.event?.type === "actionSubmitted";
    *   return (
    *     <input
    *       disabled={pending}
    *       mix={todoEvents.on("change", ({ currentTarget }) => {
-   *         handle.queueTask(() => currentTarget.select());
+   *         currentTarget.select();
    *       })}
    *     />
    *   );
@@ -372,6 +386,11 @@ type CustomEventsOnFunction<Events extends EventDetails> = {
    * from the page fallback otherwise. The callback receives the same
    * `currentTarget` shape as Remix `on(...)`, so DOM effects can stay local to
    * the element.
+   *
+   * When this mixin is rendered inside `<events.on.someEvent render={...} />`,
+   * matching events from the same dispatch transaction run after that event
+   * component commits. Elsewhere, callbacks run immediately like normal DOM
+   * listeners.
    *
    * @example
    * <button mix={checkoutEvents.on("submitted", ({ detail, currentTarget }) => {
@@ -558,6 +577,28 @@ type CustomEventsDispatchTargetRegistration = {
   cleanup: () => void;
 };
 
+type CustomEventsRenderScope = {
+  descriptor: CustomEventsRuntime;
+  eventName: string;
+  transaction: CustomEventsTransaction | null;
+  version: number;
+};
+
+type CustomEventsBridgedEvent = {
+  source: Event;
+  replay?: boolean;
+};
+
+type CustomEventsTransaction = {
+  events: Map<string, CustomEvent>;
+};
+
+function createCustomEventsTransaction() {
+  return {
+    events: new Map<string, CustomEvent>(),
+  };
+}
+
 class CustomEventsRuntime {
   readonly ownerId = createCustomEventsOwnerId();
   initial?: Event;
@@ -576,8 +617,9 @@ class CustomEventsRuntime {
   >();
   #ownedEvents = new WeakSet<Event>();
   #productEvents = new WeakMap<Event, CustomEventProductMetadata>();
-  #forwardedEvents = new WeakSet<Event>();
+  #bridgedEvents = new WeakMap<Event, CustomEventsBridgedEvent>();
   #originTargets = new WeakMap<Event, EventTarget>();
+  #transactions = new WeakMap<Event, CustomEventsTransaction>();
   #notificationPending = false;
 
   ownsEvent(event: Event) {
@@ -593,8 +635,12 @@ class CustomEventsRuntime {
     if (metadata) metadata.processed = true;
   }
 
-  isForwardedEvent(event: Event) {
-    return this.#forwardedEvents.has(event);
+  isBridgedEvent(event: Event) {
+    return this.#bridgedEvents.has(event);
+  }
+
+  getBridgedEvent(event: Event) {
+    return this.#bridgedEvents.get(event);
   }
 
   getOriginTarget(event: Event) {
@@ -608,7 +654,6 @@ class CustomEventsRuntime {
     metadata?: {
       product?: CustomEventProductKind;
       origin?: EventTarget;
-      forwarded?: boolean;
     },
   ) {
     let event = new CustomEvent(type, { ...init, detail });
@@ -628,11 +673,22 @@ class CustomEventsRuntime {
       });
     }
 
-    if (metadata?.forwarded) {
-      this.#forwardedEvents.add(event);
-    }
-
     return event;
+  }
+
+  markBridgedEvent(
+    event: Event,
+    bridgedEvent: CustomEventsBridgedEvent,
+  ) {
+    this.#bridgedEvents.set(event, bridgedEvent);
+  }
+
+  getTransaction(event: Event) {
+    return this.#transactions.get(event);
+  }
+
+  markTransaction(event: Event, transaction: CustomEventsTransaction) {
+    this.#transactions.set(event, transaction);
   }
 
   addRegisteredHost(target: EventTarget) {
@@ -980,7 +1036,7 @@ function shouldBridgeEventToElement(
   element: Element | undefined,
 ): element is Element {
   if (!element) return false;
-  if (descriptor.isForwardedEvent(event)) return false;
+  if (descriptor.isBridgedEvent(event)) return false;
   if (event.composedPath().includes(element)) return false;
   return true;
 }
@@ -988,7 +1044,7 @@ function shouldBridgeEventToElement(
 // Event type strings and known event types
 //
 // Descriptor event type strings are globally unique, so descriptor-owned events
-// can be forwarded or processed without colliding with browser events or
+// can be bridged or processed without colliding with browser events or
 // another CustomEvents instance. Known event types are discovered lazily through
 // proxy property access and event factory calls.
 function getEventName(descriptor: CustomEventsRuntime, type: string) {
@@ -1101,22 +1157,23 @@ function createProductCustomEvent(
   );
 }
 
-function dispatchDescriptorEvent(
-  target: EventTarget,
+function createDescriptorEvent(
   descriptor: CustomEventsRuntime,
   type: string,
   init: EventInit,
   detail: unknown,
   origin: EventTarget,
+  transaction?: CustomEventsTransaction,
 ) {
-  target.dispatchEvent(
-    descriptor.createCustomEvent(
-      getEventName(descriptor, type),
-      init,
-      detail,
-      { origin },
-    ),
+  let event = descriptor.createCustomEvent(
+    getEventName(descriptor, type),
+    init,
+    detail,
+    { origin },
   );
+  transaction?.events.set(event.type, event);
+  if (transaction) descriptor.markTransaction(event, transaction);
+  return event;
 }
 
 // Initial event projection
@@ -1188,6 +1245,11 @@ function getInitialEventEntries(descriptor: CustomEventsRuntime) {
 // Product events are user-dispatched events. Processing records host memory and
 // emits the derived event(s) back on the original event target. Derived events
 // are runtime-owned but not product events, so they never recurse.
+//
+// Each processing pass creates one transaction for every derived event emitted
+// from that product event. Event components use that transaction to render first
+// and let descriptor-scoped listeners in the rendered subtree run afterward,
+// even when a batch lists a sibling event before the event that drives render.
 function dispatchLocalTypedEvent(
   target: EventTarget,
   descriptor: CustomEventsRuntime,
@@ -1209,15 +1271,18 @@ function emitDerivedChangeEvent(
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
   init: EventInit,
+  transaction: CustomEventsTransaction,
 ) {
   let changeDetail = descriptor.record(target, entries);
-  dispatchDescriptorEvent(
-    target,
-    descriptor,
-    CHANGE_EVENT_NAME,
-    init,
-    changeDetail,
-    target,
+  target.dispatchEvent(
+    createDescriptorEvent(
+      descriptor,
+      CHANGE_EVENT_NAME,
+      init,
+      changeDetail,
+      target,
+      transaction,
+    ),
   );
   dispatchLocalTypedEvent(
     target,
@@ -1233,9 +1298,24 @@ function emitExpandedGranularEvents(
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
   init: EventInit,
+  transaction: CustomEventsTransaction,
 ) {
+  let events = entries.map(([type, detail]) =>
+    createDescriptorEvent(
+      descriptor,
+      type,
+      init,
+      detail,
+      target,
+      transaction,
+    ),
+  );
+
+  for (let event of events) {
+    target.dispatchEvent(event);
+  }
+
   for (let [type, detail] of entries) {
-    dispatchDescriptorEvent(target, descriptor, type, init, detail, target);
     dispatchLocalTypedEvent(target, descriptor, type, init, detail);
   }
 }
@@ -1247,8 +1327,10 @@ function commitProductEvent(
   product: CustomEventProductKind,
   init: EventInit,
 ) {
+  let transaction = createCustomEventsTransaction();
+
   if (product === "event") {
-    emitDerivedChangeEvent(target, descriptor, entries, init);
+    emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
     return;
   }
 
@@ -1260,7 +1342,7 @@ function commitProductEvent(
     init,
     changeDetail,
   );
-  emitExpandedGranularEvents(target, descriptor, entries, init);
+  emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
 }
 
 function processCustomEventsEvent(
@@ -1316,9 +1398,10 @@ export const __customEventsTest = {
 function createBridgedEvent(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
+  options?: { replay?: boolean },
 ) {
   let origin = descriptor.getOriginTarget(event);
-  return descriptor.createCustomEvent(
+  let bridgedEvent = descriptor.createCustomEvent(
     event.type,
     {
       bubbles: false,
@@ -1327,10 +1410,45 @@ function createBridgedEvent(
     },
     event.detail,
     {
-      forwarded: true,
       ...(origin ? { origin } : {}),
     },
   );
+  descriptor.markBridgedEvent(bridgedEvent, {
+    source: event,
+    ...(options?.replay ? { replay: true } : {}),
+  });
+  return bridgedEvent;
+}
+
+function CustomEventsRenderScopeProvider(
+  handle: Handle<
+    {
+      scope: CustomEventsRenderScope;
+      children: RemixNode;
+    },
+    CustomEventsRenderScope
+  >,
+) {
+  return () => {
+    handle.context.set(handle.props.scope);
+    return handle.props.children;
+  };
+}
+
+function getSourceEventForListener(
+  descriptor: CustomEventsRuntime,
+  event: Event,
+) {
+  return descriptor.getBridgedEvent(event)?.source ?? event;
+}
+
+function shouldDeferScopedListener(
+  descriptor: CustomEventsRuntime,
+  scope: CustomEventsRenderScope | undefined,
+  event: Event,
+) {
+  if (scope?.descriptor !== descriptor) return false;
+  return descriptor.getTransaction(event)?.events.has(scope.eventName) ?? false;
 }
 
 function defineEventValue(
@@ -1453,16 +1571,52 @@ const customEventsOnMixin = createMixin<
 >((handle) => {
   return (descriptor, type, listener) => {
     addEventType(descriptor, type);
+    let eventName = getEventName(descriptor, type);
+    let renderScope = handle.context.get(CustomEventsRenderScopeProvider);
+    if (renderScope?.descriptor === descriptor) {
+      let pendingEvent = renderScope.transaction?.events.get(eventName);
+      let pendingScope = renderScope;
+      let pendingVersion = renderScope.version;
+      if (pendingEvent) {
+        handle.queueTask((node, signal) => {
+          if (signal.aborted) return;
+          if (pendingScope.version !== pendingVersion) return;
+
+          let replayEvent = createBridgedEvent(
+            pendingEvent as CustomEvent,
+            descriptor,
+            { replay: true },
+          );
+          node.dispatchEvent(replayEvent);
+        });
+      }
+    }
+
+    let wrappedListener = (
+      event: CustomEventWithMetadata<any>,
+      signal: AbortSignal,
+    ) => {
+      let bridgedEvent = descriptor.getBridgedEvent(event);
+      let sourceEvent = getSourceEventForListener(descriptor, event);
+      let scope = handle.context.get(CustomEventsRenderScopeProvider);
+
+      if (
+        !bridgedEvent?.replay &&
+        shouldDeferScopedListener(descriptor, scope, sourceEvent)
+      ) {
+        return;
+      }
+
+      return listener(event, signal);
+    };
+
     return (
       <handle.element
         mix={[
           forwardEventsMixin(descriptor),
           remixOn(
-            getEventName(descriptor, type) as AnyCustomEventsName,
-            listener as (
-              event: CustomEventWithMetadata<any>,
-              signal: AbortSignal,
-            ) => void,
+            eventName as AnyCustomEventsName,
+            wrappedListener,
           ),
         ]}
       />
@@ -1506,6 +1660,12 @@ function createCustomEventsEventComponent<
     let currentTarget: EventTarget | undefined;
     let controller: AbortController | undefined;
     let unsubscribeHost: (() => void) | undefined;
+    let renderScope: CustomEventsRenderScope = {
+      descriptor,
+      eventName,
+      transaction: null,
+      version: 0,
+    };
 
     function canRender(event: Event) {
       return event === initialEvent || descriptor.ownsEvent(event);
@@ -1547,10 +1707,17 @@ function createCustomEventsEventComponent<
       currentTarget.addEventListener(
         eventName,
         (event) => {
-          if (descriptor.isForwardedEvent(event)) return;
+          if (descriptor.isBridgedEvent(event)) return;
           if (!canRender(event)) return;
           currentEvent = event;
-          void handle.update();
+          renderScope.transaction = descriptor.getTransaction(event) ?? null;
+          renderScope.version += 1;
+          let version = renderScope.version;
+          void handle.update().then(() => {
+            if (renderScope.version === version) {
+              renderScope.transaction = null;
+            }
+          });
         },
         { signal },
       );
@@ -1605,10 +1772,10 @@ function createCustomEventsEventComponent<
       }
 
       return (
-        <>
+        <CustomEventsRenderScopeProvider scope={renderScope}>
           <span hidden aria-hidden="true" mix={ref(setHostFromMarker)} />
           {node}
-        </>
+        </CustomEventsRenderScopeProvider>
       );
     };
   };
@@ -1626,6 +1793,13 @@ function createCustomEventsEventComponent<
  * Use `host()` on a component root or repeated row/form when that part of the
  * page should own its event memory and boundary. Without a host, events fall
  * back to the page-level listener so sibling branches can still react.
+ *
+ * A single dispatch can include several event details with `events.change(...)`.
+ * The descriptor expands that batch as one UI transaction. Event components
+ * update first, then descriptor listeners rendered inside those event components
+ * run on the committed DOM. This keeps common flows like “render an enabled
+ * input, then select it” or “render a cell, then focus it” in event order
+ * without extra component state.
  *
  * @example
  * class GameEvents extends CustomEvents<{

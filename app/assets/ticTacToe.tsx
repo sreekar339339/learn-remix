@@ -127,7 +127,7 @@ export const TicTacToeCustomEvents = clientEntry(
           {Array.from({ length: 9 }, (_, index) => (
             <ticTacToeEvents.on.turn
               key={index}
-              render={(turnEvent, turnHandle) => (
+              render={(turnEvent) => (
                 <button
                   value={index}
                   disabled={
@@ -150,7 +150,6 @@ export const TicTacToeCustomEvents = clientEntry(
                     ticTacToeEvents.on("focus", ({ detail, currentTarget }) => {
                       if (detail.cellId !== index) return;
                       currentTarget.focus();
-                      turnHandle.queueTask(() => currentTarget.focus());
                     }),
                   ]}
                 >
@@ -170,12 +169,12 @@ export const TicTacToeCustomEvents = clientEntry(
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
                 ticTacToeEvents.change({
+                  focus: { cellId: 0 },
                   turn: {
                     result: null,
                     position: new Map(),
                     nextPlayer: "X",
                   },
-                  focus: { cellId: 0 },
                 }),
               );
             }),

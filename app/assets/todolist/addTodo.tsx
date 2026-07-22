@@ -59,7 +59,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       <label>
         Enter a todo{" "}
         <todoEvents.on.change
-          render={(changeEvent, handle) => (
+          render={(changeEvent) => (
             <input
               disabled={changeEvent?.detail.event?.type === "actionSubmitted"}
               class={
@@ -71,7 +71,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
                 inputCss,
                 todoEvents.on("change", ({ currentTarget, detail }) => {
                   if (detail.event?.type !== "actionSubmitted") {
-                    handle.queueTask(() => currentTarget.select());
+                    currentTarget.select();
                   }
                 }),
                 ref((input) => input.select()),
