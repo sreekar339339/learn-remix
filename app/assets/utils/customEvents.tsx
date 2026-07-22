@@ -166,12 +166,29 @@ type CustomEventsTypes<Events extends EventDetails> = {
 type CustomEventsEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = CustomEventMap<Events>[Type];
+> = Event & CustomEventMap<Events>[Type];
+
+type CustomEventsRenderEvent<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+> = CustomEventsEvent<Events, Type> | null;
+
+type CustomEventsSeedEvent<Events extends EventDetails> = CustomEventsEvent<
+  Events,
+  CustomEventsEventType<Events>
+>;
 
 type CustomEventsRenderProps<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = {
+  Seed extends CustomEventsSeedEvent<Events> | undefined = undefined,
+> = (undefined extends Seed
+  ? {
+      seed?: Seed;
+    }
+  : {
+      seed: Seed;
+    }) & {
   /**
    * Event object used to render before a matching event is received.
    *
@@ -182,9 +199,15 @@ type CustomEventsRenderProps<
    * @example
    * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
    */
-  seed?: Event;
   /**
    * Renders children for the matching event.
+   *
+   * When `seed` is provided, the render event is non-null. Without `seed`, the
+   * event is `null` before a matching event exists; use that branch for empty,
+   * idle, or placeholder UI without inventing a fake event.
+   *
+   * The seed must be created by the same descriptor and be able to initialize
+   * this event component.
    *
    * The second argument is the local Remix handle for this render component.
    * Use `handle.queueTask(...)` for DOM work that must run after the rendered
@@ -192,28 +215,37 @@ type CustomEventsRenderProps<
    * enabled.
    *
    * @example
-   * <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
+   * <gameEvents.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
    *
    * @example
-   * <todoEvents.on.change render={({ detail }, handle) => (
-   *   <input
-   *     disabled={detail.event?.type === "actionSubmitted"}
-   *     mix={todoEvents.on("change", ({ currentTarget }) => {
-   *       handle.queueTask(() => currentTarget.select());
-   *     })}
-   *   />
-   * )} />
+   * <todoEvents.on.change render={(event, handle) => {
+   *   let pending = event?.detail.event?.type === "actionSubmitted";
+   *   return (
+   *     <input
+   *       disabled={pending}
+   *       mix={todoEvents.on("change", ({ currentTarget }) => {
+   *         handle.queueTask(() => currentTarget.select());
+   *       })}
+   *     />
+   *   );
+   * }} />
    */
   render: (
-    event: CustomEventsEvent<Events, Type>,
-    handle: Handle<CustomEventsRenderProps<Events, Type>>,
+    event: [Seed] extends [undefined]
+      ? CustomEventsRenderEvent<Events, Type>
+      : CustomEventsEvent<Events, Type>,
+    handle: Handle<CustomEventsRenderProps<Events, Type, Seed>>,
   ) => RemixNode;
 };
 
 type CustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = (handle: Handle<CustomEventsRenderProps<Events, Type>>) => () => RemixNode;
+> = <
+  Seed extends CustomEventsSeedEvent<Events> | undefined = undefined,
+>(
+  handle: Handle<CustomEventsRenderProps<Events, Type, Seed>>,
+) => () => RemixNode;
 
 type ExactEventDetail<Expected, Actual> = Actual extends Expected
   ? Expected extends object
@@ -235,7 +267,10 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * @example
    * target.dispatchEvent(events.change({ user, settings }));
    */
-  (events: Partial<Events>, init?: CustomEventsInit): Event;
+  (events: Partial<Events>, init?: CustomEventsInit): CustomEventsEvent<
+    Events,
+    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
+  >;
 };
 
 type CustomEventsEventMember<
@@ -255,7 +290,7 @@ type CustomEventsEventMember<
        * @example
        * form.dispatchEvent(todoEvents.actionSubmitted(null, { signal }));
        */
-      (): Event;
+      (): CustomEventsEvent<Events, Type>;
     }
   : {}) & {
   /**
@@ -273,7 +308,7 @@ type CustomEventsEventMember<
   <Detail extends Events[Type]>(
     detail: ExactEventDetail<Events[Type], Detail>,
     init?: CustomEventsInit,
-  ): Event;
+  ): CustomEventsEvent<Events, Type>;
 };
 
 type CustomEventsEventFactories<Events extends EventDetails> = {
@@ -287,7 +322,9 @@ type CustomEventsEventFactories<Events extends EventDetails> = {
    * button.dispatchEvent(checkoutEvents.submitted({ id: "order-1" }));
    *
    * @example
-   * <checkoutEvents.on.submitted render={({ detail }) => detail.id} />
+   * <checkoutEvents.on.submitted
+   *   render={(event) => event ? event.detail.id : "No checkout yet"}
+   * />
    */
   [Type in CustomEventsEventType<Events>]: Type extends typeof CHANGE_EVENT_NAME
     ? CustomEventsChangeMember<Events>
@@ -304,10 +341,14 @@ type CustomEventsRenderComponents<Events extends EventDetails> = {
    * for this event set, or use the descriptor fallback when no host is present.
    *
    * @example
-   * <checkoutEvents.on.submitted render={({ detail }) => detail.id} />
+   * <checkoutEvents.on.submitted
+   *   render={(event) => event ? event.detail.id : "No checkout yet"}
+   * />
    *
    * @example
-   * <checkoutEvents.on.change render={({ detail }) => detail.event?.type} />
+   * <checkoutEvents.on.change
+   *   render={(event) => event?.detail.event?.type ?? "idle"}
+   * />
    */
   [Type in CustomEventsEventType<Events>]: CustomEventsEventComponent<
     Events,
@@ -383,7 +424,9 @@ type HostableCustomEventsDescriptor<Events extends EventDetails> = {
    * <section mix={gameEvents.host()}>
    *   <Board />
    *   <ResetButton />
-   *   <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
+   *   <gameEvents.on.turn
+   *     render={(event) => event?.detail.nextPlayer ?? "X"}
+   *   />
    * </section>
    *
    * @example
@@ -456,7 +499,9 @@ type CustomEventsDescriptor<Events extends EventDetails> = {
    * <button mix={todoEvents.on("actionSubmitted", updatePendingUi)} />
    *
    * @example
-   * <todoEvents.on.change render={({ detail }) => detail.event?.type} />
+   * <todoEvents.on.change
+   *   render={(event) => event?.detail.event?.type ?? "idle"}
+   * />
    */
   on: CustomEventsOnFunction<Events>;
 
@@ -488,7 +533,7 @@ type CustomEventsDescriptor<Events extends EventDetails> = {
    *   appContextEvents.change({ user: null, settings }),
    * );
    */
-  seed(event: Event): void;
+  seed(event: CustomEventsSeedEvent<Events>): void;
 
   /**
    * Local event map for `TypedEventTarget` and strongly typed event details.
@@ -1427,10 +1472,11 @@ const customEventsOnMixin = createMixin<
 
 // Event components
 //
-// Descriptor event components render from the latest matching event. They depend
-// on host discovery to choose a default target and on initial event projection
-// for SSR/first-render output. A hidden marker discovers the parent host element;
-// rendering itself remains owned by Remix.
+// Descriptor event components render from the latest matching event, or from
+// `null` before any matching event exists. They depend on host discovery to
+// choose a default target and on initial event projection for SSR/first-render
+// output. A hidden marker discovers the parent host element; rendering itself
+// remains owned by Remix.
 function createCustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -1439,17 +1485,24 @@ function createCustomEventsEventComponent<
   descriptor: CustomEventsRuntime,
 ): CustomEventsEventComponent<Events, Type> {
   addEventType(descriptor, type);
-  return function CustomEventsEventComponent(
-    handle: Handle<CustomEventsRenderProps<Events, Type>>,
+  let component = function CustomEventsEventComponent(
+    handle: Handle<
+      CustomEventsRenderProps<
+        Events,
+        Type,
+        CustomEventsSeedEvent<Events> | undefined
+      >
+    >,
   ) {
     let eventName = getEventName(descriptor, type);
+    let hasSeed = handle.props.seed !== undefined;
     let initialEvent = createInitialEvent(
       type,
       descriptor,
       handle.props.seed ?? descriptor.initial,
     );
     let hostElement: HTMLElement | undefined;
-    let currentEvent: Event | undefined = initialEvent;
+    let currentEvent: Event | null = initialEvent ?? null;
     let currentTarget: EventTarget | undefined;
     let controller: AbortController | undefined;
     let unsubscribeHost: (() => void) | undefined;
@@ -1519,13 +1572,37 @@ function createCustomEventsEventComponent<
       ensureHostSubscription();
       syncDefaultTarget();
 
-      let node =
+      let event =
         currentEvent?.type === eventName && canRender(currentEvent)
-          ? handle.props.render(
-              currentEvent as CustomEventsEvent<Events, Type>,
-              handle,
-            )
-          : undefined;
+          ? (currentEvent as CustomEventsEvent<Events, Type>)
+          : null;
+      let node: RemixNode;
+      if (hasSeed) {
+        if (!event) {
+          throw new TypeError(
+            `CustomEvents seed for "${type}" must initialize that event component.`,
+          );
+        }
+        node = handle.props.render(
+          event,
+          handle,
+        );
+      } else {
+        let render = handle.props.render as unknown as (
+          event: CustomEventsRenderEvent<Events, Type>,
+          handle: Handle<
+            CustomEventsRenderProps<
+              Events,
+              Type,
+              CustomEventsSeedEvent<Events> | undefined
+            >
+          >,
+        ) => RemixNode;
+        node = render(
+          event,
+          handle,
+        );
+      }
 
       return (
         <>
@@ -1535,6 +1612,7 @@ function createCustomEventsEventComponent<
       );
     };
   };
+  return component as CustomEventsEventComponent<Events, Type>;
 }
 
 /**
@@ -1563,7 +1641,7 @@ function createCustomEventsEventComponent<
  *   })}>
  *     Play
  *   </button>
- *   <gameEvents.on.turn render={({ detail }) => detail.nextPlayer} />
+ *   <gameEvents.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
  * </section>
  */
 class CustomEventsBase<Events extends EventDetails> {

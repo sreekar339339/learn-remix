@@ -2,15 +2,15 @@ import { clientEntry, css, on, ref } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
-type Result = Player | "Draw" | "Pending";
-class TicTacToeEvents extends CustomEvents<{
+type Result = Player | "Draw";
+type EventMap = {
   turn: {
-    result: Result;
+    result: Result | null;
     position: Map<number, Player>;
     nextPlayer: Player;
   };
   focus: { cellId: number };
-}> {}
+};
 
 let winningCombos = [
   [0, 1, 2],
@@ -23,7 +23,7 @@ let winningCombos = [
   [2, 4, 6],
 ];
 
-function deriveResult(position: Map<number, Player>): Result {
+function deriveResult(position: Map<number, Player>): Result | null {
   for (let [a, b, c] of winningCombos) {
     if (
       position.has(a) &&
@@ -33,7 +33,7 @@ function deriveResult(position: Map<number, Player>): Result {
       return position.get(a)!;
     }
   }
-  return position.size === 9 ? "Draw" : "Pending";
+  return position.size === 9 ? "Draw" : null;
 }
 
 let arrowKeyIdxIncrementMap = {
@@ -52,16 +52,7 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents(handle) {
-    let ticTacToeEvents = new TicTacToeEvents();
-    let { turn, focus, change } = ticTacToeEvents;
-
-    ticTacToeEvents.seed(
-      turn({
-        result: "Pending",
-        position: new Map(),
-        nextPlayer: "X",
-      }),
-    );
+    let ticTacToeEvents = new CustomEvents<EventMap>();
 
     return () => (
       <div
@@ -70,11 +61,6 @@ export const TicTacToeCustomEvents = clientEntry(
             display: "grid",
             gap: 16,
             maxWidth: 360,
-          }),
-          ref((board) => {
-            queueMicrotask(
-              () => board.dispatchEvent(ticTacToeEvents.focus({ cellId: 0 })),
-            );
           }),
         ]}
       >
@@ -90,7 +76,7 @@ export const TicTacToeCustomEvents = clientEntry(
               let cellId = Number(target.value);
               let { position, nextPlayer, result } =
                 ticTacToeEvents.getHost(currentTarget).latest?.eventMap.turn!;
-              if (position.has(cellId) || result !== "Pending") return;
+              if (position.has(cellId) || result !== null) return;
               let nextPosition = new Map(position).set(cellId, nextPlayer);
               let nextResult = deriveResult(nextPosition);
               let nextFreeCellIdx = cellId;
@@ -99,13 +85,13 @@ export const TicTacToeCustomEvents = clientEntry(
                 if (nextFreeCellIdx === cellId) break;
               }
               currentTarget.dispatchEvent(
-                change({
+                ticTacToeEvents.change({
                   turn: {
                     position: nextPosition,
                     nextPlayer: nextPlayer === "X" ? "O" : "X",
                     result: nextResult,
                   },
-                  ...(nextResult === "Pending"
+                  ...(nextResult === null
                     ? { focus: { cellId: nextFreeCellIdx } }
                     : {}),
                 }),
@@ -132,20 +118,23 @@ export const TicTacToeCustomEvents = clientEntry(
                   break;
                 }
               }
-              currentTarget.dispatchEvent(focus({ cellId: nextFreeCellIdx }));
+              currentTarget.dispatchEvent(
+                ticTacToeEvents.focus({ cellId: nextFreeCellIdx }),
+              );
             }),
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
             <ticTacToeEvents.on.turn
               key={index}
-              render={({ detail }, turnHandle) => (
+              render={(turnEvent, turnHandle) => (
                 <button
                   value={index}
                   disabled={
-                    detail.position.has(index) || detail.result !== "Pending"
+                    turnEvent?.detail.position.has(index) ||
+                    turnEvent?.detail.result !== null
                   }
-                  class={detail.position.get(index)}
+                  class={turnEvent?.detail.position.get(index)}
                   mix={[
                     css({
                       aspectRatio: "1/1",
@@ -165,7 +154,7 @@ export const TicTacToeCustomEvents = clientEntry(
                     }),
                   ]}
                 >
-                  {detail.position.get(index)}
+                  {turnEvent?.detail.position.get(index)}
                 </button>
               )}
             />
@@ -175,14 +164,14 @@ export const TicTacToeCustomEvents = clientEntry(
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
             ticTacToeEvents.on("turn", ({ detail, currentTarget }) => {
-              if (detail.result === "Pending") return;
+              if (detail.result === null) return;
               currentTarget.focus();
             }),
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
                 ticTacToeEvents.change({
                   turn: {
-                    result: "Pending",
+                    result: null,
                     position: new Map(),
                     nextPlayer: "X",
                   },
@@ -190,6 +179,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 }),
               );
             }),
+            ref((reset) => reset.click()),
           ]}
         >
           Reset
@@ -203,10 +193,11 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           <ticTacToeEvents.on.turn
-            render={({ detail }) => {
-              if (detail.result === "Pending") return "Game in progress";
-              if (detail.result === "Draw") return "Game is drawn.";
-              return `${detail.result} has won!`;
+            render={(turnEvent) => {
+              if (!turnEvent || !turnEvent.detail.result)
+                return "Game in progress";
+              if (turnEvent.detail.result === "Draw") return "Game is drawn.";
+              return `${turnEvent.detail.result} has won!`;
             }}
           />
         </p>

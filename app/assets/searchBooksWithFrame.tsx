@@ -2,22 +2,16 @@ import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
-let searchEvents = new CustomEvents<{
+type EventMap = {
   queryEmpty: null;
   querySubmitted: string;
-}>();
+};
 
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
-  function SearchBooksWithFrame(
-    handle: Handle<{ initialQuery?: string }>,
-  ) {
+  function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
+    let searchEvents = new CustomEvents<EventMap>();
     let initialQuery = handle.props.initialQuery?.trim() ?? "";
-    searchEvents.seed(
-      initialQuery
-        ? searchEvents.querySubmitted(initialQuery)
-        : searchEvents.queryEmpty(),
-    );
 
     return () => (
       <>
@@ -64,21 +58,28 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         <searchEvents.on.change
-          render={({ detail: { event } }) => {
-            if (!event) return null;
-            if (event.type === "queryEmpty") {
-              return <p>Enter the title of any book.</p>;
+          seed={
+            initialQuery
+              ? searchEvents.querySubmitted(initialQuery)
+              : searchEvents.queryEmpty()
+          }
+          render={(changeEvent) => {
+            switch (changeEvent.detail.event?.type) {
+              case "queryEmpty":
+              case undefined:
+                return <p>Enter the title of any book.</p>;
+              case "querySubmitted":
+                let query = changeEvent.detail.event.detail;
+                return (
+                  <Frame
+                    key={query}
+                    fallback={
+                      <p>fetching books with title containing "{query}"...</p>
+                    }
+                    src={routes.searchBooks.books.href(undefined, { q: query })}
+                  />
+                );
             }
-            let query = event.detail;
-            return (
-              <Frame
-                key={query}
-                fallback={
-                  <p>fetching books with title containing "{query}"...</p>
-                }
-                src={routes.searchBooks.books.href(undefined, { q: query })}
-              />
-            );
           }}
         />
       </>

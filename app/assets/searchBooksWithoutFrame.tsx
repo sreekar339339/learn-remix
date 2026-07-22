@@ -57,9 +57,7 @@ async function fetchBooks(
 
 export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
-  function SearchBooksWithoutFrame(
-    handle: Handle<{ initialQuery: string }>,
-  ) {
+  function SearchBooksWithoutFrame(handle: Handle<{ initialQuery: string }>) {
     let initialQuery = handle.props.initialQuery.trim();
     searchEvents.seed(
       initialQuery
@@ -72,11 +70,15 @@ export const SearchBooksWithoutFrame = clientEntry(
         <label>
           Search{" "}
           <searchEvents.on.change
-            render={({ detail: { event } }) => (
+            render={(changeEvent) => (
               <input
                 type="text"
                 defaultValue={initialQuery}
-                class={event?.type === "querySubmitted" ? "pending" : ""}
+                class={
+                  changeEvent?.detail.event?.type === "querySubmitted"
+                    ? "pending"
+                    : ""
+                }
                 mix={[
                   inputCss,
                   on("input", ({ currentTarget }, signal) => {
@@ -102,9 +104,11 @@ export const SearchBooksWithoutFrame = clientEntry(
           />
         </label>
         <searchEvents.on.change
-          render={({ detail: { event } }) => {
+          render={(changeEvent) => {
+            let event = changeEvent?.detail.event;
             switch (event?.type) {
               case "queryEmpty":
+              case undefined:
                 return <p>Enter the title of any book.</p>;
               case "querySubmitted":
                 return (

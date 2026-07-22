@@ -59,10 +59,14 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       <label>
         Enter a todo{" "}
         <todoEvents.on.change
-          render={({ detail: { event } }, handle) => (
+          render={(changeEvent, handle) => (
             <input
-              disabled={event?.type === "actionSubmitted"}
-              class={event?.type === "actionSubmitted" ? "pending" : ""}
+              disabled={changeEvent?.detail.event?.type === "actionSubmitted"}
+              class={
+                changeEvent?.detail.event?.type === "actionSubmitted"
+                  ? "pending"
+                  : ""
+              }
               mix={[
                 inputCss,
                 todoEvents.on("change", ({ currentTarget, detail }) => {

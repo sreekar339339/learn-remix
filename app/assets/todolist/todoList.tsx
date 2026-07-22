@@ -11,8 +11,6 @@ export const todoEvents = new CustomEvents<{
   actionErrored: { error: Error };
 }>();
 
-todoEvents.seed(todoEvents.actionSucceeded(null))
-
 export type TodoActionDetail = {
   completed?: boolean;
 };

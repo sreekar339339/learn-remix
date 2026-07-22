@@ -317,9 +317,9 @@ function SearchForm(handle: Handle<Props<"div">>) {
         <button>Search</button>
       </form>
       <searchEvents.on.change
-        render={({ detail }) => (
+        render={(event) => (
           <output>
-            <pre>{JSON.stringify(detail, null, 2)}</pre>
+            <pre>{JSON.stringify(event?.detail, null, 2)}</pre>
           </output>
         )}
       />

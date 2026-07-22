@@ -213,7 +213,9 @@ describe("CustomEvents", () => {
           <checkoutEvents.on.submitted
             seed={checkoutEvents.submitted({ id: "initial-order" })}
             render={({ detail }) => (
-              <output data-testid="checkout-summary">{detail.id}</output>
+              <output data-testid="checkout-summary">
+                {detail.id}
+              </output>
             )}
           />
           <checkoutEvents.on.change
@@ -254,6 +256,51 @@ describe("CustomEvents", () => {
     assert.equal(changeSummary.textContent, "rendered-order");
   });
 
+  it("renders with a null event before the first seed or matching event", async (t) => {
+    let checkoutEvents = new CheckoutEvents();
+
+    function CheckoutSummary(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="submit-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                checkoutEvents.submitted({ id: "first-order" }),
+              );
+            })}
+          >
+            Submit
+          </button>
+          <checkoutEvents.on.submitted
+            render={(event) => (
+              <output data-testid="checkout-summary">
+                {event ? event.detail.id : "No checkout yet"}
+              </output>
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutSummary />);
+    t.after(() => result.cleanup());
+
+    let summary = result.$(
+      '[data-testid="checkout-summary"]',
+    ) as HTMLOutputElement;
+    let button = result.$(
+      '[data-testid="submit-checkout"]',
+    ) as HTMLButtonElement;
+
+    assert.equal(summary.textContent, "No checkout yet");
+
+    await result.act(() => button.click());
+
+    assert.equal(summary.textContent, "first-order");
+  });
+
   it("accepts constructor host option and explicit seed", async (t) => {
     let terminal = new EventTarget();
     let checkoutEvents = new CheckoutEvents({
@@ -281,8 +328,10 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <checkoutEvents.on.submitted
-            render={({ detail }) => (
-              <output data-testid="terminal-summary">{detail.id}</output>
+            render={(event) => (
+              <output data-testid="terminal-summary">
+                {event?.detail.id ?? "idle"}
+              </output>
             )}
           />
         </>
@@ -534,8 +583,10 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <terminal.events.on.submitted
-            render={({ detail }) => (
-              <output data-testid="terminal-summary">{detail.id}</output>
+            render={(event) => (
+              <output data-testid="terminal-summary">
+                {event?.detail.id ?? "idle"}
+              </output>
             )}
           />
         </>
