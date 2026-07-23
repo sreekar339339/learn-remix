@@ -27,6 +27,14 @@ import type {
  * input, then select it” or “render a cell, then focus it” in event order
  * without extra component state.
  *
+ * Event factory methods can also accept a callback detail when the next detail
+ * depends on the latest descriptor memory. The callback runs during descriptor
+ * processing, after the browser has established the real dispatch target and
+ * nearest host. Descriptor `events.on(...)` listeners and event components see
+ * only the resolved derived event. Use this callback form for
+ * descriptor-managed events; raw immediate `addEventListener(...)` observers on
+ * the product event itself may see the unresolved callback.
+ *
  * @example
  * class GameEvents extends CustomEvents<{
  *   turn: { nextPlayer: "X" | "O"; result: "Pending" | "Done" };
@@ -43,6 +51,11 @@ import type {
  *   </button>
  *   <gameEvents.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
  * </section>
+ *
+ * @example
+ * button.dispatchEvent(counterEvents.count(({ count, incrementOffset }) => (
+ *   (count ?? 0) + (incrementOffset ?? 1)
+ * )));
  */
 class CustomEventsBase<Events extends EventDetails> {
   declare readonly map: CustomEventMap<Events>;

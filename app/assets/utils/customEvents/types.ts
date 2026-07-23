@@ -28,6 +28,7 @@ export type CustomEventProductKind = "event" | "change";
 export type CustomEventProductMetadata = {
   kind: CustomEventProductKind;
   processed: boolean;
+  resolveDetail: boolean;
 };
 
 export type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
@@ -120,6 +121,22 @@ export type CustomEventsInit = EventInit & {
   /** When already aborted, the factory returns an inert event. */
   signal?: AbortSignal;
 };
+
+export type CustomEventsResolverContext = {
+  /**
+   * The target that originally dispatched the product event.
+   */
+  readonly target: EventTarget;
+};
+
+export type CustomEventsDetailResolver<
+  Events extends EventDetails,
+  Detail,
+> = (
+  eventMap: Partial<Events>,
+  change: ChangeEventDetailFromMap<Events> | undefined,
+  context: CustomEventsResolverContext,
+) => Detail;
 
 export type CustomEventsConstructorOptions = {
   /**
@@ -273,6 +290,27 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
     Events,
     typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
   >;
+
+  /**
+   * Creates a batch event from the latest descriptor-managed event memory.
+   *
+   * The callback runs when the product event is processed, after the browser has
+   * established the dispatch target. Descriptor `events.on(...)` listeners see
+   * only the resolved derived events. Raw immediate DOM listeners on the
+   * product event may observe the unresolved callback detail.
+   *
+   * @example
+   * button.dispatchEvent(events.change(({ count }) => ({
+   *   count: (count ?? 0) + 1,
+   * })));
+   */
+  (
+    resolve: CustomEventsDetailResolver<Events, Partial<Events>>,
+    init?: CustomEventsInit,
+  ): CustomEventsEvent<
+    Events,
+    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
+  >;
 };
 
 type CustomEventsEventMember<
@@ -309,6 +347,25 @@ type CustomEventsEventMember<
    */
   <Detail extends Events[Type]>(
     detail: ExactEventDetail<Events[Type], Detail>,
+    init?: CustomEventsInit,
+  ): CustomEventsEvent<Events, Type>;
+
+  /**
+   * Creates this product event from the latest descriptor-managed event memory.
+   *
+   * The callback is resolved during custom-event processing. Use this when a
+   * next event detail depends on the latest event map for the nearest host.
+   * Descriptor `events.on(...)` listeners receive only the resolved derived
+   * event; this callback form is not intended for raw immediate
+   * `addEventListener(...)` observers.
+   *
+   * @example
+   * button.dispatchEvent(counterEvents.count(({ count, incrementOffset }) => (
+   *   (count ?? 0) + (incrementOffset ?? 1)
+   * )));
+   */
+  (
+    resolve: CustomEventsDetailResolver<Events, Events[Type]>,
     init?: CustomEventsInit,
   ): CustomEventsEvent<Events, Type>;
 };

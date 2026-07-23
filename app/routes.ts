@@ -12,5 +12,6 @@ export const routes = route({
   todolist: route('todolist', {
     index: get('/'),
     todos: form('todos')
-  })
+  }),
+  kitchenSink: get('kitchenSink')
 })

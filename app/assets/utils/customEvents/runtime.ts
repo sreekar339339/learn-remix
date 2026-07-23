@@ -76,7 +76,10 @@ export class CustomEventsRuntime {
     init: EventInit,
     detail: unknown,
     metadata?: {
-      product?: CustomEventProductKind;
+      product?: {
+        kind: CustomEventProductKind;
+        resolveDetail?: boolean;
+      };
       origin?: EventTarget;
     },
   ) {
@@ -85,8 +88,9 @@ export class CustomEventsRuntime {
 
     if (metadata?.product) {
       this.#productEvents.set(event, {
-        kind: metadata.product,
+        kind: metadata.product.kind,
         processed: false,
+        resolveDetail: metadata.product.resolveDetail ?? false,
       });
     }
 

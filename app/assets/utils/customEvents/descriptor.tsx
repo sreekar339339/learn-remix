@@ -42,23 +42,31 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   }
 
   function createBatchChangeEvent(
-    events: Partial<Events>,
+    events: Partial<Events> | ((latest: unknown) => Partial<Events>),
     init?: CustomEventsInit,
   ) {
     if (init?.signal?.aborted) {
       return createAbortedEvent();
     }
 
-    let entries = resolveCustomEventsDispatchEntries(events);
-    for (let [type] of entries) addEventType(state, type);
+    let resolveDetail = typeof events === "function";
+    let detail: unknown;
+    if (typeof events === "function") {
+      detail = events;
+    } else {
+      let entries = resolveCustomEventsDispatchEntries(events);
+      for (let [type] of entries) addEventType(state, type);
+      detail = createCustomEventChangeDetail(entries);
+    }
     addEventType(state, CHANGE_EVENT_NAME);
     windowBridge.enable(state);
     return createProductCustomEvent(
       state,
       CHANGE_EVENT_NAME,
       getEventInit(init),
-      createCustomEventChangeDetail(entries),
+      detail,
       "change",
+      { resolveDetail },
     );
   }
 
@@ -78,6 +86,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       getEventInit(init),
       detail,
       "event",
+      { resolveDetail: typeof detail === "function" },
     );
   }
 

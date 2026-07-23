@@ -1,11 +1,13 @@
 import { CHANGE_EVENT_NAME } from "./constants.ts";
 import { isElement, isEventTarget } from "./dom.ts";
 import {
+  addEventType,
   createCustomEventChangeDetail,
   getChangeEventEntries,
   getEventInit,
   getEventName,
   getEventType,
+  resolveCustomEventsDispatchEntries,
 } from "./protocol.ts";
 import type { CustomEventsRuntime } from "./runtime.ts";
 import type {
@@ -28,12 +30,18 @@ export function createProductCustomEvent(
   init: EventInit,
   detail: unknown,
   product: CustomEventProductKind,
+  options?: { resolveDetail?: boolean },
 ) {
   return descriptor.createCustomEvent(
     getEventName(descriptor, type),
     init,
     detail,
-    { product },
+    {
+      product: {
+        kind: product,
+        resolveDetail: options?.resolveDetail,
+      },
+    },
   );
 }
 
@@ -146,6 +154,7 @@ function commitProductEvent(
 
   if (product === "event") {
     emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
+    emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
     return;
   }
 
@@ -158,6 +167,58 @@ function commitProductEvent(
     changeDetail,
   );
   emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
+}
+
+function resolveCustomEventsDetail(
+  resolve: (
+    eventMap: Partial<EventDetails>,
+    change: ChangeEventDetailFromMap<EventDetails> | undefined,
+    context: { target: EventTarget },
+  ) => unknown,
+  descriptor: CustomEventsRuntime,
+  target: EventTarget,
+) {
+  let latest = descriptor.getReference(target).latest;
+  return resolve(
+    { ...(latest?.eventMap ?? {}) },
+    latest?.change,
+    { target },
+  );
+}
+
+function resolveProductEventEntries(
+  event: CustomEvent,
+  descriptor: CustomEventsRuntime,
+  target: EventTarget,
+) {
+  let metadata = descriptor.getProductMetadata(event);
+  if (!metadata) return undefined;
+
+  if (metadata.kind === "event") {
+    let type = getEventType(descriptor, event.type);
+    if (!type || type === CHANGE_EVENT_NAME) return undefined;
+    let detail =
+      metadata.resolveDetail && typeof event.detail === "function"
+        ? resolveCustomEventsDetail(event.detail, descriptor, target)
+        : event.detail;
+    return [[type, detail]] satisfies Array<[string, unknown]>;
+  }
+
+  let detail =
+    metadata.resolveDetail && typeof event.detail === "function"
+      ? createCustomEventChangeDetail(
+          resolveCustomEventsDispatchEntries(
+            resolveCustomEventsDetail(
+              event.detail,
+              descriptor,
+              target,
+            ) as Partial<EventDetails>,
+          ),
+        )
+      : (event.detail as ChangeEventDetailFromMap<EventDetails>);
+  let entries = getChangeEventEntries(detail);
+  for (let [type] of entries) addEventType(descriptor, type);
+  return entries;
 }
 
 export function processCustomEventsEvent(
@@ -174,17 +235,8 @@ export function processCustomEventsEvent(
 
   descriptor.markProductEventProcessed(event);
   let init = getEventInit(event);
-  let entries: Array<[string, unknown]>;
-
-  if (metadata.kind === "event") {
-    let type = getEventType(descriptor, event.type);
-    if (!type || type === CHANGE_EVENT_NAME) return;
-    entries = [[type, event.detail]];
-  } else {
-    let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
-    entries = getChangeEventEntries(detail);
-    if (!entries.length) return;
-  }
+  let entries = resolveProductEventEntries(event, descriptor, origin);
+  if (!entries?.length) return;
 
   queueMicrotask(() => {
     commitProductEvent(origin, descriptor, entries, metadata.kind, init);

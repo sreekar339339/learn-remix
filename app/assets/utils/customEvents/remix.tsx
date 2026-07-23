@@ -142,6 +142,7 @@ const forwardEventsMixin = createMixin<
         getEventName(descriptor, type),
         (event) => {
           if (!(event instanceof CustomEvent)) return;
+          if (descriptor.getProductMetadata(event)) return;
           if (!descriptor.ownsEvent(event)) return;
           let element = currentElement;
           if (!shouldBridgeEventToElement(event, descriptor, element)) return;
@@ -224,6 +225,8 @@ export const customEventsOnMixin = createMixin<
       event: CustomEventWithMetadata<any>,
       signal: AbortSignal,
     ) => {
+      if (descriptor.getProductMetadata(event)) return;
+
       let bridgedEvent = descriptor.getBridgedEvent(event);
       let sourceEvent = getSourceEventForListener(descriptor, event);
       let scope = handle.context.get(CustomEventsRenderScopeProvider);
@@ -330,6 +333,7 @@ export function createCustomEventsEventComponent<
       currentTarget.addEventListener(
         eventName,
         (event) => {
+          if (descriptor.getProductMetadata(event)) return;
           if (descriptor.isBridgedEvent(event)) return;
           if (!canRender(event)) return;
           currentEvent = event;

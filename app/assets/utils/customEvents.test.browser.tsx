@@ -739,6 +739,255 @@ describe("CustomEvents", () => {
     assert.equal(hostReference.latest?.eventMap.paid, null);
   });
 
+  it("resolves granular event callbacks from the latest host event map", async (t) => {
+    type CounterDetails = {
+      count: number;
+      incrementOffset: number;
+    };
+    class CounterEvents extends CustomEvents<CounterDetails> {}
+    let counterEvents = new CounterEvents();
+    counterEvents.seed(
+      counterEvents.change({
+        count: 0,
+        incrementOffset: 2,
+      }),
+    );
+
+    function Counter(handle: Handle) {
+      return () => (
+        <section data-testid="counter-host" mix={counterEvents.host()}>
+          <button
+            type="button"
+            data-testid="increment-counter"
+            mix={[
+              counterEvents.on("count", ({ currentTarget, detail }) => {
+                currentTarget.dataset.detailType = typeof detail;
+                currentTarget.dataset.count = String(detail);
+              }),
+              on("click", ({ currentTarget }) => {
+                currentTarget.dispatchEvent(
+                  counterEvents.count(({ count, incrementOffset }) => {
+                    return (
+                      (count ?? 0) +
+                      (incrementOffset ?? 1)
+                    );
+                  }),
+                );
+              }),
+            ]}
+          >
+            Increment
+          </button>
+        </section>
+      );
+    }
+
+    let result = render(<Counter />);
+    t.after(() => result.cleanup());
+
+    let host = result.$('[data-testid="counter-host"]') as HTMLElement;
+    let button = result.$(
+      '[data-testid="increment-counter"]',
+    ) as HTMLButtonElement;
+
+    await result.act(() => button.click());
+
+    assert.equal(button.dataset.detailType, "number");
+    assert.equal(button.dataset.count, "2");
+    assert.equal(counterEvents.getHost(host).latest?.eventMap.count, 2);
+  });
+
+  it("keeps callback detail resolution scoped to each host", async (t) => {
+    type CounterDetails = {
+      count: number;
+      incrementOffset: number;
+    };
+    class CounterEvents extends CustomEvents<CounterDetails> {}
+    let counterEvents = new CounterEvents();
+
+    function CounterList(handle: Handle) {
+      return () => (
+        <>
+          <section data-testid="slow-host" mix={counterEvents.host()}>
+            <button
+              type="button"
+              data-testid="slow-seed"
+              mix={ref((button) => {
+                button.dispatchEvent(
+                  counterEvents.change({
+                    count: 0,
+                    incrementOffset: 2,
+                  }),
+                );
+              })}
+            >
+              Seed
+            </button>
+            <button
+              type="button"
+              data-testid="slow-increment"
+              mix={[
+                counterEvents.on("count", ({ currentTarget, detail }) => {
+                  currentTarget.dataset.count = String(detail);
+                }),
+                on("click", ({ currentTarget }) => {
+                  currentTarget.dispatchEvent(
+                    counterEvents.count(
+                      ({ count, incrementOffset }) =>
+                        (count ?? 0) +
+                        (incrementOffset ?? 1),
+                    ),
+                  );
+                }),
+              ]}
+            >
+              Increment
+            </button>
+          </section>
+          <section data-testid="fast-host" mix={counterEvents.host()}>
+            <button
+              type="button"
+              data-testid="fast-seed"
+              mix={ref((button) => {
+                button.dispatchEvent(
+                  counterEvents.change({
+                    count: 0,
+                    incrementOffset: 5,
+                  }),
+                );
+              })}
+            >
+              Seed
+            </button>
+            <button
+              type="button"
+              data-testid="fast-increment"
+              mix={[
+                counterEvents.on("count", ({ currentTarget, detail }) => {
+                  currentTarget.dataset.count = String(detail);
+                }),
+                on("click", ({ currentTarget }) => {
+                  currentTarget.dispatchEvent(
+                    counterEvents.count(
+                      ({ count, incrementOffset }) =>
+                        (count ?? 0) +
+                        (incrementOffset ?? 1),
+                    ),
+                  );
+                }),
+              ]}
+            >
+              Increment
+            </button>
+          </section>
+        </>
+      );
+    }
+
+    let result = render(<CounterList />);
+    t.after(() => result.cleanup());
+    await result.act(() => Promise.resolve());
+
+    let slowHost = result.$('[data-testid="slow-host"]') as HTMLElement;
+    let fastHost = result.$('[data-testid="fast-host"]') as HTMLElement;
+    let slowButton = result.$(
+      '[data-testid="slow-increment"]',
+    ) as HTMLButtonElement;
+    let fastButton = result.$(
+      '[data-testid="fast-increment"]',
+    ) as HTMLButtonElement;
+
+    await result.act(() => slowButton.click());
+    await result.act(() => fastButton.click());
+    await result.act(() => fastButton.click());
+
+    assert.equal(slowButton.dataset.count, "2");
+    assert.equal(fastButton.dataset.count, "10");
+    assert.equal(counterEvents.getHost(slowHost).latest?.eventMap.count, 2);
+    assert.equal(counterEvents.getHost(fastHost).latest?.eventMap.count, 10);
+  });
+
+  it("resolves batch callbacks before expanding granular events", async (t) => {
+    type GameDetails = {
+      turn: { nextPlayer: "X" | "O"; moves: number };
+      focus: { cellId: number };
+    };
+    class GameEvents extends CustomEvents<GameDetails> {}
+    let gameEvents = new GameEvents();
+    gameEvents.seed(
+      gameEvents.change({
+        turn: { nextPlayer: "X", moves: 0 },
+        focus: { cellId: 0 },
+      }),
+    );
+
+    function GameControls(handle: Handle) {
+      return () => (
+        <section data-testid="game-host" mix={gameEvents.host()}>
+          <button
+            type="button"
+            data-testid="play-turn"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                gameEvents.change(({ turn }, change, { target }) => {
+                  currentTarget.dataset.resolverTargetIsButton = String(
+                    target === currentTarget,
+                  );
+                  return {
+                    turn: {
+                      nextPlayer: turn!.nextPlayer === "X" ? "O" : "X",
+                      moves: turn!.moves + 1,
+                    },
+                    focus: { cellId: turn!.moves + 1 },
+                  };
+                }),
+              );
+            })}
+          >
+            Play
+          </button>
+          <output
+            data-testid="turn-output"
+            mix={gameEvents.on("turn", ({ currentTarget, detail }) => {
+              currentTarget.textContent = `${detail.nextPlayer}:${detail.moves}`;
+            })}
+          />
+          <output
+            data-testid="focus-output"
+            mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+              currentTarget.textContent = String(detail.cellId);
+            })}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<GameControls />);
+    t.after(() => result.cleanup());
+
+    let host = result.$('[data-testid="game-host"]') as HTMLElement;
+    let button = result.$('[data-testid="play-turn"]') as HTMLButtonElement;
+    let turnOutput = result.$(
+      '[data-testid="turn-output"]',
+    ) as HTMLOutputElement;
+    let focusOutput = result.$(
+      '[data-testid="focus-output"]',
+    ) as HTMLOutputElement;
+
+    await result.act(() => button.click());
+
+    assert.equal(turnOutput.textContent, "O:1");
+    assert.equal(focusOutput.textContent, "1");
+    assert.equal(button.dataset.resolverTargetIsButton, "true");
+    assert.deepEqual(gameEvents.getHost(host).latest?.change, {
+      event: null,
+      events: {
+        turn: { nextPlayer: "O", moves: 1 },
+        focus: { cellId: 1 },
+      },
+    });
+  });
+
   it("expands batch change events into single product events", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 

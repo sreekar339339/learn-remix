@@ -3,7 +3,6 @@ import { routes } from "../routes.ts";
 import { TicTacToePage } from "./ticTacToePage.tsx";
 import { Index } from "./index.tsx";
 import { assetServer } from "../assets.ts";
-import { SuperHeaders } from "remix/headers";
 import { match, P } from "ts-pattern";
 import * as s from "remix/data-schema";
 import { TodoListCustomEventsPage } from "./todoListPage.tsx";
@@ -15,6 +14,7 @@ import { TodoItemsClientEntryMarked as TodoItemsCustomEventsClientEntryMarked } 
 import * as coerce from "remix/data-schema/coerce";
 import { SearchBooksWithoutFramePage } from "./searchBooksWithoutFramePage.tsx";
 import { SearchBooksWithFramePage } from "./searchBooksWithFramePage.tsx";
+import { KistchenSinkPage } from "./kitchenSinkPage.tsx";
 
 export const rootController = createController(routes, {
   actions: {
@@ -30,6 +30,9 @@ export const rootController = createController(routes, {
         new Response("Not Found", { status: 404 })
       );
     },
+    kitchenSink({render}) {
+      return render(<KistchenSinkPage />)
+    }
   },
 });
 
