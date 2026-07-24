@@ -3,14 +3,6 @@ import { CustomEvents } from "./utils/customEvents.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw";
-type EventMap = {
-  turn: {
-    result: Result | null;
-    position: Map<number, Player>;
-    nextPlayer: Player;
-  };
-  focus: { cellId: number };
-};
 
 let winningCombos = [
   [0, 1, 2],
@@ -52,7 +44,13 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents(handle) {
-    let ticTacToeEvents = new CustomEvents<EventMap>();
+    let events = new CustomEvents<"nextTurn" | "nextFocus">();
+    let game = {
+      position: new Map(),
+      nextPlayer: "X" as Player,
+      result: null as Result | null,
+      focusCellId: 0,
+    };
 
     return () => (
       <div
@@ -74,27 +72,21 @@ export const TicTacToeCustomEvents = clientEntry(
             on("click", ({ target, currentTarget }) => {
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.value);
-              let { position, nextPlayer, result } =
-                ticTacToeEvents.getHost(currentTarget).latest?.eventMap.turn!;
+              let { position, nextPlayer, result } = game;
               if (position.has(cellId) || result !== null) return;
-              let nextPosition = new Map(position).set(cellId, nextPlayer);
-              let nextResult = deriveResult(nextPosition);
+              game.position.set(cellId, nextPlayer);
+              game.result = deriveResult(game.position);
+              game.nextPlayer = nextPlayer === "X" ? "O" : "X";
               let nextFreeCellIdx = cellId;
-              while (nextPosition.has(nextFreeCellIdx)) {
+              while (game.position.has(nextFreeCellIdx)) {
                 nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
                 if (nextFreeCellIdx === cellId) break;
               }
+              game.focusCellId = nextFreeCellIdx;
               currentTarget.dispatchEvent(
-                ticTacToeEvents.change({
-                  turn: {
-                    position: nextPosition,
-                    nextPlayer: nextPlayer === "X" ? "O" : "X",
-                    result: nextResult,
-                  },
-                  ...(nextResult === null
-                    ? { focus: { cellId: nextFreeCellIdx } }
-                    : {}),
-                }),
+                game.result === null
+                  ? events.change(["nextTurn", "nextFocus"])
+                  : events.change(["nextTurn"]),
               );
             }),
             on("keydown", ({ key, target, currentTarget }) => {
@@ -104,11 +96,9 @@ export const TicTacToeCustomEvents = clientEntry(
               let idxIncrement = arrowKeyIdxIncrementMap[key];
               let boundIdx = idxIncrement < 0 ? 0 : 8;
               let nextFreeCellIdx = cellId;
-              let { position } =
-                ticTacToeEvents.getHost(currentTarget).latest?.eventMap.turn!;
               while (
                 nextFreeCellIdx === cellId ||
-                position.has(nextFreeCellIdx)
+                game.position.has(nextFreeCellIdx)
               ) {
                 nextFreeCellIdx += idxIncrement;
                 if (
@@ -118,23 +108,19 @@ export const TicTacToeCustomEvents = clientEntry(
                   break;
                 }
               }
-              currentTarget.dispatchEvent(
-                ticTacToeEvents.focus({ cellId: nextFreeCellIdx }),
-              );
+              game.focusCellId = nextFreeCellIdx;
+              currentTarget.dispatchEvent(events.nextFocus());
             }),
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <ticTacToeEvents.on.turn
+            <events.on.nextTurn
               key={index}
-              render={(turnEvent) => (
+              render={() => (
                 <button
                   value={index}
-                  disabled={
-                    turnEvent?.detail.position.has(index) ||
-                    turnEvent?.detail.result !== null
-                  }
-                  class={turnEvent?.detail.position.get(index)}
+                  disabled={game.position.has(index) || game.result !== null}
+                  class={game.position.get(index)}
                   mix={[
                     css({
                       aspectRatio: "1/1",
@@ -147,13 +133,13 @@ export const TicTacToeCustomEvents = clientEntry(
                         color: "red",
                       },
                     }),
-                    ticTacToeEvents.on("focus", ({ detail, currentTarget }) => {
-                      if (detail.cellId !== index) return;
+                    events.on("nextFocus", ({ currentTarget }) => {
+                      if (game.focusCellId !== index) return;
                       currentTarget.focus();
                     }),
                   ]}
                 >
-                  {turnEvent?.detail.position.get(index)}
+                  {game.position.get(index)}
                 </button>
               )}
             />
@@ -162,23 +148,20 @@ export const TicTacToeCustomEvents = clientEntry(
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            ticTacToeEvents.on("turn", ({ detail, currentTarget }) => {
-              if (detail.result === null) return;
+            events.on("nextTurn", ({ currentTarget }) => {
+              if (game.result === null) return;
               currentTarget.focus();
             }),
             on("click", ({ currentTarget }) => {
+              game.position.clear();
+              game.result = null;
+              game.nextPlayer = "X";
+              game.focusCellId = 0;
               currentTarget.dispatchEvent(
-                ticTacToeEvents.change({
-                  focus: { cellId: 0 },
-                  turn: {
-                    result: null,
-                    position: new Map(),
-                    nextPlayer: "X",
-                  },
-                }),
+                events.change(["nextTurn", "nextFocus"]),
               );
             }),
-            ref((reset) => reset.click()),
+            ref((reset) => reset.dispatchEvent(events.nextFocus())),
           ]}
         >
           Reset
@@ -191,12 +174,11 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <ticTacToeEvents.on.turn
-            render={(turnEvent) => {
-              if (!turnEvent || !turnEvent.detail.result)
-                return "Game in progress";
-              if (turnEvent.detail.result === "Draw") return "Game is drawn.";
-              return `${turnEvent.detail.result} has won!`;
+          <events.on.nextTurn
+            render={() => {
+              if (!game.result) return "Game in progress";
+              if (game.result === "Draw") return "Game is drawn.";
+              return `${game.result} has won!`;
             }}
           />
         </p>

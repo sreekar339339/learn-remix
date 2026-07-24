@@ -1,0 +1,138 @@
+import { clientEntry, on } from "remix/ui";
+import { CustomEvents } from "../utils/customEvents.tsx";
+import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
+
+type FlightKind = "one-way flight" | "return flight";
+type FlightState = {
+  kind: FlightKind;
+  startDate: string;
+  returnDate: string;
+};
+
+function isValidDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  let [year, month, day] = value.split("-").map(Number);
+  let date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function canBook({ kind, startDate, returnDate }: FlightState) {
+  if (!isValidDate(startDate)) return false;
+  return (
+    kind === "one-way flight" ||
+    (isValidDate(returnDate) && returnDate >= startDate)
+  );
+}
+
+function presentValidation(flight: FlightState) {
+  return {
+    startDateInvalid: !isValidDate(flight.startDate),
+    returnDateDisabled: flight.kind === "one-way flight",
+    returnDateInvalid:
+      flight.kind === "return flight" &&
+      (!isValidDate(flight.returnDate) || flight.returnDate < flight.startDate),
+  };
+}
+
+export const SevenGuisFlightBooker = clientEntry(
+  import.meta.url,
+  function SevenGuisFlightBooker() {
+    let events = new CustomEvents<"itineraryChanged" | "bookingConfirmed">();
+    let today = new Date().toISOString().slice(0, 10);
+    let flight: FlightState = {
+      kind: "one-way flight" as const,
+      startDate: today,
+      returnDate: today,
+    };
+
+    return () => (
+      <section mix={taskCss}>
+        <h2>Flight Booker</h2>
+        <select
+          aria-label="Flight type"
+          defaultValue={flight.kind}
+          mix={[
+            inputCss,
+            on("change", ({ currentTarget }) => {
+              flight.kind = currentTarget.value as FlightKind;
+              currentTarget.dispatchEvent(events.itineraryChanged());
+            }),
+          ]}
+        >
+          <option>one-way flight</option>
+          <option>return flight</option>
+        </select>
+        <div mix={rowCss}>
+          <events.on.itineraryChanged
+            render={() => (
+              <>
+                <input
+                  aria-label="Start date"
+                  defaultValue={flight.startDate}
+                  aria-invalid={
+                    presentValidation(flight)?.startDateInvalid ?? false
+                  }
+                  mix={[
+                    inputCss,
+                    on("input", ({ currentTarget }) => {
+                      flight.startDate = currentTarget.value;
+                      currentTarget.dispatchEvent(events.itineraryChanged());
+                    }),
+                  ]}
+                />
+                <input
+                  aria-label="Return date"
+                  defaultValue={flight.returnDate}
+                  disabled={
+                    presentValidation(flight)?.returnDateDisabled ?? true
+                  }
+                  aria-invalid={
+                    presentValidation(flight)?.returnDateInvalid ?? false
+                  }
+                  mix={[
+                    inputCss,
+                    on("input", ({ currentTarget }) => {
+                      flight.returnDate = currentTarget.value;
+                      currentTarget.dispatchEvent(events.itineraryChanged());
+                    }),
+                  ]}
+                />
+              </>
+            )}
+          />
+        </div>
+        <events.on.itineraryChanged
+          render={() => (
+            <button
+              type="button"
+              disabled={!canBook(flight)}
+              mix={[
+                buttonCss,
+                on("click", ({ currentTarget }) => {
+                  currentTarget.dispatchEvent(events.bookingConfirmed());
+                }),
+              ]}
+            >
+              Book
+            </button>
+          )}
+        />
+        <events.on.bookingConfirmed
+          render={(evt) =>
+            evt ? (
+              <output>
+                {flight.kind === "one-way flight"
+                  ? `You have booked a one-way flight on ${flight.startDate}.`
+                  : `You have booked a return flight from ${flight.startDate} to ${flight.returnDate}.`}
+              </output>
+            ) : null
+          }
+        />
+      </section>
+    );
+  },
+);

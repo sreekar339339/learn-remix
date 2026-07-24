@@ -51,17 +51,20 @@ type AppContextValue = {
 
 class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map"]> {
   events = new CustomEvents<AppContextValue>({host: this});
+  #value: AppContextValue;
 
   constructor(initial: Partial<AppContextValue>) {
     super();
+    this.#value = initial as AppContextValue;
     this.events.seed(this.events.change(initial));
   }
 
   get value(): AppContextValue {
-    return this.events.getHost(this).latest?.eventMap as AppContextValue;
+    return this.#value;
   }
 
   patch(value: Partial<AppContextValue>) {
+    Object.assign(this.#value, value);
     this.dispatchEvent(this.events.change(value));
   }
 }
@@ -119,11 +122,11 @@ function GesturePad(handle: Handle) {
 
 class TestPlayer extends TypedEventTarget<PlayerEvents["map"]> {
   #track: string | null = null;
-  events = new PlayerEvents();
+  events: PlayerEvents;
 
   constructor(signal: AbortSignal) {
     super();
-    this.events.setHost(this, signal);
+    this.events = new PlayerEvents({host: this, signal});
   }
 
   load(track: string) {
@@ -148,7 +151,7 @@ function PlayerUI(handle: Handle) {
   let events: PlayerEvents["map"]["change"]["detail"][] = [];
 
   player.addEventListener(
-    player.events.types.change,
+    "change",
     (({ detail }: PlayerEvents["map"]["change"]) => {
       events.push(detail);
       handle.update();

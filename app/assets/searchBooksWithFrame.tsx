@@ -2,16 +2,11 @@ import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
-type EventMap = {
-  queryEmpty: null;
-  querySubmitted: string;
-};
-
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
-    let searchEvents = new CustomEvents<EventMap>();
-    let initialQuery = handle.props.initialQuery?.trim() ?? "";
+    let searchEvents = new CustomEvents<"queryEmpty" | "querySubmitted">();
+    let query = handle.props.initialQuery?.trim() ?? "";
 
     return () => (
       <>
@@ -20,12 +15,12 @@ export const SearchBooksWithFrame = clientEntry(
           mix={[
             on("submit", (evt) => {
               evt.preventDefault();
-              let query = (
+              query = (
                 new FormData(evt.currentTarget).get("q") as string
               ).trim();
               evt.currentTarget.dispatchEvent(
                 query
-                  ? searchEvents.querySubmitted(query)
+                  ? searchEvents.querySubmitted()
                   : searchEvents.queryEmpty(),
               );
             }),
@@ -36,7 +31,7 @@ export const SearchBooksWithFrame = clientEntry(
             <input
               name="q"
               type="text"
-              defaultValue={initialQuery}
+              defaultValue={query}
               autofocus
               mix={[
                 css({
@@ -59,9 +54,7 @@ export const SearchBooksWithFrame = clientEntry(
         </form>
         <searchEvents.on.change
           seed={
-            initialQuery
-              ? searchEvents.querySubmitted(initialQuery)
-              : searchEvents.queryEmpty()
+            query ? searchEvents.querySubmitted() : searchEvents.queryEmpty()
           }
           render={(changeEvent) => {
             switch (changeEvent.detail.event?.type) {
@@ -69,7 +62,6 @@ export const SearchBooksWithFrame = clientEntry(
               case undefined:
                 return <p>Enter the title of any book.</p>;
               case "querySubmitted":
-                let query = changeEvent.detail.event.detail;
                 return (
                   <Frame
                     key={query}

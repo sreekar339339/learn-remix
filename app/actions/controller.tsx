@@ -15,6 +15,7 @@ import * as coerce from "remix/data-schema/coerce";
 import { SearchBooksWithoutFramePage } from "./searchBooksWithoutFramePage.tsx";
 import { SearchBooksWithFramePage } from "./searchBooksWithFramePage.tsx";
 import { KistchenSinkPage } from "./kitchenSinkPage.tsx";
+import { SevenGuisPage } from "./sevenGuisPage.tsx";
 
 export const rootController = createController(routes, {
   actions: {
@@ -32,6 +33,9 @@ export const rootController = createController(routes, {
     },
     kitchenSink({render}) {
       return render(<KistchenSinkPage />)
+    },
+    sevenGuis({ render }) {
+      return render(<SevenGuisPage />);
     }
   },
 });

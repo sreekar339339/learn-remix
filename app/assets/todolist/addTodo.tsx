@@ -50,9 +50,10 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       mix={[
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
-        todoEvents.host(),
-        todoEvents.on("actionSucceeded", ({ currentTarget }) => {
-          currentTarget.reset();
+        todoEvents.host({
+          actionSucceeded({ currentTarget }) {
+            currentTarget.reset();
+          },
         }),
       ]}
     >

@@ -11,7 +11,58 @@ type CheckoutDetails = {
 
 class CheckoutEvents extends CustomEvents<CheckoutDetails> {}
 
+class PanelEvents extends CustomEvents<
+  "listUpdated" | "editorUpdated"
+> {}
+
 describe("CustomEvents", () => {
+  it("accepts a string union for null-detail event signals", async (t) => {
+    let panelEvents = new PanelEvents();
+
+    if (false) {
+      // @ts-expect-error - null-detail batch names must be unique.
+      panelEvents.change(["listUpdated", "listUpdated"]);
+    }
+
+    assert.throws(
+      () => panelEvents.change(["listUpdated", "listUpdated"] as never),
+      /duplicate event names/,
+    );
+
+    function Panel() {
+      return () => (
+        <section mix={panelEvents.host()}>
+          <button
+            type="button"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                panelEvents.change(["listUpdated", "editorUpdated"]),
+              );
+            })}
+          >
+            Refresh
+          </button>
+          <panelEvents.on.editorUpdated
+            render={(event) => (
+              <output data-testid="editor-status">
+                {event ? "Updated" : "Idle"}
+              </output>
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Panel />);
+    t.after(() => result.cleanup());
+
+    let button = result.$("button") as HTMLButtonElement;
+    await result.act(() => button.click());
+
+    let status = result.$('[data-testid="editor-status"]')!;
+    assert.equal(status.textContent, "Updated");
+  });
+
   it("listens to same-element events through descriptor-owned on()", async (t) => {
     let checkoutEvents = new CheckoutEvents();
 
@@ -583,11 +634,6 @@ describe("CustomEvents", () => {
     });
     checkoutEvents.seed(checkoutEvents.submitted({ id: "seeded-order" }));
 
-    assert.equal(
-      checkoutEvents.getHost(terminal).latest?.eventMap.submitted?.id,
-      "seeded-order",
-    );
-
     function CheckoutTerminalSummary(handle: Handle) {
       return () => (
         <>
@@ -693,12 +739,30 @@ describe("CustomEvents", () => {
     assert.equal(root.dataset.latestOrder, "composed-order");
   });
 
-  it("stores the latest change detail and event map on the host", async (t) => {
+  it("lets host listeners project resolved events into a local model", async (t) => {
     let checkoutEvents = new CheckoutEvents();
+    let latestChange: CheckoutEvents["map"]["change"]["detail"] | undefined;
+    let latestEvents: Partial<CheckoutDetails> = {};
+    let submittedId: string | undefined;
+    let listenerTarget: Element | undefined;
 
     function CheckoutHost(handle: Handle) {
       return () => (
-        <section data-testid="checkout-host" mix={checkoutEvents.host()}>
+        <section
+          data-testid="checkout-host"
+          mix={checkoutEvents.host({
+            change({ detail }) {
+              latestChange = detail;
+              Object.assign(latestEvents, detail.events ?? {
+                [detail.event!.type]: detail.event!.detail,
+              });
+            },
+            submitted({ detail, currentTarget }) {
+              submittedId = detail.id;
+              listenerTarget = currentTarget;
+            },
+          })}
+        >
           <button
             type="button"
             data-testid="checkout-patch"
@@ -720,26 +784,23 @@ describe("CustomEvents", () => {
     let result = render(<CheckoutHost />);
     t.after(() => result.cleanup());
 
-    let host = result.$('[data-testid="checkout-host"]') as HTMLElement;
     let button = result.$(
       '[data-testid="checkout-patch"]',
     ) as HTMLButtonElement;
 
     await result.act(() => button.click());
 
-    let hostReference = checkoutEvents.getHost(host);
-    assert.deepEqual(hostReference.latest?.change, {
+    assert.deepEqual(latestChange, {
       event: null,
       events: { submitted: { id: "aggregate-order" }, paid: null },
     });
-    assert.equal(
-      hostReference.latest?.eventMap.submitted?.id,
-      "aggregate-order",
-    );
-    assert.equal(hostReference.latest?.eventMap.paid, null);
+    assert.equal(latestEvents.submitted?.id, "aggregate-order");
+    assert.equal(latestEvents.paid, null);
+    assert.equal(submittedId, "aggregate-order");
+    assert.equal(listenerTarget, button.parentElement);
   });
 
-  it("resolves granular event callbacks from the latest host event map", async (t) => {
+  it("resolves granular callbacks from their previous detail and event map", async (t) => {
     type CounterDetails = {
       count: number;
       incrementOffset: number;
@@ -766,7 +827,7 @@ describe("CustomEvents", () => {
               }),
               on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  counterEvents.count(({ count, incrementOffset }) => {
+                  counterEvents.count((count, { incrementOffset }) => {
                     return (
                       (count ?? 0) +
                       (incrementOffset ?? 1)
@@ -785,7 +846,6 @@ describe("CustomEvents", () => {
     let result = render(<Counter />);
     t.after(() => result.cleanup());
 
-    let host = result.$('[data-testid="counter-host"]') as HTMLElement;
     let button = result.$(
       '[data-testid="increment-counter"]',
     ) as HTMLButtonElement;
@@ -794,7 +854,45 @@ describe("CustomEvents", () => {
 
     assert.equal(button.dataset.detailType, "number");
     assert.equal(button.dataset.count, "2");
-    assert.equal(counterEvents.getHost(host).latest?.eventMap.count, 2);
+  });
+
+  it("cancels a resolver dispatch when its callback returns undefined", async (t) => {
+    class CounterEvents extends CustomEvents<{ count: number }> {}
+    let counterEvents = new CounterEvents();
+
+    function Counter(handle: Handle) {
+      return () => (
+        <section data-testid="counter-host" mix={counterEvents.host()}>
+          <button
+            type="button"
+            data-testid="cancel-count"
+            mix={[
+              counterEvents.on("count", ({ currentTarget }) => {
+                currentTarget.dataset.countEvent = "received";
+              }),
+              counterEvents.on("change", ({ currentTarget }) => {
+                currentTarget.dataset.changeEvent = "received";
+              }),
+              on("click", ({ currentTarget }) => {
+                currentTarget.dispatchEvent(counterEvents.count(() => undefined));
+              }),
+            ]}
+          >
+            Cancel count
+          </button>
+        </section>
+      );
+    }
+
+    let result = render(<Counter />);
+    t.after(() => result.cleanup());
+
+    let button = result.$('[data-testid="cancel-count"]') as HTMLButtonElement;
+
+    await result.act(() => button.click());
+
+    assert.equal(button.dataset.countEvent, undefined);
+    assert.equal(button.dataset.changeEvent, undefined);
   });
 
   it("keeps callback detail resolution scoped to each host", async (t) => {
@@ -833,7 +931,7 @@ describe("CustomEvents", () => {
                 on("click", ({ currentTarget }) => {
                   currentTarget.dispatchEvent(
                     counterEvents.count(
-                      ({ count, incrementOffset }) =>
+                      (count, { incrementOffset }) =>
                         (count ?? 0) +
                         (incrementOffset ?? 1),
                     ),
@@ -869,7 +967,7 @@ describe("CustomEvents", () => {
                 on("click", ({ currentTarget }) => {
                   currentTarget.dispatchEvent(
                     counterEvents.count(
-                      ({ count, incrementOffset }) =>
+                      (count, { incrementOffset }) =>
                         (count ?? 0) +
                         (incrementOffset ?? 1),
                     ),
@@ -888,8 +986,6 @@ describe("CustomEvents", () => {
     t.after(() => result.cleanup());
     await result.act(() => Promise.resolve());
 
-    let slowHost = result.$('[data-testid="slow-host"]') as HTMLElement;
-    let fastHost = result.$('[data-testid="fast-host"]') as HTMLElement;
     let slowButton = result.$(
       '[data-testid="slow-increment"]',
     ) as HTMLButtonElement;
@@ -903,8 +999,6 @@ describe("CustomEvents", () => {
 
     assert.equal(slowButton.dataset.count, "2");
     assert.equal(fastButton.dataset.count, "10");
-    assert.equal(counterEvents.getHost(slowHost).latest?.eventMap.count, 2);
-    assert.equal(counterEvents.getHost(fastHost).latest?.eventMap.count, 10);
   });
 
   it("resolves batch callbacks before expanding granular events", async (t) => {
@@ -965,7 +1059,6 @@ describe("CustomEvents", () => {
     let result = render(<GameControls />);
     t.after(() => result.cleanup());
 
-    let host = result.$('[data-testid="game-host"]') as HTMLElement;
     let button = result.$('[data-testid="play-turn"]') as HTMLButtonElement;
     let turnOutput = result.$(
       '[data-testid="turn-output"]',
@@ -979,13 +1072,6 @@ describe("CustomEvents", () => {
     assert.equal(turnOutput.textContent, "O:1");
     assert.equal(focusOutput.textContent, "1");
     assert.equal(button.dataset.resolverTargetIsButton, "true");
-    assert.deepEqual(gameEvents.getHost(host).latest?.change, {
-      event: null,
-      events: {
-        turn: { nextPlayer: "O", moves: 1 },
-        focus: { cellId: 1 },
-      },
-    });
   });
 
   it("expands batch change events into single product events", async (t) => {
@@ -1075,19 +1161,13 @@ describe("CustomEvents", () => {
     await result.act(() => button.click());
 
     assert.equal(button.dataset.changed, undefined);
-    assert.equal(checkoutEvents.getHost(button).latest, undefined);
   });
 
   it("supports TypedEventTarget subclass owners through the same descriptor", async (t) => {
     class TerminalEvents extends CustomEvents<CheckoutDetails> {}
 
     class CheckoutTerminal extends TypedEventTarget<TerminalEvents["map"]> {
-      events = new TerminalEvents();
-
-      constructor() {
-        super();
-        this.events.setHost(this);
-      }
+      events = new TerminalEvents({host: this});
 
       submit() {
         this.dispatchEvent(this.events.submitted({ id: "terminal-order" }));
@@ -1129,10 +1209,6 @@ describe("CustomEvents", () => {
       '[data-testid="terminal-summary"]',
     ) as HTMLOutputElement;
     assert.equal(summary.textContent, "terminal-order");
-    assert.equal(
-      terminal.events.getHost(terminal).latest?.eventMap.submitted?.id,
-      "terminal-order",
-    );
   });
 
   it("keeps descriptor event types separate for different instances", () => {
@@ -1229,10 +1305,6 @@ describe("CustomEvents", () => {
     await result.act(() => submitButton.click());
 
     assert.equal(status.textContent, "first-order");
-    assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
-      "first-order",
-    );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
     assert.equal(__customEventsTest.hasWindowListener(changeName), true);
 
@@ -1242,20 +1314,12 @@ describe("CustomEvents", () => {
     await result.act(() => submitButton.click());
 
     assert.equal(status.textContent, "first-order");
-    assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
-      "first-order",
-    );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), false);
 
     submitButton.dataset.orderId = "recreated-order";
     await result.act(() => submitButton.click());
 
     assert.equal(status.textContent, "recreated-order");
-    assert.equal(
-      checkoutEvents.getHost(submitButton).latest?.eventMap.submitted?.id,
-      "recreated-order",
-    );
     assert.equal(__customEventsTest.hasWindowListener(submittedName), true);
 
     assert.equal(__customEventsTest.expireWindowListener(changeName), true);
@@ -1264,24 +1328,12 @@ describe("CustomEvents", () => {
     await result.act(() => patchButton.click());
 
     assert.equal(paidStatus.textContent, "");
-    assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.eventMap.submitted?.id,
-      "recreated-order",
-    );
     assert.equal(__customEventsTest.hasWindowListener(changeName), false);
 
     patchButton.dataset.orderId = "recreated-patch-order";
     await result.act(() => patchButton.click());
 
     assert.equal(paidStatus.textContent, "null");
-    assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.eventMap.submitted?.id,
-      "recreated-patch-order",
-    );
-    assert.equal(
-      checkoutEvents.getHost(patchButton).latest?.eventMap.paid,
-      null,
-    );
     assert.equal(__customEventsTest.hasWindowListener(changeName), true);
   });
 });

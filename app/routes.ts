@@ -13,5 +13,6 @@ export const routes = route({
     index: get('/'),
     todos: form('todos')
   }),
-  kitchenSink: get('kitchenSink')
+  kitchenSink: get('kitchenSink'),
+  sevenGuis: get('sevenGuis')
 })

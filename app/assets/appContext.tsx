@@ -18,17 +18,19 @@ class AppContext extends TypedEventTarget<
   CustomEvents<AppContextValue>["map"]
 > {
   events = new CustomEvents<AppContextValue>({host: this});
+  #value: AppContextValue;
 
   constructor(initial: Partial<AppContextValue>) {
     super();
-    this.events.seed(this.events.change(initial));
+    this.#value = initial as AppContextValue;
   }
 
   get value() {
-    return this.events.getHost(this).latest?.eventMap!
+    return this.#value;
   }
 
   patch(value: Partial<AppContextValue>) {
+    Object.assign(this.#value, value);
     this.dispatchEvent(this.events.change(value));
   }
 }
@@ -101,16 +103,14 @@ function EventSettingsDisplay(handle: Handle) {
 
   return () => (
     <appContext.events.on.settings
-      render={(settingsEvent) => {
-        return (
-          <div>
-            <pre>
-              Layout: {settingsEvent?.detail.layout}, Theme:{" "}
-              {settingsEvent?.detail.theme}
-            </pre>
-          </div>
-        );
-      }}
+      render={(settingsEvent) => (
+        <div>
+          <pre>
+            Layout: {settingsEvent?.detail.layout}, Theme:{" "}
+            {settingsEvent?.detail.theme}
+          </pre>
+        </div>
+      )}
     />
   );
 }

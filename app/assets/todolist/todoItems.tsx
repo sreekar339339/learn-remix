@@ -105,6 +105,7 @@ function getTodoActionDetail(formData: FormData): TodoActionDetail {
 }
 
 export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
+  let latestAction = new Map<string, string | undefined>();
   let onSubmit = async (evt: Dispatched<SubmitEvent, HTMLUListElement>) => {
     evt.preventDefault();
     let form = evt.target as HTMLFormElement;
@@ -166,15 +167,16 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           </form>
           <form
             mix={[
-              todoEvents.host(),
-              todoEvents.on("actionErrored", ({ currentTarget }) =>
-                currentTarget.reset(),
-              ),
+              todoEvents.host({
+                actionErrored({ currentTarget }) {
+                  currentTarget.reset();
+                },
+                change({ detail }) {
+                  latestAction.set(id, detail.event?.type);
+                },
+              }),
               on("focusout", ({ currentTarget }) => {
-                if (
-                  todoEvents.getHost(currentTarget).latest?.change.event
-                    ?.type === "actionSubmitted"
-                ) {
+                if (latestAction.get(id) === "actionSubmitted") {
                   return;
                 }
                 currentTarget.reset();

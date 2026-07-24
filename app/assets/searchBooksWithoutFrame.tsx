@@ -6,7 +6,7 @@ type Book = {
   title: string;
 };
 
-let searchEvents = new CustomEvents<{
+let events = new CustomEvents<{
   booksFound: Array<Book>;
   booksNotFound: { reason: "emptyList" | { other: string } };
   errorOccurred: Error;
@@ -38,7 +38,7 @@ async function fetchBooks(
     let json = await response.json();
     if (!("docs" in json)) {
       return input.dispatchEvent(
-        searchEvents.booksNotFound(
+        events.booksNotFound(
           { reason: { other: json.detail[0].msg } },
           opts,
         ),
@@ -47,11 +47,11 @@ async function fetchBooks(
     let books = json.docs as Array<Book>;
     input.dispatchEvent(
       books.length
-        ? searchEvents.booksFound(books, opts)
-        : searchEvents.booksNotFound({ reason: "emptyList" }, opts),
+        ? events.booksFound(books, opts)
+        : events.booksNotFound({ reason: "emptyList" }, opts),
     );
   } catch (error) {
-    input.dispatchEvent(searchEvents.errorOccurred(error as Error, opts));
+    input.dispatchEvent(events.errorOccurred(error as Error, opts));
   }
 }
 
@@ -59,17 +59,17 @@ export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithoutFrame(handle: Handle<{ initialQuery: string }>) {
     let initialQuery = handle.props.initialQuery.trim();
-    searchEvents.seed(
+    events.seed(
       initialQuery
-        ? searchEvents.querySubmitted({ query: initialQuery })
-        : searchEvents.queryEmpty(),
+        ? events.querySubmitted({ query: initialQuery })
+        : events.queryEmpty(),
     );
 
     return () => (
       <>
         <label>
           Search{" "}
-          <searchEvents.on.change
+          <events.on.change
             render={(changeEvent) => (
               <input
                 type="text"
@@ -85,14 +85,14 @@ export const SearchBooksWithoutFrame = clientEntry(
                     let query = currentTarget.value.trim();
                     if (!query)
                       return void currentTarget.dispatchEvent(
-                        searchEvents.queryEmpty(),
+                        events.queryEmpty(),
                       );
                     currentTarget.dispatchEvent(
-                      searchEvents.querySubmitted({ query }),
+                      events.querySubmitted({ query }),
                     );
                     fetchBooks(query, currentTarget, signal);
                   }),
-                  searchEvents.on("change", ({ detail, currentTarget }) => {
+                  events.on("change", ({ detail, currentTarget }) => {
                     if (detail.event?.type !== "querySubmitted") {
                       currentTarget.select();
                     }
@@ -103,7 +103,7 @@ export const SearchBooksWithoutFrame = clientEntry(
             )}
           />
         </label>
-        <searchEvents.on.change
+        <events.on.change
           render={(changeEvent) => {
             let event = changeEvent?.detail.event;
             switch (event?.type) {

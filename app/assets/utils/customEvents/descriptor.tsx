@@ -1,4 +1,4 @@
-import { ref } from "remix/ui";
+import { addEventListeners, ref } from "remix/ui";
 import { CHANGE_EVENT_NAME, CUSTOM_EVENTS_ABORTED } from "./constants.ts";
 import { isElement } from "./dom.ts";
 import { createProductCustomEvent } from "./events.ts";
@@ -20,7 +20,7 @@ import type {
   CustomEventsEventComponent,
   CustomEventsEventFactories,
   CustomEventsEventType,
-  CustomEventsHostReference,
+  CustomEventsHostListeners,
   CustomEventsInit,
   CustomEventsOnFunction,
   CustomEventsTypes,
@@ -42,7 +42,10 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   }
 
   function createBatchChangeEvent(
-    events: Partial<Events> | ((latest: unknown) => Partial<Events>),
+    events:
+      | Partial<Events>
+      | readonly string[]
+      | ((latest: unknown) => Partial<Events>),
     init?: CustomEventsInit,
   ) {
     if (init?.signal?.aborted) {
@@ -54,7 +57,14 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     if (typeof events === "function") {
       detail = events;
     } else {
-      let entries = resolveCustomEventsDispatchEntries(events);
+      if (Array.isArray(events) && new Set(events).size !== events.length) {
+        throw new TypeError(
+          'CustomEvents change arrays cannot contain duplicate event names.',
+        );
+      }
+      let entries = Array.isArray(events)
+        ? events.map((type) => [type, null] as [string, unknown])
+        : resolveCustomEventsDispatchEntries(events as Partial<Events>);
       for (let [type] of entries) addEventType(state, type);
       detail = createCustomEventChangeDetail(entries);
     }
@@ -133,6 +143,33 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     return cleanup;
   }
 
+  function registerHostListeners(
+    target: Element,
+    signal: AbortSignal,
+    listeners: CustomEventsHostListeners<Events>,
+  ) {
+    let mappedListeners: Record<
+      string,
+      (event: Event, reentry: AbortSignal) => void
+    > = {};
+    for (let [type, listener] of Object.entries(
+      listeners as unknown as Record<
+        string,
+        (event: Event, signal: AbortSignal) => void | Promise<void>
+      >,
+    )) {
+      if (!listener) continue;
+      addEventType(state, type);
+      mappedListeners[getEventName(state, type)] = (event, reentry) => {
+        if (!(event instanceof CustomEvent)) return;
+        if (state.getProductMetadata(event) || !state.ownsEvent(event)) return;
+        listener(event as never, reentry);
+      };
+    }
+
+    addEventListeners(target, signal, mappedListeners as never);
+  }
+
   function getEventMember(property: string) {
     addEventType(state, property);
     let member = eventMembers.get(property);
@@ -141,7 +178,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     member =
       property === CHANGE_EVENT_NAME
         ? (function createChangeMember(
-            events?: Partial<Events>,
+            events?: Partial<Events> | readonly string[],
             init?: CustomEventsInit,
           ) {
             return createBatchChangeEvent(events ?? {}, init);
@@ -217,14 +254,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       state.seedInitialRegisteredHosts();
       state.notifySoon();
     },
-    setHost(target: EventTarget, signal?: AbortSignal) {
-      return registerHost(target, signal);
-    },
-    host() {
-      return ref((target, signal) => registerHost(target, signal));
-    },
-    getHost(target: EventTarget) {
-      return state.getReference(target) as CustomEventsHostReference<Events>;
+    host(listeners = {}) {
+      return ref((target, signal) => {
+        registerHost(target, signal);
+        registerHostListeners(target, signal, listeners);
+      });
     },
   };
   let proxy = new Proxy(descriptor, {

@@ -158,32 +158,24 @@ function commitProductEvent(
     return;
   }
 
-  let changeDetail = descriptor.record(target, entries);
-  dispatchLocalTypedEvent(
-    target,
-    descriptor,
-    CHANGE_EVENT_NAME,
-    init,
-    changeDetail,
-  );
+  emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
   emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
 }
 
 function resolveCustomEventsDetail(
   resolve: (
-    eventMap: Partial<EventDetails>,
-    change: ChangeEventDetailFromMap<EventDetails> | undefined,
-    context: { target: EventTarget },
+    ...args: Array<unknown>
   ) => unknown,
   descriptor: CustomEventsRuntime,
   target: EventTarget,
+  type: string,
 ) {
   let latest = descriptor.getReference(target).latest;
-  return resolve(
-    { ...(latest?.eventMap ?? {}) },
-    latest?.change,
-    { target },
-  );
+  let eventMap = { ...(latest?.eventMap ?? {}) };
+  let context = { target };
+  return type === CHANGE_EVENT_NAME
+    ? resolve(eventMap, latest?.change, context)
+    : resolve(eventMap[type], eventMap, latest?.change, context);
 }
 
 function resolveProductEventEntries(
@@ -199,23 +191,28 @@ function resolveProductEventEntries(
     if (!type || type === CHANGE_EVENT_NAME) return undefined;
     let detail =
       metadata.resolveDetail && typeof event.detail === "function"
-        ? resolveCustomEventsDetail(event.detail, descriptor, target)
+        ? resolveCustomEventsDetail(event.detail, descriptor, target, type)
         : event.detail;
+    if (detail === undefined) return undefined;
     return [[type, detail]] satisfies Array<[string, unknown]>;
   }
 
-  let detail =
+  let resolved =
     metadata.resolveDetail && typeof event.detail === "function"
-      ? createCustomEventChangeDetail(
-          resolveCustomEventsDispatchEntries(
-            resolveCustomEventsDetail(
-              event.detail,
-              descriptor,
-              target,
-            ) as Partial<EventDetails>,
-          ),
+      ? resolveCustomEventsDetail(
+          event.detail,
+          descriptor,
+          target,
+          CHANGE_EVENT_NAME,
         )
-      : (event.detail as ChangeEventDetailFromMap<EventDetails>);
+      : undefined;
+  if (metadata.resolveDetail && resolved === undefined) return undefined;
+
+  let detail = metadata.resolveDetail
+    ? createCustomEventChangeDetail(
+        resolveCustomEventsDispatchEntries(resolved as Partial<EventDetails>),
+      )
+    : (event.detail as ChangeEventDetailFromMap<EventDetails>);
   let entries = getChangeEventEntries(detail);
   for (let [type] of entries) addEventType(descriptor, type);
   return entries;

@@ -255,8 +255,9 @@ export const customEventsOnMixin = createMixin<
 // Descriptor event components render from the latest matching event, or from
 // `null` before any matching event exists. They depend on host discovery to
 // choose a default target and on initial event projection for SSR/first-render
-// output. A hidden marker discovers the parent host element; rendering itself
-// remains owned by Remix.
+// output. An inert template marker discovers the parent host element; unlike a
+// span, it is valid inside table sections and does not cause HTML reparenting
+// during hydration. Rendering itself remains owned by Remix.
 export function createCustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -394,7 +395,7 @@ export function createCustomEventsEventComponent<
 
       return (
         <CustomEventsRenderScopeProvider scope={renderScope}>
-          <span hidden aria-hidden="true" mix={ref(setHostFromMarker)} />
+          <template mix={ref(setHostFromMarker)} />
           {node}
         </CustomEventsRenderScopeProvider>
       );

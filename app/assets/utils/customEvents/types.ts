@@ -13,14 +13,22 @@ import type { CustomEventsRuntime } from "./runtime.ts";
 // maps.
 export type EventDetails = Record<string, unknown>;
 
+/** A payload map, or a union of null-detail event names. */
+export type CustomEventsDefinition = EventDetails | string;
+
+/** Normalizes `"saved" | "closed"` to `{ saved: null; closed: null }`. */
+export type NormalizeCustomEventsDefinition<
+  Definition extends CustomEventsDefinition,
+> = [Definition] extends [string]
+  ? Record<Definition, null>
+  : Extract<Definition, EventDetails>;
+
 type CustomEventsReservedKey =
   | typeof CHANGE_EVENT_NAME
-  | "getHost"
   | "host"
   | "map"
   | "on"
   | "seed"
-  | "setHost"
   | "types";
 
 export type CustomEventProductKind = "event" | "change";
@@ -133,10 +141,17 @@ export type CustomEventsDetailResolver<
   Events extends EventDetails,
   Detail,
 > = (
+  previous: Detail | undefined,
   eventMap: Partial<Events>,
   change: ChangeEventDetailFromMap<Events> | undefined,
   context: CustomEventsResolverContext,
-) => Detail;
+) => Detail | undefined;
+
+export type CustomEventsChangeResolver<Events extends EventDetails> = (
+  eventMap: Partial<Events>,
+  change: ChangeEventDetailFromMap<Events> | undefined,
+  context: CustomEventsResolverContext,
+) => Partial<Events> | undefined;
 
 export type CustomEventsConstructorOptions = {
   /**
@@ -153,9 +168,9 @@ export type CustomEventsConstructorOptions = {
 };
 
 export interface CustomEventsConstructor {
-  new <Events extends EventDetails>(
+  new <Definition extends CustomEventsDefinition>(
     options?: CustomEventsConstructorOptions,
-  ): CustomEventsDescriptor<Events>;
+  ): CustomEventsDescriptor<NormalizeCustomEventsDefinition<Definition>>;
 }
 
 export type CustomEventsEventType<Events extends EventDetails> = Extract<
@@ -273,10 +288,55 @@ type ExactEventDetail<Expected, Actual> = Actual extends Expected
         ? Actual
         : never
       : Actual
-    : Actual
+  : Actual
   : never;
 
+type NullDetailEventTypes<Events extends EventDetails> = {
+  [Type in keyof Events & string]: [Events[Type]] extends [null]
+    ? Type
+    : never;
+}[keyof Events & string];
+
+type UniqueEventTypes<
+  Types extends readonly string[],
+  Seen extends string = never,
+> = Types extends readonly [
+  infer First extends string,
+  ...infer Rest extends readonly string[],
+]
+  ? First extends Seen
+    ? never
+    : UniqueEventTypes<Rest, Seen | First> extends never
+      ? never
+      : Types
+  : Types;
+
 type CustomEventsChangeMember<Events extends EventDetails> = {
+  /**
+   * Creates a batch from non-payload event names.
+   *
+   * Use this when several signal-only events change together. The tuple is
+   * type-checked, including duplicate names.
+   *
+   * @example
+   * canvas.dispatchEvent(events.change([
+   *   "canvasUpdated",
+   *   "historyUpdated",
+   * ], { composed: true }));
+   */
+  <
+    const Types extends readonly [
+      NullDetailEventTypes<Events>,
+      ...Array<NullDetailEventTypes<Events>>,
+    ],
+  >(
+    types: Types & UniqueEventTypes<Types>,
+    init?: CustomEventsInit,
+  ): CustomEventsEvent<
+    Events,
+    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
+  >;
+
   /**
    * Creates a batch event for native `dispatchEvent(...)`.
    *
@@ -295,7 +355,8 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * Creates a batch event from the latest descriptor-managed event memory.
    *
    * The callback runs when the product event is processed, after the browser has
-   * established the dispatch target. Descriptor `events.on(...)` listeners see
+   * established the dispatch target. Return `undefined` to cancel the dispatch.
+   * Descriptor `events.on(...)` listeners see
    * only the resolved derived events. Raw immediate DOM listeners on the
    * product event may observe the unresolved callback detail.
    *
@@ -305,7 +366,7 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * })));
    */
   (
-    resolve: CustomEventsDetailResolver<Events, Partial<Events>>,
+    resolve: CustomEventsChangeResolver<Events>,
     init?: CustomEventsInit,
   ): CustomEventsEvent<
     Events,
@@ -351,16 +412,20 @@ type CustomEventsEventMember<
   ): CustomEventsEvent<Events, Type>;
 
   /**
-   * Creates this product event from the latest descriptor-managed event memory.
+   * Creates this product event from its latest published detail.
    *
    * The callback is resolved during custom-event processing. Use this when a
-   * next event detail depends on the latest event map for the nearest host.
+   * next event detail depends on its previous detail. The latest event map is
+   * available as the second argument when the transition coordinates other
+   * published event types. Prefer a component-local model for complex history,
+   * bookkeeping, or multi-step transitions. Return `undefined` to cancel the
+   * dispatch.
    * Descriptor `events.on(...)` listeners receive only the resolved derived
    * event; this callback form is not intended for raw immediate
    * `addEventListener(...)` observers.
    *
    * @example
-   * button.dispatchEvent(counterEvents.count(({ count, incrementOffset }) => (
+   * button.dispatchEvent(counterEvents.count((count, { incrementOffset }) => (
    *   (count ?? 0) + (incrementOffset ?? 1)
    * )));
    */
@@ -463,14 +528,22 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): MixinDescriptor<HostElement, any>;
 } & CustomEventsRenderComponents<Events>;
 
-export type CustomEventsHostReference<Events extends EventDetails> = {
-  readonly latest:
-    | {
-        readonly change: ChangeEventDetailFromMap<Events>;
-        readonly eventMap: Partial<Events>;
-      }
-    | undefined;
-};
+/**
+ * Descriptor-aware listeners attached to a host boundary.
+ *
+ * This follows Remix's `addEventListeners(...)` listener-map shape, but keys
+ * use the descriptor's local event names and values receive resolved custom
+ * events only.
+ */
+export type CustomEventsHostListeners<
+  Events extends EventDetails,
+  HostElement extends Element = Element,
+> = Partial<{
+  [Type in CustomEventsEventType<Events>]: (
+    event: CustomEventsListenerEvent<Events, Type, HostElement>,
+    signal: AbortSignal,
+  ) => void | Promise<void>;
+}>;
 
 export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
   /**
@@ -478,32 +551,29 @@ export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
    *
    * Use it on a widget root when sibling branches should share events through
    * that root. Use it on repeated rows or forms when each instance should keep
-   * its latest-event memory and non-composed events independent. Events stay
-   * inside the host unless they are created with `{ composed: true }`.
+   * its non-composed events independent. Events stay inside the host unless
+   * they are created with `{ composed: true }`.
+   *
+   * The optional listener map works like Remix's `addEventListeners(...)`, but
+   * uses this descriptor's local event names and receives resolved events only.
+   * Keep any local model in your component and update it in these listeners.
    *
    * You do not need a host for every component. Add one when you want a local
-   * boundary, local latest-event memory, or less page-level event traffic.
-   */
-  host(): MixinDescriptor<Element, any>;
-
-  /**
-   * Registers an existing `EventTarget` as a host for this event set.
+   * boundary or less page-level event traffic.
    *
-   * Use this for plain `EventTarget` or `TypedEventTarget` domain objects.
-   * DOM elements usually prefer the `host()` mixin. Pass a signal or call the
-   * returned cleanup when the target is no longer used.
+   * @example
+   * <form mix={todoEvents.host({
+   *   actionSubmitted() {
+   *     todo.pending = true;
+   *   },
+   *   actionSucceeded() {
+   *     todo.pending = false;
+   *   },
+   * })} />
    */
-  setHost(target: EventTarget, signal?: AbortSignal): () => void;
-
-  /**
-   * Reads the latest event memory for this event set.
-   *
-   * For DOM elements, this resolves the nearest host. For plain event targets,
-   * it reads the target registered with `setHost(...)`. `latest.change`
-   * describes the most recent dispatched event or batch. `latest.eventMap` is
-   * the accumulated latest detail for each event type.
-   */
-  getHost(target: EventTarget): CustomEventsHostReference<Events>;
+  host<HostElement extends Element = Element>(
+    listeners?: CustomEventsHostListeners<Events, HostElement>,
+  ): MixinDescriptor<HostElement, any>;
 };
 
 export type CustomEventsDescriptor<Events extends EventDetails> = {
@@ -525,8 +595,7 @@ export type CustomEventsDescriptor<Events extends EventDetails> = {
    * Seeds render components and host memory with a descriptor-created event.
    *
    * This does not dispatch. It gives `<events.on.someEvent render={...} />`
-   * and `getHost(...).latest` a starting point. Dispatch explicitly when
-   * event listeners should run.
+   * a starting point. Dispatch explicitly when event listeners should run.
    */
   seed(event: CustomEventsSeedEvent<Events>): void;
 
