@@ -66,64 +66,57 @@ export const SevenGuisFlightBooker = clientEntry(
           <option>one-way flight</option>
           <option>return flight</option>
         </select>
-        <div mix={rowCss}>
-          <events.on.itineraryChanged
-            render={() => (
-              <>
-                <input
-                  aria-label="Start date"
-                  defaultValue={flight.startDate}
-                  aria-invalid={presentValidation(flight).startDateInvalid}
-                  mix={[
-                    inputCss,
-                    on("input", ({ currentTarget }) => {
-                      flight.startDate = currentTarget.value;
-                      currentTarget.dispatchEvent(events("itineraryChanged"));
-                    }),
-                  ]}
-                />
-                <input
-                  aria-label="Return date"
-                  defaultValue={flight.returnDate}
-                  disabled={presentValidation(flight).returnDateDisabled}
-                  aria-invalid={presentValidation(flight).returnDateInvalid}
-                  mix={[
-                    inputCss,
-                    on("input", ({ currentTarget }) => {
-                      flight.returnDate = currentTarget.value;
-                      currentTarget.dispatchEvent(events("itineraryChanged"));
-                    }),
-                  ]}
-                />
-              </>
-            )}
-          />
-        </div>
-        <events.on.itineraryChanged
-          render={() => (
-            <button
-              type="button"
-              disabled={!canBook(flight)}
-              mix={[
-                buttonCss,
-                on("click", ({ currentTarget }) => {
-                  currentTarget.dispatchEvent(events("bookingConfirmed"));
-                }),
-              ]}
-            >
-              Book
-            </button>
+        <events.on.itineraryChanged.div
+          mix={rowCss}
+          child={() => (
+            <>
+              <input
+                aria-label="Start date"
+                defaultValue={flight.startDate}
+                aria-invalid={presentValidation(flight).startDateInvalid}
+                mix={[
+                  inputCss,
+                  on("input", ({ currentTarget }) => {
+                    flight.startDate = currentTarget.value;
+                    currentTarget.dispatchEvent(events("itineraryChanged"));
+                  }),
+                ]}
+              />
+              <input
+                aria-label="Return date"
+                defaultValue={flight.returnDate}
+                disabled={presentValidation(flight).returnDateDisabled}
+                aria-invalid={presentValidation(flight).returnDateInvalid}
+                mix={[
+                  inputCss,
+                  on("input", ({ currentTarget }) => {
+                    flight.returnDate = currentTarget.value;
+                    currentTarget.dispatchEvent(events("itineraryChanged"));
+                  }),
+                ]}
+              />
+            </>
           )}
         />
-        <events.on.bookingConfirmed
-          render={(_, event) =>
-            event ? (
-              <output>
-                {flight.kind === "one-way flight"
-                  ? `You have booked a one-way flight on ${flight.startDate}.`
-                  : `You have booked a return flight from ${flight.startDate} to ${flight.returnDate}.`}
-              </output>
-            ) : null
+        <events.on.itineraryChanged.button
+          type="button"
+          disabled={() => !canBook(flight)}
+          mix={[
+            buttonCss,
+            on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(events("bookingConfirmed"));
+            }),
+          ]}
+        >
+          Book
+        </events.on.itineraryChanged.button>
+        <events.on.bookingConfirmed.output
+          child={(_, event) =>
+            event
+              ? flight.kind === "one-way flight"
+                ? `You have booked a one-way flight on ${flight.startDate}.`
+                : `You have booked a return flight from ${flight.startDate} to ${flight.returnDate}.`
+              : null
           }
         />
       </section>

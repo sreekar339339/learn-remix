@@ -13,12 +13,12 @@ import {
   CustomEventsRuntime,
   windowBridge,
 } from "./runtime.ts";
-import { createCustomEventsEventComponent, customEventsOnMixin } from "./remix.tsx";
+import { createCustomEventsEventElements, customEventsOnMixin } from "./remix.tsx";
 import type {
   CustomEventsConstructorOptions,
   CustomEventsFactory,
   CustomEventsDescriptor,
-  CustomEventsEventComponent,
+  CustomEventsEventElements,
   CustomEventsEventType,
   CustomEventsHostListeners,
   CustomEventsInit,
@@ -27,8 +27,8 @@ import type {
   EventDetails,
 } from "./types.ts";
 
-// `on.someEvent` and `types.someEvent` are proxy-backed so render components
-// and low-level names remain type-shaped without duplicating runtime keys.
+// `on.someEvent` and `types.someEvent` are proxy-backed so event elements and
+// low-level names remain type-shaped without duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsConstructorOptions,
 ): CustomEventsDescriptor<Events> {
@@ -92,9 +92,9 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     );
   }
 
-  let renderComponents = new Map<
+  let eventElements = new Map<
     string,
-    CustomEventsEventComponent<Events, CustomEventsEventType<Events>>
+    CustomEventsEventElements<Events, CustomEventsEventType<Events>>
   >();
 
   function registerHost(target: EventTarget, signal?: AbortSignal) {
@@ -156,17 +156,17 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     addEventListeners(target, signal, mappedListeners as never);
   }
 
-  function getRenderComponent(property: string) {
+  function getEventElements(property: string) {
     addEventType(state, property);
-    let component = renderComponents.get(property);
-    if (component) return component;
+    let elements = eventElements.get(property);
+    if (elements) return elements;
 
-    component = createCustomEventsEventComponent(
+    elements = createCustomEventsEventElements(
       property as CustomEventsEventType<Events>,
       state,
     );
-    renderComponents.set(property, component);
-    return component;
+    eventElements.set(property, elements);
+    return elements;
   }
 
   let types = new Proxy(
@@ -199,7 +199,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         return Reflect.get(target, property, receiver);
       }
 
-      return getRenderComponent(property);
+      return getEventElements(property);
     },
   }) as CustomEventsOnFunction<Events>;
 

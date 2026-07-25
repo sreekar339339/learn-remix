@@ -11,7 +11,7 @@ export const SevenGuisCounter = clientEntry(
       <section mix={taskCss}>
         <h2>Counter</h2>
         <output aria-label="count">
-          <events.on.countIncremented render={() => count} />
+          <events.on.countIncremented.span child={() => count} />
         </output>
         <button
           type="button"

@@ -74,9 +74,10 @@ export const SevenGuisCircleDrawer = clientEntry(
     return () => (
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
-        <events.on.historyUpdated
-          render={() => (
-            <div mix={rowCss}>
+        <events.on.historyUpdated.div
+          mix={rowCss}
+          child={() => (
+            <>
               <button
                 type="button"
                 disabled={!drawing.undo.length}
@@ -139,51 +140,50 @@ export const SevenGuisCircleDrawer = clientEntry(
               >
                 Redo
               </button>
-            </div>
+            </>
           )}
         />
-        <events.on.canvasUpdated
-          render={() => (
-            <svg
-              viewBox="0 0 420 220"
-              aria-label="Circle canvas"
-              mix={[
-                css({
-                  width: "100%",
-                  height: 220,
-                  border: "1px solid #a1a1aa",
-                  backgroundColor: "white",
-                }),
-                on("click", ({ currentTarget, clientX, clientY }) => {
-                  if (drawing.editingCircleId !== null) return;
-                  let point = getCanvasPoint(currentTarget, clientX, clientY);
-                  if (!point || hitCircle(drawing.circles, point.x, point.y)) {
-                    return;
-                  }
-                  let circle = {
-                    id: drawing.nextId,
-                    ...point,
-                    diameter: 30,
-                  };
-                  recordHistory(drawing);
-                  drawing.circles.push(circle);
-                  drawing.nextId = circle.id + 1;
-                  currentTarget.dispatchEvent(
-                    events(["canvasUpdated", "historyUpdated"]),
-                  );
-                }),
-                on("mousemove", ({ currentTarget, clientX, clientY }) => {
-                  if (drawing.editingCircleId !== null) return;
-                  let point = getCanvasPoint(currentTarget, clientX, clientY);
-                  if (!point) return;
-                  let selectedId =
-                    hitCircle(drawing.circles, point.x, point.y)?.id ?? null;
-                  if (selectedId === drawing.selectedId) return;
-                  drawing.selectedId = selectedId;
-                  currentTarget.dispatchEvent(events("canvasUpdated"));
-                }),
-              ]}
-            >
+        <events.on.canvasUpdated.svg
+          viewBox="0 0 420 220"
+          aria-label="Circle canvas"
+          mix={[
+            css({
+              width: "100%",
+              height: 220,
+              border: "1px solid #a1a1aa",
+              backgroundColor: "white",
+            }),
+            on("click", ({ currentTarget, clientX, clientY }) => {
+              if (drawing.editingCircleId !== null) return;
+              let point = getCanvasPoint(currentTarget, clientX, clientY);
+              if (!point || hitCircle(drawing.circles, point.x, point.y)) {
+                return;
+              }
+              let circle = {
+                id: drawing.nextId,
+                ...point,
+                diameter: 30,
+              };
+              recordHistory(drawing);
+              drawing.circles.push(circle);
+              drawing.nextId = circle.id + 1;
+              currentTarget.dispatchEvent(
+                events(["canvasUpdated", "historyUpdated"]),
+              );
+            }),
+            on("mousemove", ({ currentTarget, clientX, clientY }) => {
+              if (drawing.editingCircleId !== null) return;
+              let point = getCanvasPoint(currentTarget, clientX, clientY);
+              if (!point) return;
+              let selectedId =
+                hitCircle(drawing.circles, point.x, point.y)?.id ?? null;
+              if (selectedId === drawing.selectedId) return;
+              drawing.selectedId = selectedId;
+              currentTarget.dispatchEvent(events("canvasUpdated"));
+            }),
+          ]}
+          child={() => (
+            <>
               {drawing.circles.map((circle) => (
                 <circle
                   cx={circle.x}
@@ -203,34 +203,30 @@ export const SevenGuisCircleDrawer = clientEntry(
                   })}
                 />
               ))}
-            </svg>
+            </>
           )}
         />
-        <events.on.diameterEditorUpdated
-          render={() =>
-            drawing.editingCircleId === null ? null : (
-              <form
-              mix={[
-                rowCss,
-                on("submit", (event) => {
-                  event.preventDefault();
-                  if (drawing.editingCircleId === null) return;
-                  if (drawing.adjustmentUndo && drawing.diameterAdjusted) {
-                    drawing.undo.push(drawing.adjustmentUndo);
-                  }
-                  drawing.editingCircleId = null;
-                  drawing.adjustmentUndo = null;
-                  drawing.diameterAdjusted = false;
-                  drawing.redo.length = 0;
-                  event.currentTarget.dispatchEvent(
-                    events([
-                      "historyUpdated",
-                      "diameterEditorUpdated",
-                    ]),
-                  );
-                }),
-              ]}
-            >
+        <events.on.diameterEditorUpdated.form
+          hidden={() => drawing.editingCircleId === null}
+          mix={[
+            rowCss,
+            on("submit", (event) => {
+              event.preventDefault();
+              if (drawing.editingCircleId === null) return;
+              if (drawing.adjustmentUndo && drawing.diameterAdjusted) {
+                drawing.undo.push(drawing.adjustmentUndo);
+              }
+              drawing.editingCircleId = null;
+              drawing.adjustmentUndo = null;
+              drawing.diameterAdjusted = false;
+              drawing.redo.length = 0;
+              event.currentTarget.dispatchEvent(
+                events(["historyUpdated", "diameterEditorUpdated"]),
+              );
+            }),
+          ]}
+          child={() => (
+            <>
               <label>
                 Diameter{" "}
                 <input
@@ -264,9 +260,8 @@ export const SevenGuisCircleDrawer = clientEntry(
               <button type="submit" mix={buttonCss}>
                 Close
               </button>
-              </form>
-            )
-          }
+            </>
+          )}
         />
       </section>
     );

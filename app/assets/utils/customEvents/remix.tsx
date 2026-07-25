@@ -1,4 +1,6 @@
 import {
+  addEventListeners,
+  createElement,
   createMixin,
   on as remixOn,
   ref,
@@ -18,11 +20,12 @@ import type {
   AnyCustomEventsName,
   CustomEventWithMetadata,
   CustomEventsEvent,
-  CustomEventsEventComponent,
+  CustomEventsEventElement,
+  CustomEventsEventElements,
+  CustomEventsEventElementProps,
   CustomEventsEventType,
   CustomEventsRenderDetail,
   CustomEventsRenderEvent,
-  CustomEventsRenderProps,
   EventDetails,
 } from "./types.ts";
 
@@ -136,21 +139,19 @@ const forwardEventsMixin = createMixin<
     let descriptor = currentState;
     controller = new AbortController();
     let signal = controller.signal;
+    let listeners: Record<string, (event: Event) => void> = {};
     for (let type of descriptor.eventTypes) {
-      target.addEventListener(
-        getEventName(descriptor, type),
-        (event) => {
-          if (!(event instanceof CustomEvent)) return;
-          if (descriptor.isProductEvent(event)) return;
-          if (!descriptor.ownsEvent(event)) return;
-          if (descriptor.isBridgedEvent(event)) return;
-          let element = currentElement;
-          if (!shouldBridgeEventToElement(event, element)) return;
-          element.dispatchEvent(createBridgedEvent(event, descriptor));
-        },
-        { signal },
-      );
+      listeners[getEventName(descriptor, type)] = (event) => {
+        if (!(event instanceof CustomEvent)) return;
+        if (descriptor.isProductEvent(event)) return;
+        if (!descriptor.ownsEvent(event)) return;
+        if (descriptor.isBridgedEvent(event)) return;
+        let element = currentElement;
+        if (!shouldBridgeEventToElement(event, element)) return;
+        element.dispatchEvent(createBridgedEvent(event, descriptor));
+      };
     }
+    addEventListeners(target, signal, listeners as never);
   }
 
   function mount(element: Element) {
@@ -252,31 +253,55 @@ export const customEventsOnMixin = createMixin<
   };
 });
 
-// Descriptor event components render from the latest matching event, or
-// `undefined` before any matching event exists. They depend on host discovery
-// to choose a default target. An inert template marker discovers the parent
-// host element; unlike a span, it is valid inside table sections and does not
-// cause HTML reparenting
-// during hydration. Rendering itself remains owned by Remix.
-export function createCustomEventsEventComponent<
+function prependMixins(mix: unknown, internalMixins: unknown[]) {
+  if (mix === undefined) return internalMixins;
+  return Array.isArray(mix)
+    ? [...internalMixins, ...mix]
+    : [...internalMixins, mix];
+}
+
+function isReactiveElementProp(key: string) {
+  return !(
+    key === "children" ||
+    key === "key" ||
+    key === "mix" ||
+    key === "ref" ||
+    key === "child" ||
+    key === "on" ||
+    key.startsWith("on")
+  );
+}
+
+function resolveEventElementProps(
+  props: Record<string, unknown>,
+  detail: unknown,
+  event: Event | undefined,
+) {
+  return Object.fromEntries(
+    Object.entries(props).map(([key, value]) => [
+      key,
+      typeof value === "function" && isReactiveElementProp(key)
+        ? value(detail, event)
+        : value,
+    ]),
+  );
+}
+
+function createCustomEventsEventElement<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
 >(
   type: Type,
+  tag: Tag,
   descriptor: CustomEventsRuntime,
-): CustomEventsEventComponent<Events, Type> {
+): CustomEventsEventElement<Events, Type, Tag> {
   addEventType(descriptor, type);
-  let component = function CustomEventsEventComponent(
-    handle: Handle<
-      CustomEventsRenderProps<Events, Type>
-    >,
+  return function CustomEventsEventElement(
+    handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
   ) {
     let eventName = getEventName(descriptor, type);
-    let hostElement: HTMLElement | undefined;
     let currentEvent: Event | undefined;
-    let currentTarget: EventTarget | undefined;
-    let controller: AbortController | undefined;
-    let unsubscribeHost: (() => void) | undefined;
     let renderScope: RenderScope = {
       descriptor,
       eventName,
@@ -284,100 +309,94 @@ export function createCustomEventsEventComponent<
       version: 0,
     };
 
-    function canRender(event: Event) {
-      return descriptor.ownsEvent(event);
-    }
+    let projectionMix = [
+      forwardEventsMixin(descriptor),
+      remixOn(eventName as AnyCustomEventsName, (event) => {
+        if (descriptor.isProductEvent(event)) return;
+        if (!descriptor.ownsEvent(event)) return;
 
-    function syncDefaultTarget() {
-      syncTarget(descriptor.getDefaultTarget(hostElement));
-    }
-
-    function ensureHostSubscription() {
-      if (unsubscribeHost) return;
-      unsubscribeHost = descriptor.subscribe(syncDefaultTarget);
-    }
-
-    function setHostFromMarker(marker: Element) {
-      let nextHost = marker.parentElement;
-      if (!nextHost || hostElement === nextHost) return;
-
-      hostElement = nextHost;
-      ensureHostSubscription();
-      syncDefaultTarget();
-      queueMicrotask(() => {
-        if (hostElement === nextHost) {
-          syncDefaultTarget();
-        }
-      });
-    }
-
-    function syncTarget(nextTarget: EventTarget | undefined) {
-      if (currentTarget === nextTarget) return;
-
-      controller?.abort();
-      controller = undefined;
-      currentTarget = nextTarget;
-      if (!currentTarget) return;
-
-      controller = new AbortController();
-      let signal = controller.signal;
-      currentTarget.addEventListener(
-        eventName,
-        (event) => {
-          if (descriptor.isProductEvent(event)) return;
-          if (descriptor.isBridgedEvent(event)) return;
-          if (!canRender(event)) return;
-          currentEvent = event;
-          renderScope.transaction = descriptor.getTransaction(event) ?? null;
-          renderScope.version += 1;
-          let version = renderScope.version;
-          void handle.update().then(() => {
-            if (renderScope.version === version) {
-              renderScope.transaction = null;
-            }
-          });
-        },
-        { signal },
-      );
-    }
-
-    handle.signal.addEventListener(
-      "abort",
-      () => {
-        unsubscribeHost?.();
-        unsubscribeHost = undefined;
-        controller?.abort();
-        controller = undefined;
-        currentTarget = undefined;
-      },
-      { once: true },
-    );
+        currentEvent = event;
+        let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
+        renderScope.transaction = descriptor.getTransaction(sourceEvent) ?? null;
+        let version = ++renderScope.version;
+        void handle.update().then(() => {
+          if (renderScope.version === version) {
+            renderScope.transaction = null;
+          }
+        });
+      }),
+    ];
 
     return () => {
-      ensureHostSubscription();
-      syncDefaultTarget();
-
       let event =
-        currentEvent?.type === eventName && canRender(currentEvent)
+        currentEvent?.type === eventName && descriptor.ownsEvent(currentEvent)
           ? (currentEvent as CustomEventsEvent<Events, Type>)
           : undefined;
-      let render = handle.props.render as unknown as (
-        detail: CustomEventsRenderDetail<Events, Type>,
-        event: CustomEventsRenderEvent<Events, Type>,
-        handle: Handle<CustomEventsRenderProps<Events, Type>>,
-      ) => RemixNode;
       let detail = (event
         ? (event as unknown as CustomEvent).detail
         : undefined) as CustomEventsRenderDetail<Events, Type>;
-      let node = render(detail, event, handle);
+      let props = handle.props as CustomEventsEventElementProps<
+        Events,
+        Type,
+        Tag
+      >;
+      let { children, mix, child, ...elementProps } = props as Record<
+        string,
+        unknown
+      >;
+      if (child !== undefined && children !== undefined) {
+        throw new Error(
+          "CustomEvents event elements accept either static children or child(), not both.",
+        );
+      }
+
+      let content = typeof child === "function"
+        ? child(detail, event, handle)
+        : children;
+      let resolvedProps = resolveEventElementProps(elementProps, detail, event);
+      let element = createElement(
+        tag,
+        {
+          ...resolvedProps,
+          mix: prependMixins(mix, projectionMix),
+        },
+        content,
+      );
 
       return (
         <CustomEventsRenderScopeProvider scope={renderScope}>
-          <template mix={ref(setHostFromMarker)} />
-          {node}
+          {element}
         </CustomEventsRenderScopeProvider>
       );
     };
-  };
-  return component as CustomEventsEventComponent<Events, Type>;
+  } as CustomEventsEventElement<Events, Type, Tag>;
+}
+
+export function createCustomEventsEventElements<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+>(
+  type: Type,
+  descriptor: CustomEventsRuntime,
+): CustomEventsEventElements<Events, Type> {
+  let elements = new Map<string, CustomEventsEventElement<Events, Type, any>>();
+
+  return new Proxy({}, {
+    get(_, property) {
+      if (typeof property !== "string") {
+        return undefined;
+      }
+
+      let element = elements.get(property);
+      if (!element) {
+        element = createCustomEventsEventElement(
+          type,
+          property as keyof JSX.IntrinsicElements,
+          descriptor,
+        );
+        elements.set(property, element);
+      }
+      return element;
+    },
+  }) as CustomEventsEventElements<Events, Type>;
 }

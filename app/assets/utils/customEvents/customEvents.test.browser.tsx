@@ -54,8 +54,8 @@ describe("CustomEvents", () => {
           >
             Refresh
           </button>
-          <events.on.editorUpdated
-            render={(detail) => (
+          <events.on.editorUpdated.div
+            child={(detail) => (
               <output
                 data-testid="editor-status"
                 data-detail={String(detail)}
@@ -82,6 +82,112 @@ describe("CustomEvents", () => {
     assert.equal(status.textContent, "Updated");
     assert.equal(status.dataset.detail, "null");
     assert.equal(status.dataset.received, "true");
+  });
+
+  it("renders an event-aware intrinsic element with reactive props and children", async (t) => {
+    let events = new CheckoutEvents();
+
+    function CheckoutPanel(handle: Handle) {
+      return () => (
+        <section>
+          <button
+            type="button"
+            data-testid="submit-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                events("submitted", { id: "element-order" }),
+              );
+            })}
+          >
+            Submit
+          </button>
+          <events.on.change.form
+            data-testid="checkout-form"
+            class={(detail) =>
+              detail?.event?.type === "submitted" ? "pending" : ""
+            }
+            aria-busy={(detail) =>
+              detail?.event?.type === "submitted"
+            }
+            mix={[
+              events.on("change", ({ currentTarget, detail }) => {
+                if (detail.event?.type !== "submitted") return;
+                currentTarget.dataset.postCommitPending = String(
+                  currentTarget.classList.contains("pending"),
+                );
+              }),
+              on("submit", (event) => {
+                event.preventDefault();
+                event.currentTarget.dataset.nativeSubmit = "true";
+              }),
+            ]}
+            child={(detail) => (
+              <output data-testid="checkout-result">
+                {detail?.event?.type === "submitted"
+                  ? detail.event.detail.id
+                  : "Idle"}
+              </output>
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CheckoutPanel />);
+    t.after(() => result.cleanup());
+
+    let submit = result.$('[data-testid="submit-checkout"]') as HTMLButtonElement;
+    let form = result.$('[data-testid="checkout-form"]') as HTMLFormElement;
+    assert.equal(form.className, "");
+    assert.equal(form.getAttribute("aria-busy"), "false");
+    assert.equal(result.$('[data-testid="checkout-result"]')?.textContent, "Idle");
+
+    await result.act(() => submit.click());
+
+    assert.equal(result.$('[data-testid="checkout-form"]'), form);
+    assert.equal(form.className, "pending");
+    assert.equal(form.getAttribute("aria-busy"), "true");
+    assert.equal(form.dataset.postCommitPending, "true");
+    assert.equal(
+      result.$('[data-testid="checkout-result"]')?.textContent,
+      "element-order",
+    );
+
+    await result.act(() => form.requestSubmit());
+    assert.equal(form.dataset.nativeSubmit, "true");
+  });
+
+  it("keeps event-aware elements inside their own host boundary", async (t) => {
+    let events = new CheckoutEvents();
+
+    function CheckoutForm(handle: Handle) {
+      return () => (
+        <events.on.paid.form
+          data-testid="hosted-checkout-form"
+          class={(detail) => detail === null ? "paid" : ""}
+          mix={events.host()}
+        >
+          <button
+            type="button"
+            data-testid="pay-checkout"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(events("paid"));
+            })}
+          >
+            Pay
+          </button>
+        </events.on.paid.form>
+      );
+    }
+
+    let result = render(<CheckoutForm />);
+    t.after(() => result.cleanup());
+
+    let form = result.$('[data-testid="hosted-checkout-form"]') as HTMLFormElement;
+    let pay = result.$('[data-testid="pay-checkout"]') as HTMLButtonElement;
+    await result.act(() => pay.click());
+
+    assert.equal(form.className, "paid");
   });
 
   it("listens to same-element events through descriptor-owned on()", async (t) => {
@@ -288,15 +394,15 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <events.on.submitted
-            render={(detail = initialSubmittedEvent.detail) => (
+          <events.on.submitted.div
+            child={(detail = initialSubmittedEvent.detail) => (
               <output data-testid="checkout-summary">
                 {detail.id}
               </output>
             )}
           />
-          <events.on.change
-            render={(detail = initialChangeEvent.detail) => {
+          <events.on.change.div
+            child={(detail = initialChangeEvent.detail) => {
               let text =
                 detail.event?.type === "submitted"
                   ? detail.event.detail.id
@@ -332,7 +438,7 @@ describe("CustomEvents", () => {
     assert.equal(changeSummary.textContent, "rendered-order");
   });
 
-  it("runs event-component-scoped listeners after the event render commits", async (t) => {
+  it("runs event-element-scoped listeners after the event render commits", async (t) => {
     let events = new CheckoutEvents();
 
     function CheckoutStatus(handle: Handle) {
@@ -358,8 +464,8 @@ describe("CustomEvents", () => {
           >
             Pay
           </button>
-          <events.on.change
-            render={(detail) => (
+          <events.on.change.div
+            child={(detail) => (
               <input
                 data-testid="checkout-input"
                 disabled={detail?.event?.type === "submitted"}
@@ -430,8 +536,8 @@ describe("CustomEvents", () => {
           >
             Reset
           </button>
-          <events.on.turn
-            render={(detail = initialTurnEvent.detail) => (
+          <events.on.turn.div
+            child={(detail = initialTurnEvent.detail) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -469,7 +575,7 @@ describe("CustomEvents", () => {
     assert.equal(updatedCell.dataset.focusCalls, "1");
   });
 
-  it("keeps event-component-scoped listeners immediate for unrelated updates", async (t) => {
+  it("keeps event-element-scoped listeners immediate for unrelated updates", async (t) => {
     type GameDetails = {
       turn: { locked: boolean };
       focus: { cellId: number };
@@ -490,8 +596,8 @@ describe("CustomEvents", () => {
           >
             Focus
           </button>
-          <events.on.turn
-            render={(detail = initialTurnEvent.detail) => (
+          <events.on.turn.div
+            child={(detail = initialTurnEvent.detail) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -527,7 +633,7 @@ describe("CustomEvents", () => {
     assert.equal(cell.dataset.focusCalls, "1");
   });
 
-  it("does not run stale event-component-scoped listeners for replaced nodes", async (t) => {
+  it("does not run stale event-element-scoped listeners for replaced nodes", async (t) => {
     let events = new CheckoutEvents();
     let initialChangeEvent = events({
       submitted: { id: "pending-order" },
@@ -545,8 +651,8 @@ describe("CustomEvents", () => {
           >
             Pay
           </button>
-          <events.on.change
-            render={(detail = initialChangeEvent.detail) =>
+          <events.on.change.div
+            child={(detail = initialChangeEvent.detail) =>
               detail.event?.type === "paid" ? (
                 <output data-testid="paid-output">Paid</output>
               ) : (
@@ -579,14 +685,14 @@ describe("CustomEvents", () => {
     assert.ok(result.$('[data-testid="paid-output"]'));
   });
 
-  it("does not fire event-component-scoped listeners for a default event", async (t) => {
+  it("does not fire event-element-scoped listeners for a default event", async (t) => {
     let events = new CheckoutEvents();
     let initialSubmittedEvent = events("submitted", { id: "initial-order" });
 
     function CheckoutStatus(handle: Handle) {
       return () => (
-        <events.on.submitted
-          render={(detail = initialSubmittedEvent.detail) => (
+        <events.on.submitted.div
+          child={(detail = initialSubmittedEvent.detail) => (
             <input
               data-testid="initial-checkout-input"
               value={detail.id}
@@ -626,8 +732,8 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <events.on.submitted
-            render={(detail) => (
+          <events.on.submitted.div
+            child={(detail) => (
               <output data-testid="checkout-summary">
                 {detail ? detail.id : "No checkout yet"}
               </output>
@@ -675,8 +781,8 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <events.on.submitted
-            render={(detail = initialEvent.detail) => (
+          <events.on.submitted.div
+            child={(detail = initialEvent.detail) => (
               <output data-testid="terminal-summary">
                 {detail?.id ?? "idle"}
               </output>
@@ -1234,8 +1340,8 @@ describe("CustomEvents", () => {
           >
             Submit
           </button>
-          <terminal.events.on.submitted
-            render={(detail) => (
+          <terminal.events.on.submitted.div
+            child={(detail) => (
               <output data-testid="terminal-summary">
                 {detail?.id ?? "idle"}
               </output>
@@ -1687,8 +1793,8 @@ function SearchForm(handle: Handle<Props<"div">>) {
         />
         <button>Search</button>
       </form>
-      <events.on.change
-        render={(detail) => (
+      <events.on.change.div
+        child={(detail) => (
           <output>
             <pre>{JSON.stringify(detail, null, 2)}</pre>
           </output>

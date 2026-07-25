@@ -67,42 +67,34 @@ export const SearchBooksWithoutFrame = clientEntry(
       <>
         <label>
           Search{" "}
-          <events.on.change
-            render={(detail = initialChangeEvent.detail) => (
-              <input
-                type="text"
-                defaultValue={initialQuery}
-                class={
-                  detail.event?.type === "querySubmitted"
-                    ? "pending"
-                    : ""
+          <events.on.change.input
+            type="text"
+            defaultValue={initialQuery}
+            class={(detail = initialChangeEvent.detail) =>
+              detail.event?.type === "querySubmitted" ? "pending" : ""
+            }
+            mix={[
+              inputCss,
+              on("input", ({ currentTarget }, signal) => {
+                let query = currentTarget.value.trim();
+                if (!query)
+                  return void currentTarget.dispatchEvent(events("queryEmpty"));
+                currentTarget.dispatchEvent(
+                  events("querySubmitted", { query }),
+                );
+                fetchBooks(query, currentTarget, signal);
+              }),
+              events.on("change", ({ detail, currentTarget }) => {
+                if (detail.event?.type !== "querySubmitted") {
+                  currentTarget.select();
                 }
-                mix={[
-                  inputCss,
-                  on("input", ({ currentTarget }, signal) => {
-                    let query = currentTarget.value.trim();
-                    if (!query)
-                      return void currentTarget.dispatchEvent(
-                        events("queryEmpty"),
-                      );
-                    currentTarget.dispatchEvent(
-                      events("querySubmitted", { query }),
-                    );
-                    fetchBooks(query, currentTarget, signal);
-                  }),
-                  events.on("change", ({ detail, currentTarget }) => {
-                    if (detail.event?.type !== "querySubmitted") {
-                      currentTarget.select();
-                    }
-                  }),
-                  ref((input) => input.dispatchEvent(new InputEvent("input"))),
-                ]}
-              />
-            )}
+              }),
+              ref((input) => input.dispatchEvent(new InputEvent("input"))),
+            ]}
           />
         </label>
-        <events.on.change
-          render={(detail = initialChangeEvent.detail) => {
+        <events.on.change.div
+          child={(detail = initialChangeEvent.detail) => {
             let event = detail.event;
             switch (event?.type) {
               case "queryEmpty":

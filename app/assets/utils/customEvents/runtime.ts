@@ -1,6 +1,7 @@
 import { createCustomEventsOwnerId } from "./constants.ts";
 import { defineEventValue, isElement } from "./dom.ts";
 import { processCustomEventsEvent } from "./events.ts";
+import { addEventListeners } from "remix/ui";
 import {
   createCustomEventChangeDetail,
   getEventName,
@@ -285,19 +286,17 @@ export class CustomEventsRuntime {
       controller?.abort();
       controller = new AbortController();
       let signal = controller.signal;
+      let listeners: Record<string, (event: Event) => void> = {};
       for (let type of this.eventTypes) {
-        target.addEventListener(
-          getEventName(this, type),
-          (event) => {
-            if (!(event instanceof CustomEvent)) return;
-            if (options?.hosted && event.composed !== true) {
-              event.stopPropagation();
-            }
-            processCustomEventsEvent(event, this);
-          },
-          { signal },
-        );
+        listeners[getEventName(this, type)] = (event) => {
+          if (!(event instanceof CustomEvent)) return;
+          if (options?.hosted && event.composed !== true) {
+            event.stopPropagation();
+          }
+          processCustomEventsEvent(event, this);
+        };
       }
+      addEventListeners(target, signal, listeners as never);
     };
 
     let unsubscribeEventTypes = subscribeEventTypes(this, listen);
@@ -352,9 +351,8 @@ class WindowBridge {
       });
       this.#finalizer?.register(descriptor, eventName);
 
-      window.addEventListener(
-        eventName,
-        (event) => {
+      addEventListeners(window, controller.signal, {
+        [eventName]: (event: Event) => {
           if (!(event instanceof CustomEvent)) return;
 
           let listener = this.#listeners.get(eventName);
@@ -366,8 +364,7 @@ class WindowBridge {
 
           processCustomEventsEvent(event, descriptor);
         },
-        { signal: controller.signal },
-      );
+      } as never);
     }
   }
 

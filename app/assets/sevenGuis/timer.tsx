@@ -30,8 +30,8 @@ export const SevenGuisTimer = clientEntry(
         ]}
       >
         <h2>Timer</h2>
-        <events.on.clockAdvanced
-          render={() => (
+        <events.on.clockAdvanced.div
+          child={() => (
             <>
               <progress
                 value={Math.min(1, timer.elapsed / timer.duration)}
@@ -60,8 +60,8 @@ export const SevenGuisTimer = clientEntry(
               }),
             ]}
           />
-          <events.on.durationAdjusted
-            render={() => <span>{timer.duration.toFixed(1)}s</span>}
+          <events.on.durationAdjusted.span
+            child={() => timer.duration.toFixed(1) + "s"}
           />
         </label>
         <button

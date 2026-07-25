@@ -20,9 +20,10 @@ export const SevenGuisTemperatureConverter = clientEntry(
     return () => (
       <section mix={taskCss}>
         <h2>Temperature Converter</h2>
-        <events.on.temperatureConverted
-          render={() => (
-            <div mix={rowCss}>
+        <events.on.temperatureConverted.div
+          mix={rowCss}
+          child={() => (
+            <>
               <input
                 aria-label="Celsius"
                 value={temperature.celsius}
@@ -63,7 +64,7 @@ export const SevenGuisTemperatureConverter = clientEntry(
                 ]}
               />
               <span>Fahrenheit</span>
-            </div>
+            </>
           )}
         />
       </section>

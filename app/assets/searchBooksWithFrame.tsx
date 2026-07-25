@@ -55,8 +55,8 @@ export const SearchBooksWithFrame = clientEntry(
             />
           </label>
         </form>
-        <events.on.change
-          render={(detail = initialChangeEvent.detail) => {
+        <events.on.change.div
+          child={(detail = initialChangeEvent.detail) => {
             switch (detail.event?.type) {
               case "queryEmpty":
               case undefined:

@@ -67,39 +67,37 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <events.on.peopleListUpdated
-            render={() => (
-              <select
-                size={7}
-                aria-label="People"
-                value={model.selectedId ?? ""}
-                mix={[
-                  inputCss,
-                  on("change", ({ currentTarget }) => {
-                    let selected = model.people.find(
-                      (person) => person.id === Number(currentTarget.value),
-                    );
-                    if (!selected) return;
-                    model.selectedId = selected.id;
-                    model.draft.name = selected.name;
-                    model.draft.surname = selected.surname;
-                    currentTarget.dispatchEvent(
-                      events(["peopleListUpdated", "personEditorUpdated"]),
-                    );
-                  }),
-                ]}
-              >
-                {visiblePeople(model.people, model.prefix).map((person) => (
-                  <option value={person.id}>
-                    {person.surname}, {person.name}
-                  </option>
-                ))}
-              </select>
-            )}
+          <events.on.peopleListUpdated.select
+            size={7}
+            aria-label="People"
+            value={() => model.selectedId ?? ""}
+            mix={[
+              inputCss,
+              on("change", ({ currentTarget }) => {
+                let selected = model.people.find(
+                  (person) => person.id === Number(currentTarget.value),
+                );
+                if (!selected) return;
+                model.selectedId = selected.id;
+                model.draft.name = selected.name;
+                model.draft.surname = selected.surname;
+                currentTarget.dispatchEvent(
+                  events(["peopleListUpdated", "personEditorUpdated"]),
+                );
+              }),
+            ]}
+            child={() =>
+              visiblePeople(model.people, model.prefix).map((person) => (
+                <option value={person.id}>
+                  {person.surname}, {person.name}
+                </option>
+              ))
+            }
           />
-          <events.on.personEditorUpdated
-            render={() => (
-              <div mix={css({ display: "grid", gap: 8 })}>
+          <events.on.personEditorUpdated.div
+            mix={css({ display: "grid", gap: 8 })}
+            child={() => (
+              <>
                 <label>
                   Name{" "}
                   <input
@@ -146,10 +144,7 @@ export const SevenGuisCrud = clientEntry(
                         model.selectedId = person.id;
                         model.nextId = person.id + 1;
                         currentTarget.dispatchEvent(
-                          events([
-                            "peopleListUpdated",
-                            "personEditorUpdated",
-                          ]),
+                          events(["peopleListUpdated", "personEditorUpdated"]),
                         );
                       }),
                     ]}
@@ -195,10 +190,7 @@ export const SevenGuisCrud = clientEntry(
                         model.draft.name = "";
                         model.draft.surname = "";
                         currentTarget.dispatchEvent(
-                          events([
-                            "peopleListUpdated",
-                            "personEditorUpdated",
-                          ]),
+                          events(["peopleListUpdated", "personEditorUpdated"]),
                         );
                       }),
                     ]}
@@ -206,7 +198,7 @@ export const SevenGuisCrud = clientEntry(
                     Delete
                   </button>
                 </div>
-              </div>
+              </>
             )}
           />
         </div>

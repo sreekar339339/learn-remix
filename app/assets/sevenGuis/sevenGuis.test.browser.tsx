@@ -323,7 +323,10 @@ describe("7GUIs custom-event choreography", () => {
     ).find((button) => button.textContent === "Close")!;
     await result.act(() => close.click());
     await settle(result);
-    assert.equal(result.container.querySelector("form"), null);
+    assert.equal(
+      (result.container.querySelector("form") as HTMLFormElement).hidden,
+      true,
+    );
 
     await result.act(() => undo.click());
     await settle(result);

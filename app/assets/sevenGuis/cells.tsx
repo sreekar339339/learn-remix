@@ -79,11 +79,11 @@ export const SevenGuisCells = clientEntry(
       editing: null,
     };
     function renderCell(id: CellId) {
-      let Cell = events.on[id];
+      let Cell = events.on[id].div;
 
       return (
         <Cell
-          render={() => {
+          child={() => {
             let editing = sheet.editing === id;
             return editing ? (
               <input

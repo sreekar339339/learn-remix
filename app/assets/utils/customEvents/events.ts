@@ -65,7 +65,7 @@ function createDescriptorEvent(
 // are runtime-owned but not product events, so they never recurse.
 //
 // Each processing pass creates one transaction for every derived event emitted
-// from that product event. Event components use that transaction to render first
+// from that product event. Event-aware elements use that transaction to render first
 // and let descriptor-scoped listeners in the rendered subtree run afterward.
 function dispatchLocalTypedEvent(
   target: EventTarget,

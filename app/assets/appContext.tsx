@@ -66,15 +66,13 @@ function UserDisplay(handle: Handle) {
   return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
 }
 
-// Event components can display context values without calling handle.update().
+// Event-aware elements can display context values without calling handle.update().
 function EventUserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.user
-      render={(detail) => (
-        <div>{detail?.name ?? "Not logged in"}</div>
-      )}
+    <appContext.events.on.user.div
+      child={(detail) => detail?.name ?? "Not logged in"}
     />
   );
 }
@@ -102,14 +100,10 @@ function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.settings
-      render={(detail) => (
-        <div>
-          <pre>
-            Layout: {detail?.layout}, Theme: {detail?.theme}
-          </pre>
-        </div>
-      )}
+    <appContext.events.on.settings.pre
+      child={(detail) =>
+        `Layout: ${detail?.layout}, Theme: ${detail?.theme}`
+      }
     />
   );
 }

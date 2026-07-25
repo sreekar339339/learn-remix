@@ -86,7 +86,7 @@ export const TicTacToeCustomEvents = clientEntry(
               currentTarget.dispatchEvent(
                 game.result === null
                   ? events(["nextTurn", "nextFocus"])
-                  : events(["nextTurn"]),
+                  : events("nextTurn"),
               );
             }),
             on("keydown", ({ key, target, currentTarget }) => {
@@ -114,34 +114,29 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <events.on.nextTurn
+            <events.on.nextTurn.button
               key={index}
-              render={() => (
-                <button
-                  value={index}
-                  disabled={game.position.has(index) || game.result !== null}
-                  class={game.position.get(index)}
-                  mix={[
-                    css({
-                      aspectRatio: "1/1",
-                      fontSize: 32,
-                      fontWeight: "bold",
-                      "&.X": {
-                        color: "blue",
-                      },
-                      "&.O": {
-                        color: "red",
-                      },
-                    }),
-                    events.on("nextFocus", ({ currentTarget }) => {
-                      if (game.focusCellId !== index) return;
-                      currentTarget.focus();
-                    }),
-                  ]}
-                >
-                  {game.position.get(index)}
-                </button>
-              )}
+              value={index}
+              disabled={() => game.position.has(index) || game.result !== null}
+              class={() => game.position.get(index)}
+              mix={[
+                css({
+                  aspectRatio: "1/1",
+                  fontSize: 32,
+                  fontWeight: "bold",
+                  "&.X": {
+                    color: "blue",
+                  },
+                  "&.O": {
+                    color: "red",
+                  },
+                }),
+                events.on("nextFocus", ({ currentTarget }) => {
+                  if (game.focusCellId !== index) return;
+                  currentTarget.focus();
+                }),
+              ]}
+              child={() => game.position.get(index)}
             />
           ))}
         </div>
@@ -174,8 +169,8 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <events.on.nextTurn
-            render={() => {
+          <events.on.nextTurn.span
+            child={() => {
               if (!game.result) return "Game in progress";
               if (game.result === "Draw") return "Game is drawn.";
               return `${game.result} has won!`;

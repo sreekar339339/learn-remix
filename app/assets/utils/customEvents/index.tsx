@@ -55,25 +55,36 @@ import type {
  *
  * Use `events.on(...)` for a post-render DOM effect such as focus, selection,
  * or measurement on the element hosting the mixin. Keep attributes and child
- * content declarative in JSX. Use `<events.on.name render={...} />` only for
- * a dynamic child region that the matching event owns:
+ * content declarative in JSX. Use an event-aware intrinsic element such as
+ * `<events.on.name.form>` or `<events.on.name.output>` for dynamic regions:
  *
  * ```tsx
  * <input mix={events.on("saveFailed", ({ currentTarget }) => {
  *   currentTarget.focus();
  * })} />
  *
- * <events.on.saveSucceeded render={(detail) =>
- *   detail ? <p>Saved revision {detail.revision}</p> : <p>Not saved yet.</p>
- * } />
+ * <events.on.change.form
+ *   class={(detail) => detail?.event?.type === "saveStarted" ? "pending" : ""}
+ *   aria-busy={(detail) => detail?.event?.type === "saveStarted"}
+ *   child={(detail) => detail?.event?.type === "saveSucceeded"
+ *     ? <p>Saved revision {detail.event.detail.revision}</p>
+ *     : <p>Not saved yet.</p>
+ *   }
+ * />
  * ```
+
+ * On event-aware elements, ordinary attributes accept either a static value or
+ * `(detail, event) => value`. `mix`, `ref`, and JSX children retain their
+ * ordinary Remix meaning. Use Remix's `on(...)` inside `mix` for native DOM
+ * handlers. `child` supplies dynamic children, so it cannot be combined with
+ * static JSX children.
  *
- * Render callbacks receive `(detail, event, handle)`. Before the first matching
+ * Child callbacks receive `(detail, event, handle)`. Before the first matching
  * event, `detail` and `event` are `undefined`; a dispatched null-detail event
  * passes `null`. Use `detail === undefined` when that distinction matters. The
  * native event is available only when metadata is useful. Handle the empty
  * branch or use a JavaScript default parameter for a local initial projection.
- * Event-component descendants that use `events.on(...)` observe the matching
+ * Event-aware element descendants that use `events.on(...)` observe the matching
  * transaction after the rendered DOM has committed.
  *
  * Events reach sibling branches through the page fallback. Add

@@ -1,4 +1,4 @@
-import type { Handle, MixinDescriptor, RemixNode } from "remix/ui";
+import type { Handle, MixinDescriptor, Props, RemixNode } from "remix/ui";
 import {
   CHANGE_EVENT_NAME,
   CUSTOM_EVENTS_EVENT_PREFIX,
@@ -8,7 +8,7 @@ import {
 //
 // The public descriptor surface is type-derived: product engineers declare an
 // event-detail map once. The callable descriptor creates events, while its
-// proxy-backed `on` and `types` surfaces provide render components and event
+// proxy-backed `on` and `types` surfaces provide event elements and event
 // type strings.
 export type EventDetails = Record<string, unknown>;
 
@@ -178,7 +178,7 @@ export type CustomEventsRenderEvent<
   Type extends CustomEventsEventType<Events>,
 > = CustomEventsEvent<Events, Type> | undefined;
 
-/** Detail passed to an event component before the matching native event. */
+/** Detail passed to an event-aware element before the matching native event. */
 export type CustomEventsRenderDetail<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -186,57 +186,86 @@ export type CustomEventsRenderDetail<
   ? Detail | undefined
   : never;
 
-export type CustomEventsRenderProps<
+type CustomEventsElementProjection<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Value,
+> = (
+  detail: CustomEventsRenderDetail<Events, Type>,
+  event: CustomEventsRenderEvent<Events, Type>,
+) => Value;
+
+type CustomEventsReactiveElementProps<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
+> = {
+  [Key in keyof Props<Tag>]: Key extends string
+    ? Key extends "children" | "key" | "mix" | "ref" | "on" | `on${string}`
+      ? Props<Tag>[Key]
+      :
+          | Props<Tag>[Key]
+          | CustomEventsElementProjection<Events, Type, Props<Tag>[Key]>
+    : Props<Tag>[Key];
+};
+
+type CustomEventsIntrinsicChildren<
+  Tag extends keyof JSX.IntrinsicElements,
+> = Props<Tag> extends { children?: infer Children } ? Children : RemixNode;
+
+export type CustomEventsEventElementRender<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
+> = (
+  detail: CustomEventsRenderDetail<Events, Type>,
+  event: CustomEventsRenderEvent<Events, Type>,
+  handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
+) => RemixNode;
+
+/** Props for an intrinsic element driven by one descriptor event. */
+export type CustomEventsEventElementProps<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
+> = Omit<CustomEventsReactiveElementProps<Events, Type, Tag>, "children"> &
+  (
+    | {
+        children?: CustomEventsIntrinsicChildren<Tag>;
+        child?: never;
+      }
+    | {
+        children?: never;
+        child: CustomEventsEventElementRender<Events, Type, Tag>;
+      }
+  );
+
+/**
+ * Event-aware intrinsic element with declarative reactive attributes.
+ *
+ * Attribute projections receive `(detail, event)`. `mix`, `ref`, and static
+ * children stay normal Remix props. Use Remix's `on(...)` mixin for native DOM
+ * handlers. Use `child` instead of static children when the element's children
+ * need to change with the event.
+ */
+export type CustomEventsEventElement<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
+> = (
+  handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
+) => () => RemixNode;
+
+export type CustomEventsEventElements<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > = {
-  /**
-   * Renders children for the matching event.
-   *
-   * `detail` is the matching event detail. Before a matching event exists,
-   * both `detail` and `event` are `undefined`; a dispatched null-detail event
-   * passes `null`. Use `detail === undefined` when that distinction matters.
-   * Use a JavaScript default parameter for a local initial projection, or
-   * handle that branch for empty, idle, or placeholder UI.
-   *
-   * Descriptor `events.on(...)` listeners inside this rendered subtree run after
-   * the event render commits when the same dispatch also updates this event
-   * component. This lets focus, selection, and measurement work see the updated
-   * DOM. Descriptor listeners outside event components remain immediate.
-   *
-   * Batched dispatches are treated as one UI transaction, so sibling events can
-   * be handled after render even when they appear before the render-driving
-   * event in the dispatched object.
-   *
-   * @example
-   * <events.on.turn render={(detail = initialTurn.detail) => detail.nextPlayer} />
-   *
-   * @example
-   * <events.on.change render={(detail) => {
-   *   let pending = detail?.event?.type === "actionSubmitted";
-   *   return (
-   *     <input
-   *       disabled={pending}
-   *       mix={events.on("change", ({ currentTarget }) => {
-   *         currentTarget.select();
-   *       })}
-   *     />
-   *   );
-   * }} />
-  */
-  render: (
-    detail: CustomEventsRenderDetail<Events, Type>,
-    event: CustomEventsRenderEvent<Events, Type>,
-    handle: Handle<CustomEventsRenderProps<Events, Type>>,
-  ) => RemixNode;
+  [Tag in keyof JSX.IntrinsicElements]: CustomEventsEventElement<
+    Events,
+    Type,
+    Tag
+  >;
 };
-
-export type CustomEventsEventComponent<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> = (
-  handle: Handle<CustomEventsRenderProps<Events, Type>>,
-) => () => RemixNode;
 
 type ExactEventDetail<Expected, Actual> = Actual extends Expected
   ? Expected extends object
@@ -381,24 +410,8 @@ export type CustomEventsFactory<Events extends EventDetails> = {
   ): CustomEventsEvent<Events, Type>;
 };
 
-export type CustomEventsRenderComponents<Events extends EventDetails> = {
-  /**
-   * Renders from the latest matching event detail.
-   *
-   * Event components do not take a target prop. They discover the nearest host
-   * for this event set, or use the descriptor fallback when no host is present.
-   *
-   * @example
-   * <events.on.submitted
-   *   render={(detail) => detail ? detail.id : "No checkout yet"}
-   * />
-   *
-   * @example
-   * <events.on.change
-   *   render={(detail) => detail?.event?.type ?? "idle"}
-   * />
-   */
-  [Type in CustomEventsEventType<Events>]: CustomEventsEventComponent<
+export type CustomEventsEventElementGroups<Events extends EventDetails> = {
+  [Type in CustomEventsEventType<Events>]: CustomEventsEventElements<
     Events,
     Type
   >;
@@ -421,23 +434,18 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
    * `currentTarget` shape as Remix `on(...)`, so DOM effects can stay local to
    * the element.
    *
-   * When this mixin is rendered inside `<events.on.someEvent render={...} />`,
+   * When this mixin is rendered inside an event-aware element such as
+   * `<events.on.someEvent.form ...>`,
    * matching events from the same dispatch transaction run after that event
-   * component commits. Elsewhere, callbacks run immediately like normal DOM
+   * element commits. Elsewhere, callbacks run immediately like normal DOM
    * listeners.
    *
-   * @example
-   * <button mix={events.on("submitted", ({ detail, currentTarget }) => {
-   *   currentTarget.disabled = detail.pending;
-   * })} />
+   * Use an event-aware element for attributes such as `disabled` and `class`.
+   * Keep this mixin for post-render DOM work:
    *
    * @example
-   * <input mix={events.on("change", ({ detail, currentTarget }) => {
-   *   if (!detail.event) return;
-   *   currentTarget.classList.toggle(
-   *     "pending",
-   *     detail.event.type === "querySubmitted",
-   *   );
+   * <input mix={events.on("saveFailed", ({ currentTarget }) => {
+   *   currentTarget.focus();
    * })} />
    */
   <
@@ -450,7 +458,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
       signal: AbortSignal,
     ) => void | Promise<void>,
   ): MixinDescriptor<HostElement, any>;
-} & CustomEventsRenderComponents<Events>;
+} & CustomEventsEventElementGroups<Events>;
 
 /**
  * Descriptor-aware listeners attached to a host boundary.
@@ -516,7 +524,7 @@ export type CustomEventsDescriptor<Events extends EventDetails> =
      *
      * Use this when an element should update itself from custom events in its
      * host boundary, sibling branches, or the page-level fallback. Use
-     * `events.on.someEvent` when rendering children from the latest event.
+     * `events.on.someEvent` when providing children from the latest event.
      */
     on: CustomEventsOnFunction<Events>;
 
