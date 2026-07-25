@@ -145,16 +145,16 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             mix={events.host()}
           >
             <events.on.change
-              render={(changeEvent) => (
+              render={(detail) => (
                 <button
                   mix={[todoActionButtonCss, deleteTodoButtonCss]}
                   name="intent"
                   value="delete"
                   disabled={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                   }
                   class={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                       ? "pending"
                       : ""
                   }
@@ -188,16 +188,16 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             <button hidden name="intent" value="update" />
             <input hidden name="id" value={id} />
             <events.on.change
-              render={(changeEvent) => (
+              render={(detail) => (
                 <input
                   mix={[editTodoInputCss]}
                   defaultValue={text}
                   name="text"
                   disabled={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                   }
                   class={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                       ? "pending"
                       : ""
                   }
@@ -213,13 +213,13 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
             <events.on.change
-              render={(changeEvent) => (
+              render={(detail) => (
                 <button
                   disabled={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                   }
                   class={
-                    changeEvent?.detail.event?.type === "actionSubmitted"
+                    detail?.event?.type === "actionSubmitted"
                       ? "pending"
                       : ""
                   }
@@ -228,9 +228,9 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
                   value="update"
                 >
                   {(
-                    changeEvent?.detail.event?.type === "actionSubmitted" ||
-                    changeEvent?.detail.event?.type === "actionSucceeded"
-                      ? (changeEvent?.detail.event.detail?.completed ??
+                    detail?.event?.type === "actionSubmitted" ||
+                    detail?.event?.type === "actionSucceeded"
+                      ? (detail?.event.detail?.completed ??
                         completed)
                       : completed
                   )

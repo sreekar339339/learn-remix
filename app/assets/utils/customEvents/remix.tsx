@@ -20,6 +20,7 @@ import type {
   CustomEventsEvent,
   CustomEventsEventComponent,
   CustomEventsEventType,
+  CustomEventsRenderDetail,
   CustomEventsRenderEvent,
   CustomEventsRenderProps,
   EventDetails,
@@ -361,10 +362,14 @@ export function createCustomEventsEventComponent<
           ? (currentEvent as CustomEventsEvent<Events, Type>)
           : undefined;
       let render = handle.props.render as unknown as (
+        detail: CustomEventsRenderDetail<Events, Type>,
         event: CustomEventsRenderEvent<Events, Type>,
         handle: Handle<CustomEventsRenderProps<Events, Type>>,
       ) => RemixNode;
-      let node = render(event, handle);
+      let detail = (event
+        ? (event as unknown as CustomEvent).detail
+        : undefined) as CustomEventsRenderDetail<Events, Type>;
+      let node = render(detail, event, handle);
 
       return (
         <CustomEventsRenderScopeProvider scope={renderScope}>

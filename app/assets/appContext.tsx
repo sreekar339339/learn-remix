@@ -72,8 +72,8 @@ function EventUserDisplay(handle: Handle) {
 
   return () => (
     <appContext.events.on.user
-      render={(userEvent) => (
-        <div>{userEvent?.detail?.name ?? "Not logged in"}</div>
+      render={(detail) => (
+        <div>{detail?.name ?? "Not logged in"}</div>
       )}
     />
   );
@@ -103,11 +103,10 @@ function EventSettingsDisplay(handle: Handle) {
 
   return () => (
     <appContext.events.on.settings
-      render={(settingsEvent) => (
+      render={(detail) => (
         <div>
           <pre>
-            Layout: {settingsEvent?.detail.layout}, Theme:{" "}
-            {settingsEvent?.detail.theme}
+            Layout: {detail?.layout}, Theme: {detail?.theme}
           </pre>
         </div>
       )}

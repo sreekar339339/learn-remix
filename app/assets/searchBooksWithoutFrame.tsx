@@ -68,12 +68,12 @@ export const SearchBooksWithoutFrame = clientEntry(
         <label>
           Search{" "}
           <events.on.change
-            render={(changeEvent = initialChangeEvent) => (
+            render={(detail = initialChangeEvent.detail) => (
               <input
                 type="text"
                 defaultValue={initialQuery}
                 class={
-                  changeEvent.detail.event?.type === "querySubmitted"
+                  detail.event?.type === "querySubmitted"
                     ? "pending"
                     : ""
                 }
@@ -102,8 +102,8 @@ export const SearchBooksWithoutFrame = clientEntry(
           />
         </label>
         <events.on.change
-          render={(changeEvent = initialChangeEvent) => {
-            let event = changeEvent.detail.event;
+          render={(detail = initialChangeEvent.detail) => {
+            let event = detail.event;
             switch (event?.type) {
               case "queryEmpty":
               case undefined:

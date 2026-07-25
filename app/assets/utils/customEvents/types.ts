@@ -178,6 +178,14 @@ export type CustomEventsRenderEvent<
   Type extends CustomEventsEventType<Events>,
 > = CustomEventsEvent<Events, Type> | undefined;
 
+/** Detail passed to an event component before the matching native event. */
+export type CustomEventsRenderDetail<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+> = CustomEventMap<Events>[Type] extends CustomEvent<infer Detail>
+  ? Detail | undefined
+  : never;
+
 export type CustomEventsRenderProps<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -185,9 +193,11 @@ export type CustomEventsRenderProps<
   /**
    * Renders children for the matching event.
    *
-   * Before a matching event exists, `event` is `undefined`. Use a JavaScript
-   * default parameter for a local initial projection, or handle that branch for
-   * empty, idle, or placeholder UI.
+   * `detail` is the matching event detail. Before a matching event exists,
+   * both `detail` and `event` are `undefined`; a dispatched null-detail event
+   * passes `null`. Use `detail === undefined` when that distinction matters.
+   * Use a JavaScript default parameter for a local initial projection, or
+   * handle that branch for empty, idle, or placeholder UI.
    *
    * Descriptor `events.on(...)` listeners inside this rendered subtree run after
    * the event render commits when the same dispatch also updates this event
@@ -199,11 +209,11 @@ export type CustomEventsRenderProps<
    * event in the dispatched object.
    *
    * @example
-   * <events.on.turn render={(event = initialTurn) => event.detail.nextPlayer} />
+   * <events.on.turn render={(detail = initialTurn.detail) => detail.nextPlayer} />
    *
    * @example
-   * <events.on.change render={(event) => {
-   *   let pending = event?.detail.event?.type === "actionSubmitted";
+   * <events.on.change render={(detail) => {
+   *   let pending = detail?.event?.type === "actionSubmitted";
    *   return (
    *     <input
    *       disabled={pending}
@@ -213,8 +223,9 @@ export type CustomEventsRenderProps<
    *     />
    *   );
    * }} />
-   */
+  */
   render: (
+    detail: CustomEventsRenderDetail<Events, Type>,
     event: CustomEventsRenderEvent<Events, Type>,
     handle: Handle<CustomEventsRenderProps<Events, Type>>,
   ) => RemixNode;
@@ -372,19 +383,19 @@ export type CustomEventsFactory<Events extends EventDetails> = {
 
 export type CustomEventsRenderComponents<Events extends EventDetails> = {
   /**
-   * Renders from the latest matching event.
+   * Renders from the latest matching event detail.
    *
    * Event components do not take a target prop. They discover the nearest host
    * for this event set, or use the descriptor fallback when no host is present.
    *
    * @example
    * <events.on.submitted
-   *   render={(event) => event ? event.detail.id : "No checkout yet"}
+   *   render={(detail) => detail ? detail.id : "No checkout yet"}
    * />
    *
    * @example
    * <events.on.change
-   *   render={(event) => event?.detail.event?.type ?? "idle"}
+   *   render={(detail) => detail?.event?.type ?? "idle"}
    * />
    */
   [Type in CustomEventsEventType<Events>]: CustomEventsEventComponent<

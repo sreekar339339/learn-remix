@@ -116,8 +116,8 @@ export const SevenGuisFlightBooker = clientEntry(
           )}
         />
         <events.on.bookingConfirmed
-          render={(evt) =>
-            evt ? (
+          render={(_, event) =>
+            event ? (
               <output>
                 {flight.kind === "one-way flight"
                   ? `You have booked a one-way flight on ${flight.startDate}.`

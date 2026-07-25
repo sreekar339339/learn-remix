@@ -63,15 +63,18 @@ import type {
  *   currentTarget.focus();
  * })} />
  *
- * <events.on.saveSucceeded render={(event) =>
- *   event ? <p>Saved revision {event.detail.revision}</p> : <p>Not saved yet.</p>
+ * <events.on.saveSucceeded render={(detail) =>
+ *   detail ? <p>Saved revision {detail.revision}</p> : <p>Not saved yet.</p>
  * } />
  * ```
  *
- * Before the first matching event, an event component receives `undefined`.
- * Handle the empty branch or use a JavaScript default parameter for a local
- * initial projection. Event-component descendants that use `events.on(...)`
- * observe the matching transaction after the rendered DOM has committed.
+ * Render callbacks receive `(detail, event, handle)`. Before the first matching
+ * event, `detail` and `event` are `undefined`; a dispatched null-detail event
+ * passes `null`. Use `detail === undefined` when that distinction matters. The
+ * native event is available only when metadata is useful. Handle the empty
+ * branch or use a JavaScript default parameter for a local initial projection.
+ * Event-component descendants that use `events.on(...)` observe the matching
+ * transaction after the rendered DOM has committed.
  *
  * Events reach sibling branches through the page fallback. Add
  * `mix={events.host(...)}` only when a widget root needs a local boundary or

@@ -55,9 +55,13 @@ describe("CustomEvents", () => {
             Refresh
           </button>
           <events.on.editorUpdated
-            render={(event) => (
-              <output data-testid="editor-status">
-                {event ? "Updated" : "Idle"}
+            render={(detail) => (
+              <output
+                data-testid="editor-status"
+                data-detail={String(detail)}
+                data-received={String(detail !== undefined)}
+              >
+                {detail === undefined ? "Idle" : "Updated"}
               </output>
             )}
           />
@@ -69,10 +73,15 @@ describe("CustomEvents", () => {
     t.after(() => result.cleanup());
 
     let button = result.$("button") as HTMLButtonElement;
+    let status = result.$('[data-testid="editor-status"]')!;
+    assert.equal(status.dataset.detail, "undefined");
+    assert.equal(status.dataset.received, "false");
+
     await result.act(() => button.click());
 
-    let status = result.$('[data-testid="editor-status"]')!;
     assert.equal(status.textContent, "Updated");
+    assert.equal(status.dataset.detail, "null");
+    assert.equal(status.dataset.received, "true");
   });
 
   it("listens to same-element events through descriptor-owned on()", async (t) => {
@@ -280,14 +289,14 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <events.on.submitted
-            render={({ detail } = initialSubmittedEvent) => (
+            render={(detail = initialSubmittedEvent.detail) => (
               <output data-testid="checkout-summary">
                 {detail.id}
               </output>
             )}
           />
           <events.on.change
-            render={({ detail } = initialChangeEvent) => {
+            render={(detail = initialChangeEvent.detail) => {
               let text =
                 detail.event?.type === "submitted"
                   ? detail.event.detail.id
@@ -350,10 +359,10 @@ describe("CustomEvents", () => {
             Pay
           </button>
           <events.on.change
-            render={(event) => (
+            render={(detail) => (
               <input
                 data-testid="checkout-input"
-                disabled={event?.detail.event?.type === "submitted"}
+                disabled={detail?.event?.type === "submitted"}
                 mix={events.on("change", ({ currentTarget, detail }) => {
                   if (detail.event?.type !== "paid") return;
                   currentTarget.dataset.disabledWhenPaid = String(
@@ -422,7 +431,7 @@ describe("CustomEvents", () => {
             Reset
           </button>
           <events.on.turn
-            render={({ detail } = initialTurnEvent) => (
+            render={(detail = initialTurnEvent.detail) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -482,7 +491,7 @@ describe("CustomEvents", () => {
             Focus
           </button>
           <events.on.turn
-            render={({ detail } = initialTurnEvent) => (
+            render={(detail = initialTurnEvent.detail) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -537,7 +546,7 @@ describe("CustomEvents", () => {
             Pay
           </button>
           <events.on.change
-            render={({ detail } = initialChangeEvent) =>
+            render={(detail = initialChangeEvent.detail) =>
               detail.event?.type === "paid" ? (
                 <output data-testid="paid-output">Paid</output>
               ) : (
@@ -577,7 +586,7 @@ describe("CustomEvents", () => {
     function CheckoutStatus(handle: Handle) {
       return () => (
         <events.on.submitted
-          render={({ detail } = initialSubmittedEvent) => (
+          render={(detail = initialSubmittedEvent.detail) => (
             <input
               data-testid="initial-checkout-input"
               value={detail.id}
@@ -618,9 +627,9 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <events.on.submitted
-            render={(event) => (
+            render={(detail) => (
               <output data-testid="checkout-summary">
-                {event ? event.detail.id : "No checkout yet"}
+                {detail ? detail.id : "No checkout yet"}
               </output>
             )}
           />
@@ -667,9 +676,9 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <events.on.submitted
-            render={(event = initialEvent) => (
+            render={(detail = initialEvent.detail) => (
               <output data-testid="terminal-summary">
-                {event?.detail.id ?? "idle"}
+                {detail?.id ?? "idle"}
               </output>
             )}
           />
@@ -1226,9 +1235,9 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <terminal.events.on.submitted
-            render={(event) => (
+            render={(detail) => (
               <output data-testid="terminal-summary">
-                {event?.detail.id ?? "idle"}
+                {detail?.id ?? "idle"}
               </output>
             )}
           />
@@ -1679,9 +1688,9 @@ function SearchForm(handle: Handle<Props<"div">>) {
         <button>Search</button>
       </form>
       <events.on.change
-        render={(event) => (
+        render={(detail) => (
           <output>
-            <pre>{JSON.stringify(event?.detail, null, 2)}</pre>
+            <pre>{JSON.stringify(detail, null, 2)}</pre>
           </output>
         )}
       />
