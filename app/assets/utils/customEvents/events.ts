@@ -117,6 +117,22 @@ function emitExpandedGranularEvents(
   init: EventInit,
   transaction: CustomEventsTransaction,
 ) {
+  if (entries.length === 1) {
+    let [[type, detail]] = entries;
+    target.dispatchEvent(
+      createDescriptorEvent(
+        descriptor,
+        type,
+        init,
+        detail,
+        target,
+        transaction,
+      ),
+    );
+    dispatchLocalTypedEvent(target, descriptor, type, init, detail);
+    return;
+  }
+
   let events = entries.map(([type, detail]) =>
     createDescriptorEvent(
       descriptor,

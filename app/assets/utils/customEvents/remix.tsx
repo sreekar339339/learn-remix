@@ -92,6 +92,14 @@ function shouldBridgeEventToElement(
   element: Element | undefined,
 ): element is Element {
   if (!element) return false;
+  if (event.target === element) return false;
+  if (
+    typeof Node !== "undefined" &&
+    event.target instanceof Node &&
+    element.contains(event.target)
+  ) {
+    return false;
+  }
   if (event.composedPath().includes(element)) return false;
   return true;
 }
@@ -107,6 +115,10 @@ const forwardEventsMixin = createMixin<
   let currentElement: Element | undefined;
   let currentState: CustomEventsRuntime | undefined;
   let controller: AbortController | undefined;
+  let registeredElement: Element | undefined;
+  let registeredTarget: EventTarget | undefined;
+  let registeredState: CustomEventsRuntime | undefined;
+  let registeredTypes = new Set<string>();
   let unsubscribeHost: (() => void) | undefined;
   let unsubscribeEventTypes: (() => void) | undefined;
 
@@ -123,25 +135,22 @@ const forwardEventsMixin = createMixin<
     unsubscribeEventTypes?.();
     unsubscribeEventTypes = undefined;
     if (currentState) {
-      unsubscribeEventTypes = subscribeEventTypes(currentState, listen);
+      unsubscribeEventTypes = subscribeEventTypes(currentState, listenType);
     }
   }
 
-  function listen() {
-    controller?.abort();
-    controller = undefined;
+  function listenType(type: string) {
+    if (registeredTypes.has(type)) return;
+
     let target = currentState
       ? currentState.getDefaultTarget(currentElement)
       : undefined;
+    if (!currentElement || !target || !currentState || !controller) return;
 
-    if (!currentElement || !target || !currentState) return;
-
+    registeredTypes.add(type);
     let descriptor = currentState;
-    controller = new AbortController();
-    let signal = controller.signal;
-    let listeners: Record<string, (event: Event) => void> = {};
-    for (let type of descriptor.eventTypes) {
-      listeners[getEventName(descriptor, type)] = (event) => {
+    addEventListeners(target, controller.signal, {
+      [getEventName(descriptor, type)]: (event: Event) => {
         if (!(event instanceof CustomEvent)) return;
         if (descriptor.isProductEvent(event)) return;
         if (!descriptor.ownsEvent(event)) return;
@@ -149,9 +158,40 @@ const forwardEventsMixin = createMixin<
         let element = currentElement;
         if (!shouldBridgeEventToElement(event, element)) return;
         element.dispatchEvent(createBridgedEvent(event, descriptor));
-      };
+      },
+    } as never);
+  }
+
+  function listen() {
+    let target = currentState
+      ? currentState.getDefaultTarget(currentElement)
+      : undefined;
+
+    if (
+      controller &&
+      registeredElement === currentElement &&
+      registeredTarget === target &&
+      registeredState === currentState
+    ) {
+      return;
     }
-    addEventListeners(target, signal, listeners as never);
+
+    controller?.abort();
+    controller = undefined;
+    registeredElement = undefined;
+    registeredTarget = undefined;
+    registeredState = undefined;
+    registeredTypes.clear();
+    if (!currentElement || !currentState || !target) return;
+
+    controller = new AbortController();
+    registeredElement = currentElement;
+    registeredTarget = target;
+    registeredState = currentState;
+
+    for (let type of currentState.eventTypes) {
+      listenType(type);
+    }
   }
 
   function mount(element: Element) {
@@ -173,6 +213,9 @@ const forwardEventsMixin = createMixin<
     unsubscribeEventTypes = undefined;
     controller?.abort();
     controller = undefined;
+    registeredElement = undefined;
+    registeredTarget = undefined;
+    registeredState = undefined;
     currentElement = undefined;
   });
 
@@ -277,14 +320,14 @@ function resolveEventElementProps(
   detail: unknown,
   event: Event | undefined,
 ) {
-  return Object.fromEntries(
-    Object.entries(props).map(([key, value]) => [
-      key,
-      typeof value === "function" && isReactiveElementProp(key)
-        ? value(detail, event)
-        : value,
-    ]),
-  );
+  let resolved = { ...props };
+  for (let key of Object.keys(props)) {
+    let value = props[key];
+    if (typeof value === "function" && isReactiveElementProp(key)) {
+      resolved[key] = value(detail, event);
+    }
+  }
+  return resolved;
 }
 
 function createCustomEventsEventElement<
@@ -314,6 +357,7 @@ function createCustomEventsEventElement<
       remixOn(eventName as AnyCustomEventsName, (event) => {
         if (descriptor.isProductEvent(event)) return;
         if (!descriptor.ownsEvent(event)) return;
+        if (descriptor.getBridgedEvent(event)?.replay) return;
 
         currentEvent = event;
         let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;

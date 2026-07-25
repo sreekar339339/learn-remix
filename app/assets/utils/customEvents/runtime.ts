@@ -1,4 +1,7 @@
-import { createCustomEventsOwnerId } from "./constants.ts";
+import {
+  createCustomEventsOwnerId,
+  CUSTOM_EVENTS_EVENT_PREFIX,
+} from "./constants.ts";
 import { defineEventValue, isElement } from "./dom.ts";
 import { processCustomEventsEvent } from "./events.ts";
 import { addEventListeners } from "remix/ui";
@@ -37,8 +40,10 @@ export function createCustomEventsTransaction(): CustomEventsTransaction {
 // structure.
 export class CustomEventsRuntime {
   readonly ownerId = createCustomEventsOwnerId();
+  readonly eventPrefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${this.ownerId}:`;
   readonly eventTypes = new Set<string>();
-  readonly typeListeners = new Set<() => void>();
+  readonly eventNames = new Map<string, string>();
+  readonly typeListeners = new Set<(type: string) => void>();
 
   #hosts = new WeakMap<Element, number>();
   #registeredHosts = new Set<WeakRef<EventTarget>>();
@@ -239,8 +244,8 @@ export class CustomEventsRuntime {
 
   record(target: EventTarget | undefined, entries: Array<[string, unknown]>) {
     let changeDetail = createCustomEventChangeDetail(entries);
-    let current = this.getMemory(target)?.eventMap ?? {};
-    let eventMap: Partial<EventDetails> = { ...current };
+    let current = this.getMemory(target);
+    let eventMap = current?.eventMap ?? {};
     for (let [type, detail] of entries) {
       eventMap[type] = detail;
     }
@@ -280,32 +285,30 @@ export class CustomEventsRuntime {
       };
     }
 
-    let controller: AbortController | undefined;
+    let controller = new AbortController();
+    let registeredTypes = new Set<string>();
 
-    let listen = () => {
-      controller?.abort();
-      controller = new AbortController();
-      let signal = controller.signal;
-      let listeners: Record<string, (event: Event) => void> = {};
-      for (let type of this.eventTypes) {
-        listeners[getEventName(this, type)] = (event) => {
+    let listenType = (type: string) => {
+      if (registeredTypes.has(type)) return;
+      registeredTypes.add(type);
+      addEventListeners(target, controller.signal, {
+        [getEventName(this, type)]: (event: Event) => {
           if (!(event instanceof CustomEvent)) return;
           if (options?.hosted && event.composed !== true) {
             event.stopPropagation();
           }
           processCustomEventsEvent(event, this);
-        };
-      }
-      addEventListeners(target, signal, listeners as never);
+        },
+      } as never);
     };
 
-    let unsubscribeEventTypes = subscribeEventTypes(this, listen);
-    listen();
+    let unsubscribeEventTypes = subscribeEventTypes(this, listenType);
+    for (let type of this.eventTypes) listenType(type);
 
     registration = {
       count: 1,
       cleanup() {
-        unsubscribeEventTypes?.();
+        unsubscribeEventTypes();
         controller?.abort();
       },
     };
@@ -336,36 +339,34 @@ class WindowBridge {
           this.remove(eventName);
         });
 
-  enable(descriptor: CustomEventsRuntime) {
+  enable(descriptor: CustomEventsRuntime, type: string) {
     if (typeof window === "undefined") return;
 
-    for (let type of descriptor.eventTypes) {
-      let eventName = getEventName(descriptor, type);
-      if (this.#listeners.has(eventName)) continue;
+    let eventName = getEventName(descriptor, type);
+    if (this.#listeners.has(eventName)) return;
 
-      let controller = new AbortController();
-      let descriptorRef = new WeakRef(descriptor);
-      this.#listeners.set(eventName, {
-        controller,
-        descriptor: descriptorRef,
-      });
-      this.#finalizer?.register(descriptor, eventName);
+    let controller = new AbortController();
+    let descriptorRef = new WeakRef(descriptor);
+    this.#listeners.set(eventName, {
+      controller,
+      descriptor: descriptorRef,
+    });
+    this.#finalizer?.register(descriptor, eventName);
 
-      addEventListeners(window, controller.signal, {
-        [eventName]: (event: Event) => {
-          if (!(event instanceof CustomEvent)) return;
+    addEventListeners(window, controller.signal, {
+      [eventName]: (event: Event) => {
+        if (!(event instanceof CustomEvent)) return;
 
-          let listener = this.#listeners.get(eventName);
-          let descriptor = listener?.descriptor.deref();
-          if (!descriptor) {
-            this.remove(eventName);
-            return;
-          }
+        let listener = this.#listeners.get(eventName);
+        let descriptor = listener?.descriptor.deref();
+        if (!descriptor) {
+          this.remove(eventName);
+          return;
+        }
 
-          processCustomEventsEvent(event, descriptor);
-        },
-      } as never);
-    }
+        processCustomEventsEvent(event, descriptor);
+      },
+    } as never);
   }
 
   remove(eventName: string) {

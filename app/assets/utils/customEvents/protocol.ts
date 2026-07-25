@@ -1,7 +1,4 @@
-import {
-  CHANGE_EVENT_NAME,
-  CUSTOM_EVENTS_EVENT_PREFIX,
-} from "./constants.ts";
+import { CHANGE_EVENT_NAME } from "./constants.ts";
 import type { CustomEventsRuntime } from "./runtime.ts";
 import type {
   ChangeEventDetailFromMap,
@@ -15,16 +12,20 @@ import type {
 // CustomEvents instance. Known event types are discovered lazily through proxy
 // property access and event factory calls.
 export function getEventName(descriptor: CustomEventsRuntime, type: string) {
-  return `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:${type}`;
+  let eventName = descriptor.eventNames.get(type);
+  if (eventName) return eventName;
+
+  eventName = `${descriptor.eventPrefix}${type}`;
+  descriptor.eventNames.set(type, eventName);
+  return eventName;
 }
 
 export function getEventType(
   descriptor: CustomEventsRuntime,
   eventName: string,
 ) {
-  let prefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${descriptor.ownerId}:`;
-  if (!eventName.startsWith(prefix)) return undefined;
-  return eventName.slice(prefix.length);
+  if (!eventName.startsWith(descriptor.eventPrefix)) return undefined;
+  return eventName.slice(descriptor.eventPrefix.length);
 }
 
 export function addEventType(
@@ -33,12 +34,12 @@ export function addEventType(
 ) {
   if (descriptor.eventTypes.has(type)) return;
   descriptor.eventTypes.add(type);
-  for (let listener of descriptor.typeListeners) listener();
+  for (let listener of descriptor.typeListeners) listener(type);
 }
 
 export function subscribeEventTypes(
   descriptor: CustomEventsRuntime,
-  listener: () => void,
+  listener: (type: string) => void,
 ) {
   descriptor.typeListeners.add(listener);
   return () => descriptor.typeListeners.delete(listener);

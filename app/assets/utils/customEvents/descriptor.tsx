@@ -61,11 +61,10 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       let entries = Array.isArray(events)
         ? events.map((type) => [type, null] as [string, unknown])
         : resolveCustomEventsDispatchEntries(events as Partial<Events>);
-      for (let [type] of entries) addEventType(state, type);
+      for (let [type] of entries) addDescriptorEventType(type);
       detail = createCustomEventChangeDetail(entries);
     }
-    addEventType(state, CHANGE_EVENT_NAME);
-    windowBridge.enable(state);
+    enableDescriptorEventType(CHANGE_EVENT_NAME);
     return createProductCustomEvent(
       state,
       CHANGE_EVENT_NAME,
@@ -81,15 +80,23 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   ) {
     if (init?.signal?.aborted) return createAbortedEvent();
 
-    addEventType(state, type);
-    addEventType(state, CHANGE_EVENT_NAME);
-    windowBridge.enable(state);
+    enableDescriptorEventType(type);
+    enableDescriptorEventType(CHANGE_EVENT_NAME);
     return createProductCustomEvent(
       state,
       type,
       getEventInit(init),
       detail,
     );
+  }
+
+  function addDescriptorEventType(type: string) {
+    if (!state.eventTypes.has(type)) addEventType(state, type);
+  }
+
+  function enableDescriptorEventType(type: string) {
+    addDescriptorEventType(type);
+    windowBridge.enable(state, type);
   }
 
   let eventElements = new Map<
@@ -145,7 +152,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       >,
     )) {
       if (!listener) continue;
-      addEventType(state, type);
+      addDescriptorEventType(type);
       mappedListeners[getEventName(state, type)] = (event, reentry) => {
         if (!(event instanceof CustomEvent)) return;
         if (state.isProductEvent(event) || !state.ownsEvent(event)) return;
@@ -157,7 +164,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   }
 
   function getEventElements(property: string) {
-    addEventType(state, property);
+    addDescriptorEventType(property);
     let elements = eventElements.get(property);
     if (elements) return elements;
 
@@ -174,7 +181,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     {
       get(_, property) {
         if (typeof property !== "string") return undefined;
-        addEventType(state, property);
+        addDescriptorEventType(property);
         return getEventName(state, property);
       },
     },
