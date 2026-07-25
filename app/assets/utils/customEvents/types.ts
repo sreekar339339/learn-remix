@@ -25,6 +25,7 @@ export type NormalizeCustomEventsDefinition<
 
 type CustomEventsReservedKey =
   | typeof CHANGE_EVENT_NAME
+  | "create"
   | "host"
   | "map"
   | "on"
@@ -208,11 +209,11 @@ export type CustomEventsRenderProps<
        * Event object used to render before a matching event is received.
        *
        * `seed` is render-only; it does not dispatch or run DOM listeners. Use
-       * the descriptor's `.seed(...)` method when the same starting event should
-       * also initialize `getHost(...).latest`.
+       * the descriptor's `.seed(...)` method when event components should share
+       * the same starting event.
        *
        * @example
-       * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
+       * <events.on.change seed={events.create("queryEmpty")} render={...} />
        */
       seed?: Seed;
     }
@@ -221,11 +222,11 @@ export type CustomEventsRenderProps<
        * Event object used to render before a matching event is received.
        *
        * `seed` is render-only; it does not dispatch or run DOM listeners. Use
-       * the descriptor's `.seed(...)` method when the same starting event should
-       * also initialize `getHost(...).latest`.
+       * the descriptor's `.seed(...)` method when event components should share
+       * the same starting event.
        *
        * @example
-       * <searchEvents.on.change seed={searchEvents.queryEmpty()} render={...} />
+       * <events.on.change seed={events.create("queryEmpty")} render={...} />
        */
       seed: Seed;
     }) & {
@@ -249,15 +250,15 @@ export type CustomEventsRenderProps<
    * event in the dispatched object.
    *
    * @example
-   * <gameEvents.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
+   * <events.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
    *
    * @example
-   * <todoEvents.on.change render={(event) => {
+   * <events.on.change render={(event) => {
    *   let pending = event?.detail.event?.type === "actionSubmitted";
    *   return (
    *     <input
    *       disabled={pending}
-   *       mix={todoEvents.on("change", ({ currentTarget }) => {
+   *       mix={events.on("change", ({ currentTarget }) => {
    *         currentTarget.select();
    *       })}
    *     />
@@ -311,7 +312,7 @@ type UniqueEventTypes<
       : Types
   : Types;
 
-type CustomEventsChangeMember<Events extends EventDetails> = {
+export type CustomEventsCreateFunction<Events extends EventDetails> = {
   /**
    * Creates a batch from non-payload event names.
    *
@@ -319,7 +320,7 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * type-checked, including duplicate names.
    *
    * @example
-   * canvas.dispatchEvent(events.change([
+   * canvas.dispatchEvent(events.create([
    *   "canvasUpdated",
    *   "historyUpdated",
    * ], { composed: true }));
@@ -344,7 +345,7 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * also notify listeners for each changed event type.
    *
    * @example
-   * target.dispatchEvent(events.change({ user, settings }));
+   * target.dispatchEvent(events.create({ user, settings }));
    */
   (events: Partial<Events>, init?: CustomEventsInit): CustomEventsEvent<
     Events,
@@ -361,7 +362,7 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
    * product event may observe the unresolved callback detail.
    *
    * @example
-   * button.dispatchEvent(events.change(({ count }) => ({
+   * button.dispatchEvent(events.create(({ count }) => ({
    *   count: (count ?? 0) + 1,
    * })));
    */
@@ -372,28 +373,11 @@ type CustomEventsChangeMember<Events extends EventDetails> = {
     Events,
     typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
   >;
-};
+  /** Creates one null-detail product event. */
+  <Type extends NullDetailEventTypes<Events> & CustomEventsEventType<Events>>(
+    type: Type,
+  ): CustomEventsEvent<Events, Type>;
 
-type CustomEventsEventMember<
-  Events extends EventDetails,
-  Type extends keyof Events & string & CustomEventsEventType<Events>,
-> = (Events[Type] extends null
-  ? {
-      /**
-       * Creates this null-detail product event for native `dispatchEvent(...)`.
-       *
-       * Null-detail events can omit the first argument. Pass `null` explicitly
-       * when the event also needs options.
-       *
-       * @example
-       * form.dispatchEvent(todoEvents.actionSubmitted());
-       *
-       * @example
-       * form.dispatchEvent(todoEvents.actionSubmitted(null, { signal }));
-       */
-      (): CustomEventsEvent<Events, Type>;
-    }
-  : {}) & {
   /**
    * Creates this product event for native `dispatchEvent(...)`.
    *
@@ -401,12 +385,16 @@ type CustomEventsEventMember<
    * A corresponding `change` event is derived automatically.
    *
    * @example
-   * form.dispatchEvent(todoEvents.actionSubmitted(null));
+   * form.dispatchEvent(events.create("actionSubmitted"));
    *
    * @example
-   * form.dispatchEvent(todoEvents.actionErrored({ error }, { signal }));
+   * form.dispatchEvent(events.create("actionErrored", { error }, { signal }));
    */
-  <Detail extends Events[Type]>(
+  <
+    Type extends keyof Events & string & CustomEventsEventType<Events>,
+    Detail extends Events[Type],
+  >(
+    type: Type,
     detail: ExactEventDetail<Events[Type], Detail>,
     init?: CustomEventsInit,
   ): CustomEventsEvent<Events, Type>;
@@ -425,36 +413,15 @@ type CustomEventsEventMember<
    * `addEventListener(...)` observers.
    *
    * @example
-   * button.dispatchEvent(counterEvents.count((count, { incrementOffset }) => (
+   * button.dispatchEvent(events.create("count", (count, { incrementOffset }) => (
    *   (count ?? 0) + (incrementOffset ?? 1)
    * )));
    */
-  (
+  <Type extends keyof Events & string & CustomEventsEventType<Events>>(
+    type: Type,
     resolve: CustomEventsDetailResolver<Events, Events[Type]>,
     init?: CustomEventsInit,
   ): CustomEventsEvent<Events, Type>;
-};
-
-export type CustomEventsEventFactories<Events extends EventDetails> = {
-  /**
-   * Event factory for this event type.
-   *
-   * Use root event members only to create events for native
-   * `dispatchEvent(...)`. Use `events.on.someEvent` for event-driven rendering.
-   *
-   * @example
-   * button.dispatchEvent(checkoutEvents.submitted({ id: "order-1" }));
-   *
-   * @example
-   * <checkoutEvents.on.submitted
-   *   render={(event) => event ? event.detail.id : "No checkout yet"}
-   * />
-   */
-  [Type in CustomEventsEventType<Events>]: Type extends typeof CHANGE_EVENT_NAME
-    ? CustomEventsChangeMember<Events>
-    : Type extends keyof Events & string
-      ? CustomEventsEventMember<Events, Type>
-      : never;
 };
 
 export type CustomEventsRenderComponents<Events extends EventDetails> = {
@@ -465,12 +432,12 @@ export type CustomEventsRenderComponents<Events extends EventDetails> = {
    * for this event set, or use the descriptor fallback when no host is present.
    *
    * @example
-   * <checkoutEvents.on.submitted
+   * <events.on.submitted
    *   render={(event) => event ? event.detail.id : "No checkout yet"}
    * />
    *
    * @example
-   * <checkoutEvents.on.change
+   * <events.on.change
    *   render={(event) => event?.detail.event?.type ?? "idle"}
    * />
    */
@@ -503,12 +470,12 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
    * listeners.
    *
    * @example
-   * <button mix={checkoutEvents.on("submitted", ({ detail, currentTarget }) => {
+   * <button mix={events.on("submitted", ({ detail, currentTarget }) => {
    *   currentTarget.disabled = detail.pending;
    * })} />
    *
    * @example
-   * <input mix={searchEvents.on("change", ({ detail, currentTarget }) => {
+   * <input mix={events.on("change", ({ detail, currentTarget }) => {
    *   if (!detail.event) return;
    *   currentTarget.classList.toggle(
    *     "pending",
@@ -562,7 +529,7 @@ export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
    * boundary or less page-level event traffic.
    *
    * @example
-   * <form mix={todoEvents.host({
+   * <form mix={events.host({
    *   actionSubmitted() {
    *     todo.pending = true;
    *   },
@@ -578,6 +545,15 @@ export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
 
 export type CustomEventsDescriptor<Events extends EventDetails> = {
   /**
+   * Creates a custom event for native `dispatchEvent(...)`.
+   *
+   * Pass a name and detail for one event, an array of null-detail names, or a
+   * detail map for a coordinated batch. `change` remains derived and
+   * listener-facing; product code does not create it directly.
+   */
+  create: CustomEventsCreateFunction<Events>;
+
+  /**
    * Reacts to a product event from this descriptor.
    *
    * Use this when an element should update itself from custom events in its
@@ -592,7 +568,7 @@ export type CustomEventsDescriptor<Events extends EventDetails> = {
   readonly types: CustomEventsTypes<Events>;
 
   /**
-   * Seeds render components and host memory with a descriptor-created event.
+   * Seeds event components with a descriptor-created event.
    *
    * This does not dispatch. It gives `<events.on.someEvent render={...} />`
    * a starting point. Dispatch explicitly when event listeners should run.
@@ -603,8 +579,7 @@ export type CustomEventsDescriptor<Events extends EventDetails> = {
    * Local event map for `TypedEventTarget` and strongly typed event details.
    */
   readonly map: CustomEventMap<Events>;
-} & CustomEventsEventFactories<Events> &
-  HostableCustomEventsDescriptor<Events>;
+} & HostableCustomEventsDescriptor<Events>;
 
 export type CustomEventsMemory = {
   change?: ChangeEventDetailFromMap<EventDetails>;

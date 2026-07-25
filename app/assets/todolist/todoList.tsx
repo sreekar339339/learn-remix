@@ -5,7 +5,7 @@ import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
 import { CustomEvents } from "../utils/customEvents.tsx";
 
-export const todoEvents = new CustomEvents<{
+export const events = new CustomEvents<{
   actionSubmitted: TodoActionDetail | null;
   actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };
@@ -24,7 +24,7 @@ export const TodoList = clientEntry(
 
 export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
   return () => (
-    <div mix={todoEvents.on("change", ({ detail }) => console.log(detail))}>
+    <div mix={events.on("change", ({ detail }) => console.log(detail))}>
       <AddTodo />
       <Frame
         name="TodoItems"

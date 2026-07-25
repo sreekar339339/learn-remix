@@ -72,7 +72,7 @@ export const SevenGuisCircleDrawer = clientEntry(
       nextId: 1,
     };
     events.seed(
-      events.change([
+      events.create([
         "canvasUpdated",
         "historyUpdated",
         "diameterEditorUpdated",
@@ -105,7 +105,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                     drawing.adjustmentUndo = null;
                     drawing.diameterAdjusted = false;
                     currentTarget.dispatchEvent(
-                      events.change([
+                      events.create([
                         "canvasUpdated",
                         "historyUpdated",
                         "diameterEditorUpdated",
@@ -136,7 +136,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                     drawing.adjustmentUndo = null;
                     drawing.diameterAdjusted = false;
                     currentTarget.dispatchEvent(
-                      events.change([
+                      events.create([
                         "canvasUpdated",
                         "historyUpdated",
                         "diameterEditorUpdated",
@@ -177,7 +177,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                   drawing.circles.push(circle);
                   drawing.nextId = circle.id + 1;
                   currentTarget.dispatchEvent(
-                    events.change(["canvasUpdated", "historyUpdated"]),
+                    events.create(["canvasUpdated", "historyUpdated"]),
                   );
                 }),
                 on("mousemove", ({ currentTarget, clientX, clientY }) => {
@@ -188,7 +188,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                     hitCircle(drawing.circles, point.x, point.y)?.id ?? null;
                   if (selectedId === drawing.selectedId) return;
                   drawing.selectedId = selectedId;
-                  currentTarget.dispatchEvent(events.canvasUpdated());
+                  currentTarget.dispatchEvent(events.create("canvasUpdated"));
                 }),
               ]}
             >
@@ -206,7 +206,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                     drawing.adjustmentUndo = cloneCircles(drawing.circles);
                     drawing.diameterAdjusted = false;
                     event.currentTarget.dispatchEvent(
-                      events.change(["canvasUpdated", "diameterEditorUpdated"]),
+                      events.create(["canvasUpdated", "diameterEditorUpdated"]),
                     );
                   })}
                 />
@@ -231,7 +231,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                   drawing.diameterAdjusted = false;
                   drawing.redo.length = 0;
                   event.currentTarget.dispatchEvent(
-                    events.change([
+                    events.create([
                       "historyUpdated",
                       "diameterEditorUpdated",
                     ]),
@@ -260,7 +260,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                       circle.diameter = currentTarget.valueAsNumber;
                       drawing.diameterAdjusted = true;
                       currentTarget.dispatchEvent(
-                        events.change([
+                        events.create([
                           "canvasUpdated",
                           "diameterEditorUpdated",
                         ]),

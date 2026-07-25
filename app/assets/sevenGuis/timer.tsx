@@ -21,7 +21,7 @@ export const SevenGuisTimer = clientEntry(
               last = now;
               if (timer.elapsed >= timer.duration) return;
               timer.elapsed = Math.min(timer.duration, timer.elapsed + delta);
-              section.dispatchEvent(events.clockAdvanced());
+              section.dispatchEvent(events.create("clockAdvanced"));
             }, 100);
             signal.addEventListener("abort", () => window.clearInterval(id), {
               once: true,
@@ -55,7 +55,7 @@ export const SevenGuisTimer = clientEntry(
                 timer.duration = currentTarget.valueAsNumber;
                 timer.elapsed = Math.min(timer.elapsed, timer.duration);
                 currentTarget.dispatchEvent(
-                  events.change(["clockAdvanced", "durationAdjusted"]),
+                  events.create(["clockAdvanced", "durationAdjusted"]),
                 );
               }),
             ]}
@@ -70,7 +70,7 @@ export const SevenGuisTimer = clientEntry(
             buttonCss,
             on("click", ({ currentTarget }) => {
               timer.elapsed = 0;
-              currentTarget.dispatchEvent(events.clockAdvanced());
+              currentTarget.dispatchEvent(events.create("clockAdvanced"));
             }),
           ]}
         >

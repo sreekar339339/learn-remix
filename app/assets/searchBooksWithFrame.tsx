@@ -5,7 +5,7 @@ import { CustomEvents } from "./utils/customEvents.tsx";
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
-    let searchEvents = new CustomEvents<"queryEmpty" | "querySubmitted">();
+    let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
 
     return () => (
@@ -20,8 +20,8 @@ export const SearchBooksWithFrame = clientEntry(
               ).trim();
               evt.currentTarget.dispatchEvent(
                 query
-                  ? searchEvents.querySubmitted()
-                  : searchEvents.queryEmpty(),
+                  ? events.create("querySubmitted")
+                  : events.create("queryEmpty"),
               );
             }),
           ]}
@@ -43,7 +43,7 @@ export const SearchBooksWithFrame = clientEntry(
                     animation: "glimmer 1.15s linear infinite",
                   },
                 }),
-                searchEvents.on("change", ({ currentTarget, detail }) => {
+                events.on("change", ({ currentTarget, detail }) => {
                   if (detail.event?.type !== "querySubmitted") {
                     currentTarget.select();
                   }
@@ -52,9 +52,9 @@ export const SearchBooksWithFrame = clientEntry(
             />
           </label>
         </form>
-        <searchEvents.on.change
+        <events.on.change
           seed={
-            query ? searchEvents.querySubmitted() : searchEvents.queryEmpty()
+            query ? events.create("querySubmitted") : events.create("queryEmpty")
           }
           render={(changeEvent) => {
             switch (changeEvent.detail.event?.type) {

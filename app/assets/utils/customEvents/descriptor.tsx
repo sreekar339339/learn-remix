@@ -16,9 +16,9 @@ import {
 import { createCustomEventsEventComponent, customEventsOnMixin } from "./remix.tsx";
 import type {
   CustomEventsConstructorOptions,
+  CustomEventsCreateFunction,
   CustomEventsDescriptor,
   CustomEventsEventComponent,
-  CustomEventsEventFactories,
   CustomEventsEventType,
   CustomEventsHostListeners,
   CustomEventsInit,
@@ -27,11 +27,8 @@ import type {
   EventDetails,
 } from "./types.ts";
 
-// CustomEvents instances are proxy-backed descriptors. Root property access
-// creates event factory members lazily, while `on.someEvent` creates render
-// components lazily. `types` exposes stable event-name strings for low-level
-// interop. The proxy keeps the public API type-shaped without requiring users to
-// duplicate event names at runtime.
+// `on.someEvent` and `types.someEvent` are proxy-backed so render components
+// and low-level names remain type-shaped without duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsConstructorOptions,
 ): CustomEventsDescriptor<Events> {
@@ -100,10 +97,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     );
   }
 
-  let eventMembers = new Map<
-    string,
-    CustomEventsEventFactories<Events>[CustomEventsEventType<Events>]
-  >();
   let renderComponents = new Map<
     string,
     CustomEventsEventComponent<Events, CustomEventsEventType<Events>>
@@ -170,33 +163,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     addEventListeners(target, signal, mappedListeners as never);
   }
 
-  function getEventMember(property: string) {
-    addEventType(state, property);
-    let member = eventMembers.get(property);
-    if (member) return member;
-
-    member =
-      property === CHANGE_EVENT_NAME
-        ? (function createChangeMember(
-            events?: Partial<Events> | readonly string[],
-            init?: CustomEventsInit,
-          ) {
-            return createBatchChangeEvent(events ?? {}, init);
-          } as CustomEventsEventFactories<Events>[CustomEventsEventType<Events>])
-        : (function createEventMember(
-            detail?: unknown,
-            init?: CustomEventsInit,
-          ) {
-            if (arguments.length === 0) {
-              return createGranularEvent(property, null, init);
-            }
-
-            return createGranularEvent(property, detail, init);
-          } as CustomEventsEventFactories<Events>[CustomEventsEventType<Events>]);
-    eventMembers.set(property, member);
-    return member;
-  }
-
   function getRenderComponent(property: string) {
     addEventType(state, property);
     let component = renderComponents.get(property);
@@ -244,8 +210,32 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     },
   }) as CustomEventsOnFunction<Events>;
 
+  let create = ((...args: Array<unknown>) => {
+    let [typeOrEvents, detailOrInit, maybeInit] = args as [
+      string | Partial<Events> | readonly string[] | Function,
+      unknown?,
+      CustomEventsInit?,
+    ];
+    if (typeof typeOrEvents === "string") {
+      return createGranularEvent(
+        typeOrEvents,
+        args.length === 1 ? null : detailOrInit,
+        maybeInit,
+      );
+    }
+
+    return createBatchChangeEvent(
+      typeOrEvents as
+        | Partial<Events>
+        | readonly string[]
+        | ((latest: unknown) => Partial<Events>),
+      detailOrInit as CustomEventsInit | undefined,
+    );
+  }) as CustomEventsCreateFunction<Events>;
+
   let descriptor = {
     map: undefined,
+    create,
     on,
     types,
     seed(event: Event) {
@@ -261,23 +251,9 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       });
     },
   };
-  let proxy = new Proxy(descriptor, {
-    get(target, property, receiver) {
-      if (Reflect.has(target, property)) {
-        return Reflect.get(target, property, receiver);
-      }
-
-      if (typeof property !== "string") {
-        return Reflect.get(target, property, receiver);
-      }
-
-      return getEventMember(property);
-    },
-  }) as unknown as CustomEventsDescriptor<Events>;
-
   if (options?.host) {
     registerHost(options.host, options.signal);
   }
 
-  return proxy;
+  return descriptor as unknown as CustomEventsDescriptor<Events>;
 }

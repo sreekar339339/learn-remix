@@ -49,7 +49,7 @@ import type {
  * type Events = { progressAdvanced: null };
  *
  * model.progress += delta;
- * target.dispatchEvent(events.progressAdvanced());
+ * target.dispatchEvent(events.create("progressAdvanced"));
  *
  * <events.on.progressAdvanced render={() => <output>{model.progress}</output>} />
  * ```
@@ -58,7 +58,7 @@ import type {
  * several null-detail signals when it refreshes independent regions together:
  *
  * ```tsx
- * target.dispatchEvent(events.change([
+ * target.dispatchEvent(events.create([
  *   "contentRefreshed",
  *   "historyRefreshed",
  * ]));
@@ -77,7 +77,7 @@ import type {
  * snapshot containing only the information that listener needs:
  *
  * ```tsx
- * target.dispatchEvent(events.documentSaved({ revision, savedAt }));
+ * target.dispatchEvent(events.create("documentSaved", { revision, savedAt }));
  * ```
  *
  * Use null-detail signals for tightly local coordination and self-contained
@@ -94,8 +94,8 @@ import type {
  * Do not create events solely to relay a native interaction to an immediate
  * local update. Names such as `fieldEdited -> draftUpdated -> editorUpdated`
  * usually hide ordinary control flow. Keep the native handler and publish the
- * next useful projection directly. Likewise, use
- * `events.change(...)` only when one transition genuinely changes several
+ * next useful projection directly. Use an array or detail map with
+ * `events.create(...)` only when one transition genuinely changes several
  * projections atomically.
  *
  * When no useful fact, outcome, or independently consumed projection exists,
@@ -147,15 +147,18 @@ import type {
  * };
  *
  * // One transition updates two independently rendered regions.
- * target.dispatchEvent(events.change({
+ * target.dispatchEvent(events.create({
  *   navigationUpdated: nextNavigation,
  *   editorUpdated: nextEditor,
  * }));
  *
  * Extend it with an event-detail map, create one descriptor instance for the
  * component/object, then use normal `dispatchEvent(...)` everywhere. Event
- * methods create product events, `on(...)` is the listener API, and
+ * `create(...)` creates product events, `on(...)` is the listener API, and
  * `<events.on.someEvent render={...} />` renders from the latest event.
+ * Name that local descriptor `events`. A domain-specific name belongs on a
+ * reusable descriptor class, such as `class DrummerEvents extends
+ * CustomEvents<...> {}`, while each class instance can expose `events`.
  *
  * No setup is needed for ordinary component events: dispatch from the element
  * involved in the interaction and use `on(...)` or an event component where
@@ -165,14 +168,14 @@ import type {
  * can update a component-local model, but the descriptor does not expose a
  * state-store API.
  *
- * A single dispatch can include several event details with `events.change(...)`.
+ * A single dispatch can include several event details with `events.create(...)`.
  * The descriptor expands that batch as one UI transaction. Event components
  * update first, then descriptor listeners rendered inside those event components
  * run on the committed DOM. This keeps common flows like “render an enabled
  * input, then select it” or “render a cell, then focus it” in event order
  * without extra component state.
  *
- * Event factory methods can also accept a callback detail when a small
+ * `create(...)` can also accept a callback detail when a small
  * transition depends on the previous published detail. The callback runs during
  * descriptor processing, after the browser has established the real dispatch
  * target and nearest host. Descriptor `events.on(...)` listeners and event
@@ -186,24 +189,24 @@ import type {
  *   documentSaved: { revision: number; savedAt: Date };
  * }> {}
  *
- * let documentEvents = new DocumentEvents();
- * documentEvents.seed(
- *   documentEvents.documentSaved({ revision: 0, savedAt: new Date() }),
+ * let events = new DocumentEvents();
+ * events.seed(
+ *   events.create("documentSaved", { revision: 0, savedAt: new Date() }),
  * );
  *
  * <section>
- *   <button mix={documentEvents.on("documentSaved", ({ detail, currentTarget }) => {
+ *   <button mix={events.on("documentSaved", ({ detail, currentTarget }) => {
  *     currentTarget.textContent = `Saved revision ${detail.revision}`;
  *   })}>
  *     Save
  *   </button>
- *   <documentEvents.on.documentSaved render={(event) =>
+ *   <events.on.documentSaved render={(event) =>
  *     event ? `Saved revision ${event.detail.revision}` : "Not saved"
  *   } />
  * </section>
  *
  * @example
- * button.dispatchEvent(editorEvents.revision(({ revision }) => (
+ * button.dispatchEvent(events.create("revision", ({ revision }) => (
  *   (revision ?? 0) + 1
  * )));
  */

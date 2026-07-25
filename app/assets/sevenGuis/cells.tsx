@@ -79,7 +79,7 @@ export const SevenGuisCells = clientEntry(
       editing: null,
     };
     events.seed(
-      events.change(
+      events.create(
         cellUpdates(
           rows.flatMap((row) => columns.map((column) => cellId(column, row))),
         ),
@@ -119,7 +119,7 @@ export const SevenGuisCells = clientEntry(
                         ),
                     );
                     currentTarget.dispatchEvent(
-                      events.change(cellUpdates(new Set([...changedIds, id]))),
+                      events.create(cellUpdates(new Set([...changedIds, id]))),
                     );
                   }),
                   on("keydown", ({ key, currentTarget }) => {
@@ -143,7 +143,7 @@ export const SevenGuisCells = clientEntry(
                   }),
                   on("click", ({ currentTarget }) => {
                     sheet.editing = id;
-                    currentTarget.dispatchEvent(events[id]());
+                    currentTarget.dispatchEvent(events.create(id));
                   }),
                 ]}
               >

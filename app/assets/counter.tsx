@@ -2,7 +2,7 @@ import { clientEntry, on } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents.tsx";
 
 export const Counter = clientEntry(import.meta.url, function Counter(handle) {
-  let counterEvents = new CustomEvents<"countIncremented">();
+  let events = new CustomEvents<"countIncremented">();
   let count = 0,
     incrementOffset = 1;
   return () => (
@@ -10,10 +10,10 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle) {
       <button
         mix={on("click", ({ currentTarget }) => {
           count = count + incrementOffset;
-          currentTarget.dispatchEvent(counterEvents.countIncremented());
+          currentTarget.dispatchEvent(events.create("countIncremented"));
         })}
       >
-        <counterEvents.on.countIncremented render={() => count} />
+        <events.on.countIncremented render={() => count} />
       </button>
       <label>
         Increment by{" "}

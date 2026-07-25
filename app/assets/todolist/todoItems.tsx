@@ -1,7 +1,7 @@
 import { clientEntry, css, on, type Dispatched, type Handle } from "remix/ui";
 import { routes } from "../../routes.ts";
 import type { Todo } from "../../data/todolist.ts";
-import { todoEvents, type TodoActionDetail } from "./todoList.tsx";
+import { events, type TodoActionDetail } from "./todoList.tsx";
 
 const todoListCss = css({
   listStyleType: "none",
@@ -115,7 +115,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
     let opts = { composed: true };
     let actionDetail = getTodoActionDetail(formData);
     try {
-      form.dispatchEvent(todoEvents.actionSubmitted(actionDetail, opts));
+      form.dispatchEvent(events.create("actionSubmitted", actionDetail, opts));
       // await new Promise((res, rej) => setTimeout(rej, 25000, new Error('laude lag gaye')));
       let resp = await fetch(form.action, {
         method: "POST",
@@ -127,10 +127,10 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
         });
       }
       await handle.frame.reload();
-      form.dispatchEvent(todoEvents.actionSucceeded(actionDetail, opts));
+      form.dispatchEvent(events.create("actionSucceeded", actionDetail, opts));
     } catch (error) {
       form.dispatchEvent(
-        todoEvents.actionErrored({ error: error as Error }, opts),
+        events.create("actionErrored", { error: error as Error }, opts),
       );
     }
   };
@@ -142,9 +142,9 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolist.todos.action.href()}
-            mix={todoEvents.host()}
+            mix={events.host()}
           >
-            <todoEvents.on.change
+            <events.on.change
               render={(changeEvent) => (
                 <button
                   mix={[todoActionButtonCss, deleteTodoButtonCss]}
@@ -167,7 +167,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           </form>
           <form
             mix={[
-              todoEvents.host({
+              events.host({
                 actionErrored({ currentTarget }) {
                   currentTarget.reset();
                 },
@@ -187,7 +187,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           >
             <button hidden name="intent" value="update" />
             <input hidden name="id" value={id} />
-            <todoEvents.on.change
+            <events.on.change
               render={(changeEvent) => (
                 <input
                   mix={[editTodoInputCss]}
@@ -208,11 +208,11 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolist.todos.action.href()}
-            mix={todoEvents.host()}
+            mix={events.host()}
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
-            <todoEvents.on.change
+            <events.on.change
               render={(changeEvent) => (
                 <button
                   disabled={

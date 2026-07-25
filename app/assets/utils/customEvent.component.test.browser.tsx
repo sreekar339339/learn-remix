@@ -56,7 +56,7 @@ class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map
   constructor(initial: Partial<AppContextValue>) {
     super();
     this.#value = initial as AppContextValue;
-    this.events.seed(this.events.change(initial));
+    this.events.seed(this.events.create(initial));
   }
 
   get value(): AppContextValue {
@@ -65,11 +65,11 @@ class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map
 
   patch(value: Partial<AppContextValue>) {
     Object.assign(this.#value, value);
-    this.dispatchEvent(this.events.change(value));
+    this.dispatchEvent(this.events.create(value));
   }
 }
 
-let gestureEvents = new GestureEvents();
+let events = new GestureEvents();
 
 const gestureMixin = Object.assign(createMixin<HTMLElement>((handle) => {
   let target: HTMLElement | null = null;
@@ -84,24 +84,24 @@ const gestureMixin = Object.assign(createMixin<HTMLElement>((handle) => {
       mix={[
         on("pointerdown", ({ currentTarget, pointerId }, signal) => {
           currentTarget.dispatchEvent(
-            gestureEvents.activated({ pointerId: pointerId }, { signal }),
+            events.create("activated", { pointerId: pointerId }, { signal }),
           );
         }),
         on("pointermove", ({ currentTarget, clientX, clientY }, signal) => {
           currentTarget.dispatchEvent(
-            gestureEvents.moved({ x: clientX, y: clientY }, { signal }),
+            events.create("moved", { x: clientX, y: clientY }, { signal }),
           );
         }),
         on("pointerup", ({ currentTarget }, signal) => {
-          currentTarget.dispatchEvent(gestureEvents.released(null, { signal }));
+          currentTarget.dispatchEvent(events.create("released", null, { signal }));
         }),
       ]}
     />
   );
-}), gestureEvents);
+}), events);
 
 function GesturePad(handle: Handle) {
-  let events: GestureEvents["map"]["change"]["detail"][] = [];
+  let eventLog: GestureEvents["map"]["change"]["detail"][] = [];
 
   return () => (
     <button
@@ -110,50 +110,49 @@ function GesturePad(handle: Handle) {
       mix={[
         gestureMixin(),
         gestureMixin.on('change', ({ detail }) => {
-          events.push(detail);
+          eventLog.push(detail);
           handle.update();
         }),
       ]}
     >
-      <pre>{JSON.stringify(events, null, 2)}</pre>
+      <pre>{JSON.stringify(eventLog, null, 2)}</pre>
     </button>
   );
 }
 
 class TestPlayer extends TypedEventTarget<PlayerEvents["map"]> {
   #track: string | null = null;
-  events: PlayerEvents;
+  events =  new PlayerEvents({host: this});
 
   constructor(signal: AbortSignal) {
     super();
-    this.events = new PlayerEvents({host: this, signal});
   }
 
   load(track: string) {
     this.#track = track;
     this.dispatchEvent(
-      this.events.change({ loaded: { track }, played: { track } }),
+      this.events.create({ loaded: { track }, played: { track } }),
     );
   }
 
   play() {
     if (!this.#track) return;
-    this.dispatchEvent(this.events.played({ track: this.#track }));
+    this.dispatchEvent(this.events.create("played", { track: this.#track }));
   }
 
   stop() {
-    this.dispatchEvent(this.events.stopped());
+    this.dispatchEvent(this.events.create("stopped"));
   }
 }
 
 function PlayerUI(handle: Handle) {
   let player = new TestPlayer(handle.signal);
-  let events: PlayerEvents["map"]["change"]["detail"][] = [];
+  let eventLog: PlayerEvents["map"]["change"]["detail"][] = [];
 
   player.addEventListener(
     "change",
     (({ detail }: PlayerEvents["map"]["change"]) => {
-      events.push(detail);
+      eventLog.push(detail);
       handle.update();
     }) as EventListener,
     { signal: handle.signal },
@@ -166,7 +165,7 @@ function PlayerUI(handle: Handle) {
   return () => (
     <>
       <output data-testid="player-events">
-        <pre>{JSON.stringify(events, null, 2)}</pre>
+        <pre>{JSON.stringify(eventLog, null, 2)}</pre>
       </output>
       <button
         data-testid="load-button"
@@ -210,17 +209,17 @@ function ScopedActionForms(handle: Handle) {
     event.preventDefault();
     let form = event.currentTarget;
 
-    form.dispatchEvent(events.actionSubmitted(null, { signal }));
+    form.dispatchEvent(events.create("actionSubmitted", null, { signal }));
 
     if (form.dataset.result === "error") {
       form.dispatchEvent(
-        events.actionErrored(
+        events.create("actionErrored",
           { error: new Error("Could not save") },
           { signal },
         ),
       );
     } else {
-      form.dispatchEvent(events.actionSucceeded(null, { signal }));
+      form.dispatchEvent(events.create("actionSucceeded", null, { signal }));
     }
   };
 
@@ -253,8 +252,8 @@ function ScopedActionForms(handle: Handle) {
 }
 
 function SearchForm(handle: Handle<Props<"div">>) {
-  let searchEvents = new SearchEvents();
-  searchEvents.seed(searchEvents.idle());
+  let events = new SearchEvents();
+  events.seed(events.create("idle"));
 
   let fetchBooks = async (
     query: string,
@@ -270,12 +269,12 @@ function SearchForm(handle: Handle<Props<"div">>) {
       let data = await resp.json();
       if (!Array.isArray(data.books) || data.books.length === 0) {
         return input.dispatchEvent(
-          searchEvents.booksNotFound({ reason: "emptyList" }, opts),
+          events.create("booksNotFound", { reason: "emptyList" }, opts),
         );
       }
-      input.dispatchEvent(searchEvents.booksFound({ books: data.books }, opts));
+      input.dispatchEvent(events.create("booksFound", { books: data.books }, opts));
     } catch (error) {
-      input.dispatchEvent(searchEvents.errorOccurred(error as Error, opts));
+      input.dispatchEvent(events.create("errorOccurred", error as Error, opts));
     }
   };
 
@@ -289,8 +288,8 @@ function SearchForm(handle: Handle<Props<"div">>) {
           let query = input?.value.trim() ?? "";
           form.dispatchEvent(
             query
-              ? searchEvents.querySubmitted({ query })
-              : searchEvents.idle(),
+              ? events.create("querySubmitted", { query })
+              : events.create("idle"),
           );
         })}
       >
@@ -302,11 +301,11 @@ function SearchForm(handle: Handle<Props<"div">>) {
               let query = input.value.trim();
               input.dispatchEvent(
                 query
-                  ? searchEvents.querySubmitted({ query })
-                  : searchEvents.idle(),
+                  ? events.create("querySubmitted", { query })
+                  : events.create("idle"),
               );
             }),
-            searchEvents.on("change", ({ currentTarget, detail }, signal) => {
+            events.on("change", ({ currentTarget, detail }, signal) => {
               if (detail.event?.type === "querySubmitted") {
                 return void fetchBooks(
                   detail.event.detail.query,
@@ -319,7 +318,7 @@ function SearchForm(handle: Handle<Props<"div">>) {
         />
         <button>Search</button>
       </form>
-      <searchEvents.on.change
+      <events.on.change
         render={(event) => (
           <output>
             <pre>{JSON.stringify(event?.detail, null, 2)}</pre>

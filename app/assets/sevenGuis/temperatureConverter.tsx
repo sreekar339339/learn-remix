@@ -37,7 +37,7 @@ export const SevenGuisTemperatureConverter = clientEntry(
                       number * (9 / 5) + 32,
                     );
                     currentTarget.dispatchEvent(
-                      events.temperatureConverted(),
+                      events.create("temperatureConverted"),
                     );
                   }),
                 ]}
@@ -57,7 +57,7 @@ export const SevenGuisTemperatureConverter = clientEntry(
                     );
                     temperature.fahrenheit = value;
                     currentTarget.dispatchEvent(
-                      events.temperatureConverted(),
+                      events.create("temperatureConverted"),
                     );
                   }),
                 ]}

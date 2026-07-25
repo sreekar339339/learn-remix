@@ -7,7 +7,7 @@ import {
   type Props,
 } from "remix/ui";
 import { routes } from "../../routes.ts";
-import { todoEvents } from "./todoList.tsx";
+import { events } from "./todoList.tsx";
 
 export function AddTodo(handle: Handle<Props<"form">>) {
   let onSubmit = async (
@@ -22,7 +22,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     formData.set("redirectTo", "none");
     let opts = { composed: true, signal };
     try {
-      form.dispatchEvent(todoEvents.actionSubmitted(null, opts));
+      form.dispatchEvent(events.create("actionSubmitted", null, opts));
       // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
       let resp = await fetch(new URL(form.action), {
         method: "POST",
@@ -35,10 +35,10 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         });
       }
       await handle.frames.get("TodoItems")!.reload();
-      form.dispatchEvent(todoEvents.actionSucceeded(null, opts));
+      form.dispatchEvent(events.create("actionSucceeded", null, opts));
     } catch (error) {
       form.dispatchEvent(
-        todoEvents.actionErrored({ error: error as Error }, opts),
+        events.create("actionErrored", { error: error as Error }, opts),
       );
     }
   };
@@ -50,7 +50,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       mix={[
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
-        todoEvents.host({
+        events.host({
           actionSucceeded({ currentTarget }) {
             currentTarget.reset();
           },
@@ -59,7 +59,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     >
       <label>
         Enter a todo{" "}
-        <todoEvents.on.change
+        <events.on.change
           render={(changeEvent) => (
             <input
               disabled={changeEvent?.detail.event?.type === "actionSubmitted"}
@@ -70,7 +70,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
               }
               mix={[
                 inputCss,
-                todoEvents.on("change", ({ currentTarget, detail }) => {
+                events.on("change", ({ currentTarget, detail }) => {
                   if (detail.event?.type !== "actionSubmitted") {
                     currentTarget.select();
                   }

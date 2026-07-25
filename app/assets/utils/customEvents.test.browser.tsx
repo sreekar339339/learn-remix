@@ -17,32 +17,34 @@ class PanelEvents extends CustomEvents<
 
 describe("CustomEvents", () => {
   it("accepts a string union for null-detail event signals", async (t) => {
-    let panelEvents = new PanelEvents();
+    let events = new PanelEvents();
 
     if (false) {
       // @ts-expect-error - null-detail batch names must be unique.
-      panelEvents.change(["listUpdated", "listUpdated"]);
+      events.create(["listUpdated", "listUpdated"]);
+      // @ts-expect-error - product events are created through create(...).
+      events.listUpdated();
     }
 
     assert.throws(
-      () => panelEvents.change(["listUpdated", "listUpdated"] as never),
+      () => events.create(["listUpdated", "listUpdated"] as never),
       /duplicate event names/,
     );
 
     function Panel() {
       return () => (
-        <section mix={panelEvents.host()}>
+        <section mix={events.host()}>
           <button
             type="button"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                panelEvents.change(["listUpdated", "editorUpdated"]),
+                events.create(["listUpdated", "editorUpdated"]),
               );
             })}
           >
             Refresh
           </button>
-          <panelEvents.on.editorUpdated
+          <events.on.editorUpdated
             render={(event) => (
               <output data-testid="editor-status">
                 {event ? "Updated" : "Idle"}
@@ -64,7 +66,7 @@ describe("CustomEvents", () => {
   });
 
   it("listens to same-element events through descriptor-owned on()", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutButton(handle: Handle) {
       return () => (
@@ -72,7 +74,7 @@ describe("CustomEvents", () => {
           type="button"
           data-testid="checkout-button"
           mix={[
-            checkoutEvents.on(
+            events.on(
               "submitted",
               ({ currentTarget, detail, target }) => {
                 currentTarget.dataset.submittedId = detail.id;
@@ -84,14 +86,14 @@ describe("CustomEvents", () => {
                 );
               },
             ),
-            checkoutEvents.on("change", ({ currentTarget, target }) => {
+            events.on("change", ({ currentTarget, target }) => {
               currentTarget.dataset.changeTargetIsButton = String(
                 target === currentTarget,
               );
             }),
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "button-order" }),
+                events.create("submitted", { id: "button-order" }),
               );
             }),
           ]}
@@ -116,7 +118,7 @@ describe("CustomEvents", () => {
   });
 
   it("forwards sibling DOM events through descriptor-owned on()", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutPanel(handle: Handle) {
       return () => (
@@ -126,7 +128,7 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "summary-order" }),
+                events.create("submitted", { id: "summary-order" }),
               );
             })}
           >
@@ -134,7 +136,7 @@ describe("CustomEvents", () => {
           </button>
           <output
             data-testid="checkout-status"
-            mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+            mix={events.on("change", ({ currentTarget, detail }) => {
               if (detail.event?.type !== "submitted") {
                 return;
               }
@@ -163,7 +165,7 @@ describe("CustomEvents", () => {
   });
 
   it("listens with descriptor-owned on() without naming the generated event", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutPanel(handle: Handle) {
       return () => (
@@ -173,7 +175,7 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "shortcut-order" }),
+                events.create("submitted", { id: "shortcut-order" }),
               );
             })}
           >
@@ -182,12 +184,12 @@ describe("CustomEvents", () => {
           <output
             data-testid="checkout-status"
             mix={[
-              checkoutEvents.on("submitted", ({ currentTarget, detail }) => {
+              events.on("submitted", ({ currentTarget, detail }) => {
                 currentTarget.textContent = detail.id;
                 currentTarget.dataset.hostTag =
                   currentTarget.tagName.toLowerCase();
               }),
-              checkoutEvents.on("paid", ({ currentTarget, detail }) => {
+              events.on("paid", ({ currentTarget, detail }) => {
                 currentTarget.dataset.paidDetail = String(detail);
               }),
             ]}
@@ -214,7 +216,7 @@ describe("CustomEvents", () => {
   });
 
   it("catches same-element events dispatched from a later ref on mount", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutSearch(handle: Handle) {
       return () => (
@@ -222,9 +224,9 @@ describe("CustomEvents", () => {
           data-testid="checkout-search"
           mix={[
             on("input", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(checkoutEvents.paid());
+              currentTarget.dispatchEvent(events.create("paid"));
             }),
-            checkoutEvents.on("change", ({ currentTarget, detail }) => {
+            events.on("change", ({ currentTarget, detail }) => {
               if (!detail.event) return;
               currentTarget.dataset.latestEvent = detail.event.type;
             }),
@@ -245,7 +247,7 @@ describe("CustomEvents", () => {
   });
 
   it("renders from seed and later custom events without mirrored component state", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutSummary(handle: Handle) {
       return () => (
@@ -255,22 +257,22 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "rendered-order" }),
+                events.create("submitted", { id: "rendered-order" }),
               );
             })}
           >
             Submit
           </button>
-          <checkoutEvents.on.submitted
-            seed={checkoutEvents.submitted({ id: "initial-order" })}
+          <events.on.submitted
+            seed={events.create("submitted", { id: "initial-order" })}
             render={({ detail }) => (
               <output data-testid="checkout-summary">
                 {detail.id}
               </output>
             )}
           />
-          <checkoutEvents.on.change
-            seed={checkoutEvents.submitted({ id: "initial-order" })}
+          <events.on.change
+            seed={events.create("submitted", { id: "initial-order" })}
             render={({ detail }) => {
               let text =
                 detail.event?.type === "submitted"
@@ -308,7 +310,7 @@ describe("CustomEvents", () => {
   });
 
   it("runs event-component-scoped listeners after the event render commits", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutStatus(handle: Handle) {
       return () => (
@@ -318,7 +320,7 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "pending-order" }),
+                events.create("submitted", { id: "pending-order" }),
               );
             })}
           >
@@ -328,17 +330,17 @@ describe("CustomEvents", () => {
             type="button"
             data-testid="pay-checkout"
             mix={on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(checkoutEvents.paid());
+              currentTarget.dispatchEvent(events.create("paid"));
             })}
           >
             Pay
           </button>
-          <checkoutEvents.on.change
+          <events.on.change
             render={(event) => (
               <input
                 data-testid="checkout-input"
                 disabled={event?.detail.event?.type === "submitted"}
-                mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+                mix={events.on("change", ({ currentTarget, detail }) => {
                   if (detail.event?.type !== "paid") return;
                   currentTarget.dataset.disabledWhenPaid = String(
                     currentTarget.disabled,
@@ -385,7 +387,7 @@ describe("CustomEvents", () => {
       focus: { cellId: number };
     };
     class GameEvents extends CustomEvents<GameDetails> {}
-    let gameEvents = new GameEvents();
+    let events = new GameEvents();
 
     function GameBoard(handle: Handle) {
       return () => (
@@ -395,7 +397,7 @@ describe("CustomEvents", () => {
             data-testid="reset-game"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                gameEvents.change({
+                events.create({
                   focus: { cellId: 0 },
                   turn: { locked: false },
                 }),
@@ -404,14 +406,14 @@ describe("CustomEvents", () => {
           >
             Reset
           </button>
-          <gameEvents.on.turn
-            seed={gameEvents.turn({ locked: true })}
+          <events.on.turn
+            seed={events.create("turn", { locked: true })}
             render={({ detail }) => (
               <button
                 type="button"
                 data-testid="game-cell"
                 disabled={detail.locked}
-                mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+                mix={events.on("focus", ({ currentTarget, detail }) => {
                   if (detail.cellId !== 0) return;
                   currentTarget.dataset.disabledWhenFocused = String(
                     currentTarget.disabled,
@@ -450,7 +452,7 @@ describe("CustomEvents", () => {
       focus: { cellId: number };
     };
     class GameEvents extends CustomEvents<GameDetails> {}
-    let gameEvents = new GameEvents();
+    let events = new GameEvents();
 
     function GameBoard(handle: Handle) {
       return () => (
@@ -459,19 +461,19 @@ describe("CustomEvents", () => {
             type="button"
             data-testid="focus-game"
             mix={on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(gameEvents.focus({ cellId: 0 }));
+              currentTarget.dispatchEvent(events.create("focus", { cellId: 0 }));
             })}
           >
             Focus
           </button>
-          <gameEvents.on.turn
-            seed={gameEvents.turn({ locked: true })}
+          <events.on.turn
+            seed={events.create("turn", { locked: true })}
             render={({ detail }) => (
               <button
                 type="button"
                 data-testid="game-cell"
                 disabled={detail.locked}
-                mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+                mix={events.on("focus", ({ currentTarget, detail }) => {
                   if (detail.cellId !== 0) return;
                   currentTarget.dataset.disabledWhenFocused = String(
                     currentTarget.disabled,
@@ -503,7 +505,7 @@ describe("CustomEvents", () => {
   });
 
   it("does not run stale event-component-scoped listeners for replaced nodes", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutStatus(handle: Handle) {
       return () => (
@@ -512,20 +514,20 @@ describe("CustomEvents", () => {
             type="button"
             data-testid="pay-checkout"
             mix={on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(checkoutEvents.paid());
+              currentTarget.dispatchEvent(events.create("paid"));
             })}
           >
             Pay
           </button>
-          <checkoutEvents.on.change
-            seed={checkoutEvents.submitted({ id: "pending-order" })}
+          <events.on.change
+            seed={events.create("submitted", { id: "pending-order" })}
             render={({ detail }) =>
               detail.event?.type === "paid" ? (
                 <output data-testid="paid-output">Paid</output>
               ) : (
                 <input
                   data-testid="stale-checkout-input"
-                  mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+                  mix={events.on("change", ({ currentTarget, detail }) => {
                     if (detail.event?.type === "paid") {
                       currentTarget.dataset.stalePaidCall = "true";
                     }
@@ -553,17 +555,17 @@ describe("CustomEvents", () => {
   });
 
   it("does not fire event-component-scoped listeners for render-only seed", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutStatus(handle: Handle) {
       return () => (
-        <checkoutEvents.on.submitted
-          seed={checkoutEvents.submitted({ id: "seed-order" })}
+        <events.on.submitted
+          seed={events.create("submitted", { id: "seed-order" })}
           render={({ detail }) => (
             <input
               data-testid="seeded-checkout-input"
               value={detail.id}
-              mix={checkoutEvents.on("submitted", ({ currentTarget }) => {
+              mix={events.on("submitted", ({ currentTarget }) => {
                 currentTarget.dataset.seedListenerCall = "true";
               })}
             />
@@ -583,7 +585,7 @@ describe("CustomEvents", () => {
   });
 
   it("renders with a null event before the first seed or matching event", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutSummary(handle: Handle) {
       return () => (
@@ -593,13 +595,13 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({ id: "first-order" }),
+                events.create("submitted", { id: "first-order" }),
               );
             })}
           >
             Submit
           </button>
-          <checkoutEvents.on.submitted
+          <events.on.submitted
             render={(event) => (
               <output data-testid="checkout-summary">
                 {event ? event.detail.id : "No checkout yet"}
@@ -629,10 +631,10 @@ describe("CustomEvents", () => {
 
   it("accepts constructor host option and explicit seed", async (t) => {
     let terminal = new EventTarget();
-    let checkoutEvents = new CheckoutEvents({
+    let events = new CheckoutEvents({
       host: terminal,
     });
-    checkoutEvents.seed(checkoutEvents.submitted({ id: "seeded-order" }));
+    events.seed(events.create("submitted", { id: "seeded-order" }));
 
     function CheckoutTerminalSummary(handle: Handle) {
       return () => (
@@ -642,13 +644,13 @@ describe("CustomEvents", () => {
             data-testid="terminal-submit"
             mix={on("click", () => {
               terminal.dispatchEvent(
-                checkoutEvents.submitted({ id: "submitted-order" }),
+                events.create("submitted", { id: "submitted-order" }),
               );
             })}
           >
             Submit
           </button>
-          <checkoutEvents.on.submitted
+          <events.on.submitted
             render={(event) => (
               <output data-testid="terminal-summary">
                 {event?.detail.id ?? "idle"}
@@ -677,26 +679,26 @@ describe("CustomEvents", () => {
   });
 
   it("uses host boundaries for isolated rows and composed events for escape", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutRows(handle: Handle) {
       return () => (
         <section
           data-testid="checkout-root"
-          mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+          mix={events.on("change", ({ currentTarget, detail }) => {
             if (detail.event?.type !== "submitted") {
               return;
             }
             currentTarget.dataset.latestOrder = detail.event.detail.id;
           })}
         >
-          <form data-testid="checkout-row" mix={checkoutEvents.host()}>
+          <form data-testid="checkout-row" mix={events.host()}>
             <button
               type="button"
               data-testid="local-submit"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  checkoutEvents.submitted({ id: "local-order" }),
+                  events.create("submitted", { id: "local-order" }),
                 );
               })}
             >
@@ -707,7 +709,7 @@ describe("CustomEvents", () => {
               data-testid="composed-submit"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  checkoutEvents.submitted(
+                  events.create("submitted",
                     { id: "composed-order" },
                     { composed: true },
                   ),
@@ -740,7 +742,7 @@ describe("CustomEvents", () => {
   });
 
   it("lets host listeners project resolved events into a local model", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
     let latestChange: CheckoutEvents["map"]["change"]["detail"] | undefined;
     let latestEvents: Partial<CheckoutDetails> = {};
     let submittedId: string | undefined;
@@ -750,7 +752,7 @@ describe("CustomEvents", () => {
       return () => (
         <section
           data-testid="checkout-host"
-          mix={checkoutEvents.host({
+          mix={events.host({
             change({ detail }) {
               latestChange = detail;
               Object.assign(latestEvents, detail.events ?? {
@@ -768,7 +770,7 @@ describe("CustomEvents", () => {
             data-testid="checkout-patch"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.change({
+                events.create({
                   submitted: { id: "aggregate-order" },
                   paid: null,
                 }),
@@ -806,9 +808,9 @@ describe("CustomEvents", () => {
       incrementOffset: number;
     };
     class CounterEvents extends CustomEvents<CounterDetails> {}
-    let counterEvents = new CounterEvents();
-    counterEvents.seed(
-      counterEvents.change({
+    let events = new CounterEvents();
+    events.seed(
+      events.create({
         count: 0,
         incrementOffset: 2,
       }),
@@ -816,18 +818,18 @@ describe("CustomEvents", () => {
 
     function Counter(handle: Handle) {
       return () => (
-        <section data-testid="counter-host" mix={counterEvents.host()}>
+        <section data-testid="counter-host" mix={events.host()}>
           <button
             type="button"
             data-testid="increment-counter"
             mix={[
-              counterEvents.on("count", ({ currentTarget, detail }) => {
+              events.on("count", ({ currentTarget, detail }) => {
                 currentTarget.dataset.detailType = typeof detail;
                 currentTarget.dataset.count = String(detail);
               }),
               on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  counterEvents.count((count, { incrementOffset }) => {
+                  events.create("count", (count, { incrementOffset }) => {
                     return (
                       (count ?? 0) +
                       (incrementOffset ?? 1)
@@ -858,23 +860,23 @@ describe("CustomEvents", () => {
 
   it("cancels a resolver dispatch when its callback returns undefined", async (t) => {
     class CounterEvents extends CustomEvents<{ count: number }> {}
-    let counterEvents = new CounterEvents();
+    let events = new CounterEvents();
 
     function Counter(handle: Handle) {
       return () => (
-        <section data-testid="counter-host" mix={counterEvents.host()}>
+        <section data-testid="counter-host" mix={events.host()}>
           <button
             type="button"
             data-testid="cancel-count"
             mix={[
-              counterEvents.on("count", ({ currentTarget }) => {
+              events.on("count", ({ currentTarget }) => {
                 currentTarget.dataset.countEvent = "received";
               }),
-              counterEvents.on("change", ({ currentTarget }) => {
+              events.on("change", ({ currentTarget }) => {
                 currentTarget.dataset.changeEvent = "received";
               }),
               on("click", ({ currentTarget }) => {
-                currentTarget.dispatchEvent(counterEvents.count(() => undefined));
+                currentTarget.dispatchEvent(events.create("count", () => undefined));
               }),
             ]}
           >
@@ -901,18 +903,18 @@ describe("CustomEvents", () => {
       incrementOffset: number;
     };
     class CounterEvents extends CustomEvents<CounterDetails> {}
-    let counterEvents = new CounterEvents();
+    let events = new CounterEvents();
 
     function CounterList(handle: Handle) {
       return () => (
         <>
-          <section data-testid="slow-host" mix={counterEvents.host()}>
+          <section data-testid="slow-host" mix={events.host()}>
             <button
               type="button"
               data-testid="slow-seed"
               mix={ref((button) => {
                 button.dispatchEvent(
-                  counterEvents.change({
+                  events.create({
                     count: 0,
                     incrementOffset: 2,
                   }),
@@ -925,12 +927,12 @@ describe("CustomEvents", () => {
               type="button"
               data-testid="slow-increment"
               mix={[
-                counterEvents.on("count", ({ currentTarget, detail }) => {
+                events.on("count", ({ currentTarget, detail }) => {
                   currentTarget.dataset.count = String(detail);
                 }),
                 on("click", ({ currentTarget }) => {
                   currentTarget.dispatchEvent(
-                    counterEvents.count(
+                    events.create("count",
                       (count, { incrementOffset }) =>
                         (count ?? 0) +
                         (incrementOffset ?? 1),
@@ -942,13 +944,13 @@ describe("CustomEvents", () => {
               Increment
             </button>
           </section>
-          <section data-testid="fast-host" mix={counterEvents.host()}>
+          <section data-testid="fast-host" mix={events.host()}>
             <button
               type="button"
               data-testid="fast-seed"
               mix={ref((button) => {
                 button.dispatchEvent(
-                  counterEvents.change({
+                  events.create({
                     count: 0,
                     incrementOffset: 5,
                   }),
@@ -961,12 +963,12 @@ describe("CustomEvents", () => {
               type="button"
               data-testid="fast-increment"
               mix={[
-                counterEvents.on("count", ({ currentTarget, detail }) => {
+                events.on("count", ({ currentTarget, detail }) => {
                   currentTarget.dataset.count = String(detail);
                 }),
                 on("click", ({ currentTarget }) => {
                   currentTarget.dispatchEvent(
-                    counterEvents.count(
+                    events.create("count",
                       (count, { incrementOffset }) =>
                         (count ?? 0) +
                         (incrementOffset ?? 1),
@@ -1007,9 +1009,9 @@ describe("CustomEvents", () => {
       focus: { cellId: number };
     };
     class GameEvents extends CustomEvents<GameDetails> {}
-    let gameEvents = new GameEvents();
-    gameEvents.seed(
-      gameEvents.change({
+    let events = new GameEvents();
+    events.seed(
+      events.create({
         turn: { nextPlayer: "X", moves: 0 },
         focus: { cellId: 0 },
       }),
@@ -1017,13 +1019,13 @@ describe("CustomEvents", () => {
 
     function GameControls(handle: Handle) {
       return () => (
-        <section data-testid="game-host" mix={gameEvents.host()}>
+        <section data-testid="game-host" mix={events.host()}>
           <button
             type="button"
             data-testid="play-turn"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                gameEvents.change(({ turn }, change, { target }) => {
+                events.create(({ turn }, change, { target }) => {
                   currentTarget.dataset.resolverTargetIsButton = String(
                     target === currentTarget,
                   );
@@ -1042,13 +1044,13 @@ describe("CustomEvents", () => {
           </button>
           <output
             data-testid="turn-output"
-            mix={gameEvents.on("turn", ({ currentTarget, detail }) => {
+            mix={events.on("turn", ({ currentTarget, detail }) => {
               currentTarget.textContent = `${detail.nextPlayer}:${detail.moves}`;
             })}
           />
           <output
             data-testid="focus-output"
-            mix={gameEvents.on("focus", ({ currentTarget, detail }) => {
+            mix={events.on("focus", ({ currentTarget, detail }) => {
               currentTarget.textContent = String(detail.cellId);
             })}
           />
@@ -1075,7 +1077,7 @@ describe("CustomEvents", () => {
   });
 
   it("expands batch change events into single product events", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutBatch(handle: Handle) {
       return () => (
@@ -1085,7 +1087,7 @@ describe("CustomEvents", () => {
             data-testid="checkout-batch"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.change({
+                events.create({
                   submitted: { id: "batched-order" },
                   paid: null,
                 }),
@@ -1096,13 +1098,13 @@ describe("CustomEvents", () => {
           </button>
           <output
             data-testid="submitted-listener"
-            mix={checkoutEvents.on("submitted", ({ currentTarget, detail }) => {
+            mix={events.on("submitted", ({ currentTarget, detail }) => {
               currentTarget.textContent = detail.id;
             })}
           />
           <output
             data-testid="paid-listener"
-            mix={checkoutEvents.on("paid", ({ currentTarget, detail }) => {
+            mix={events.on("paid", ({ currentTarget, detail }) => {
               currentTarget.textContent = String(detail);
             })}
           />
@@ -1128,7 +1130,7 @@ describe("CustomEvents", () => {
   });
 
   it("ignores manually created events that reuse descriptor types", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
+    let events = new CheckoutEvents();
 
     function CheckoutButton(handle: Handle) {
       return () => (
@@ -1136,12 +1138,12 @@ describe("CustomEvents", () => {
           type="button"
           data-testid="fake-checkout"
           mix={[
-            checkoutEvents.on("change", ({ currentTarget }) => {
+            events.on("change", ({ currentTarget }) => {
               currentTarget.dataset.changed = "true";
             }),
             on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                new CustomEvent(checkoutEvents.types.submitted, {
+                new CustomEvent(events.types.submitted, {
                   bubbles: true,
                   detail: { id: "fake-order" },
                 }),
@@ -1170,7 +1172,7 @@ describe("CustomEvents", () => {
       events = new TerminalEvents({host: this});
 
       submit() {
-        this.dispatchEvent(this.events.submitted({ id: "terminal-order" }));
+        this.dispatchEvent(this.events.create("submitted", { id: "terminal-order" }));
       }
     }
 
@@ -1212,24 +1214,24 @@ describe("CustomEvents", () => {
   });
 
   it("keeps descriptor event types separate for different instances", () => {
-    let firstCheckoutEvents = new CheckoutEvents();
-    let secondCheckoutEvents = new CheckoutEvents();
+    let firstEvents = new CheckoutEvents();
+    let secondEvents = new CheckoutEvents();
 
     assert.notEqual(
-      firstCheckoutEvents.types.submitted,
-      secondCheckoutEvents.types.submitted,
+      firstEvents.types.submitted,
+      secondEvents.types.submitted,
     );
   });
 
   it("removes stale window listeners and recreates them on later dispatches", async (t) => {
-    let checkoutEvents = new CheckoutEvents();
-    let submittedName = checkoutEvents.types.submitted;
-    let changeName = checkoutEvents.types.change;
+    let events = new CheckoutEvents();
+    let submittedName = events.types.submitted;
+    let changeName = events.types.change;
 
     t.after(() => {
       __customEventsTest.removeWindowListener(submittedName);
       __customEventsTest.removeWindowListener(changeName);
-      __customEventsTest.removeWindowListener(checkoutEvents.types.paid);
+      __customEventsTest.removeWindowListener(events.types.paid);
     });
 
     assert.equal(__customEventsTest.hasWindowListener(submittedName), false);
@@ -1243,7 +1245,7 @@ describe("CustomEvents", () => {
             data-testid="submit-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.submitted({
+                events.create("submitted", {
                   id: currentTarget.dataset.orderId!,
                 }),
               );
@@ -1256,7 +1258,7 @@ describe("CustomEvents", () => {
             data-testid="patch-checkout"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                checkoutEvents.change({
+                events.create({
                   submitted: {
                     id: currentTarget.dataset.orderId!,
                   },
@@ -1269,7 +1271,7 @@ describe("CustomEvents", () => {
           </button>
           <output
             data-testid="checkout-status"
-            mix={checkoutEvents.on("change", ({ currentTarget, detail }) => {
+            mix={events.on("change", ({ currentTarget, detail }) => {
               if (detail.event?.type === "submitted") {
                 currentTarget.textContent = detail.event.detail.id;
               }
@@ -1277,7 +1279,7 @@ describe("CustomEvents", () => {
           />
           <output
             data-testid="paid-status"
-            mix={checkoutEvents.on("paid", ({ currentTarget, detail }) => {
+            mix={events.on("paid", ({ currentTarget, detail }) => {
               currentTarget.textContent = String(detail);
             })}
           />

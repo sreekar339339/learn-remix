@@ -38,7 +38,7 @@ async function fetchBooks(
     let json = await response.json();
     if (!("docs" in json)) {
       return input.dispatchEvent(
-        events.booksNotFound(
+        events.create("booksNotFound",
           { reason: { other: json.detail[0].msg } },
           opts,
         ),
@@ -47,11 +47,11 @@ async function fetchBooks(
     let books = json.docs as Array<Book>;
     input.dispatchEvent(
       books.length
-        ? events.booksFound(books, opts)
-        : events.booksNotFound({ reason: "emptyList" }, opts),
+        ? events.create("booksFound", books, opts)
+        : events.create("booksNotFound", { reason: "emptyList" }, opts),
     );
   } catch (error) {
-    input.dispatchEvent(events.errorOccurred(error as Error, opts));
+    input.dispatchEvent(events.create("errorOccurred", error as Error, opts));
   }
 }
 
@@ -61,8 +61,8 @@ export const SearchBooksWithoutFrame = clientEntry(
     let initialQuery = handle.props.initialQuery.trim();
     events.seed(
       initialQuery
-        ? events.querySubmitted({ query: initialQuery })
-        : events.queryEmpty(),
+        ? events.create("querySubmitted", { query: initialQuery })
+        : events.create("queryEmpty"),
     );
 
     return () => (
@@ -85,10 +85,10 @@ export const SearchBooksWithoutFrame = clientEntry(
                     let query = currentTarget.value.trim();
                     if (!query)
                       return void currentTarget.dispatchEvent(
-                        events.queryEmpty(),
+                        events.create("queryEmpty"),
                       );
                     currentTarget.dispatchEvent(
-                      events.querySubmitted({ query }),
+                      events.create("querySubmitted", { query }),
                     );
                     fetchBooks(query, currentTarget, signal);
                   }),

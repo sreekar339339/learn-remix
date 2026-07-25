@@ -6,7 +6,7 @@ type DraggableCustomEventDetail = {
   top: number;
 };
 
-let draggableEvents = new CustomEvents<{
+let events = new CustomEvents<{
   start: DraggableCustomEventDetail;
   end: DraggableCustomEventDetail;
 }>();
@@ -54,7 +54,7 @@ export const draggable_ = createMixin<
     pointerId = event.pointerId;
     element.setPointerCapture(event.pointerId);
     element.dispatchEvent(
-      draggableEvents.start({ left: startLeft, top: startTop }),
+      events.create("start", { left: startLeft, top: startTop }),
     );
     window.addEventListener("pointermove", moveDrag);
     window.addEventListener("pointerup", stopDrag);
@@ -76,7 +76,7 @@ export const draggable_ = createMixin<
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
     element.dispatchEvent(
-      draggableEvents.end({
+      events.create("end", {
         left: readPx(element.style.left),
         top: readPx(element.style.top),
       }),
@@ -97,8 +97,8 @@ export const draggable_ = createMixin<
   };
 });
 
-export const draggable: typeof draggable_ & typeof draggableEvents =
-  Object.assign(draggable_, draggableEvents);
+export const draggable: typeof draggable_ & typeof events =
+  Object.assign(draggable_, events);
 
 function DraggableCard() {
   return () => (
