@@ -16,7 +16,7 @@ import {
 import { createCustomEventsEventComponent, customEventsOnMixin } from "./remix.tsx";
 import type {
   CustomEventsConstructorOptions,
-  CustomEventsCreateFunction,
+  CustomEventsFactory,
   CustomEventsDescriptor,
   CustomEventsEventComponent,
   CustomEventsEventType,
@@ -203,7 +203,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     },
   }) as CustomEventsOnFunction<Events>;
 
-  let create = ((...args: Array<unknown>) => {
+  let events = ((...args: Array<unknown>) => {
     let [typeOrEvents, detailOrInit, maybeInit] = args as [
       string | Partial<Events> | readonly string[] | Function,
       unknown?,
@@ -224,11 +224,10 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         | ((latest: unknown) => Partial<Events>),
       detailOrInit as CustomEventsInit | undefined,
     );
-  }) as CustomEventsCreateFunction<Events>;
+  }) as CustomEventsFactory<Events>;
 
-  let descriptor = {
+  let descriptor = Object.assign(events, {
     map: undefined,
-    create,
     on,
     types,
     host(listeners = {}) {
@@ -237,7 +236,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         registerHostListeners(target, signal, listeners);
       });
     },
-  };
+  });
   if (options?.host) {
     registerHost(options.host, options.signal);
   }

@@ -52,7 +52,7 @@ export const SevenGuisCrud = clientEntry(
               inputCss,
               on("input", ({ currentTarget }) => {
                 model.prefix = currentTarget.value;
-                currentTarget.dispatchEvent(events.create("peopleListUpdated"));
+                currentTarget.dispatchEvent(events("peopleListUpdated"));
               }),
             ]}
           />
@@ -84,7 +84,7 @@ export const SevenGuisCrud = clientEntry(
                     model.draft.name = selected.name;
                     model.draft.surname = selected.surname;
                     currentTarget.dispatchEvent(
-                      events.create(["peopleListUpdated", "personEditorUpdated"]),
+                      events(["peopleListUpdated", "personEditorUpdated"]),
                     );
                   }),
                 ]}
@@ -110,7 +110,7 @@ export const SevenGuisCrud = clientEntry(
                       on("input", ({ currentTarget }) => {
                         model.draft.name = currentTarget.value;
                         currentTarget.dispatchEvent(
-                          events.create("personEditorUpdated"),
+                          events("personEditorUpdated"),
                         );
                       }),
                     ]}
@@ -126,7 +126,7 @@ export const SevenGuisCrud = clientEntry(
                       on("input", ({ currentTarget }) => {
                         model.draft.surname = currentTarget.value;
                         currentTarget.dispatchEvent(
-                          events.create("personEditorUpdated"),
+                          events("personEditorUpdated"),
                         );
                       }),
                     ]}
@@ -146,7 +146,7 @@ export const SevenGuisCrud = clientEntry(
                         model.selectedId = person.id;
                         model.nextId = person.id + 1;
                         currentTarget.dispatchEvent(
-                          events.create([
+                          events([
                             "peopleListUpdated",
                             "personEditorUpdated",
                           ]),
@@ -173,7 +173,7 @@ export const SevenGuisCrud = clientEntry(
                         person.name = model.draft.name;
                         person.surname = model.draft.surname;
                         currentTarget.dispatchEvent(
-                          events.create("peopleListUpdated"),
+                          events("peopleListUpdated"),
                         );
                       }),
                     ]}
@@ -195,7 +195,7 @@ export const SevenGuisCrud = clientEntry(
                         model.draft.name = "";
                         model.draft.surname = "";
                         currentTarget.dispatchEvent(
-                          events.create([
+                          events([
                             "peopleListUpdated",
                             "personEditorUpdated",
                           ]),

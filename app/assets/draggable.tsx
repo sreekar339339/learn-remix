@@ -54,7 +54,7 @@ export const draggable_ = createMixin<
     pointerId = event.pointerId;
     element.setPointerCapture(event.pointerId);
     element.dispatchEvent(
-      events.create("start", { left: startLeft, top: startTop }),
+      events("start", { left: startLeft, top: startTop }),
     );
     window.addEventListener("pointermove", moveDrag);
     window.addEventListener("pointerup", stopDrag);
@@ -76,7 +76,7 @@ export const draggable_ = createMixin<
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
     element.dispatchEvent(
-      events.create("end", {
+      events("end", {
         left: readPx(element.style.left),
         top: readPx(element.style.top),
       }),

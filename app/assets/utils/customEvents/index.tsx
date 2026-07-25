@@ -49,7 +49,7 @@ import type {
  * type Events = { progressAdvanced: null };
  *
  * model.progress += delta;
- * target.dispatchEvent(events.create("progressAdvanced"));
+ * target.dispatchEvent(events("progressAdvanced"));
  *
  * <events.on.progressAdvanced render={() => <output>{model.progress}</output>} />
  * ```
@@ -58,7 +58,7 @@ import type {
  * several null-detail signals when it refreshes independent regions together:
  *
  * ```tsx
- * target.dispatchEvent(events.create([
+ * target.dispatchEvent(events([
  *   "contentRefreshed",
  *   "historyRefreshed",
  * ]));
@@ -77,7 +77,7 @@ import type {
  * snapshot containing only the information that listener needs:
  *
  * ```tsx
- * target.dispatchEvent(events.create("documentSaved", { revision, savedAt }));
+ * target.dispatchEvent(events("documentSaved", { revision, savedAt }));
  * ```
  *
  * Use null-detail signals for tightly local coordination and self-contained
@@ -95,7 +95,7 @@ import type {
  * local update. Names such as `fieldEdited -> draftUpdated -> editorUpdated`
  * usually hide ordinary control flow. Keep the native handler and publish the
  * next useful projection directly. Use an array or detail map with
- * `events.create(...)` only when one transition genuinely changes several
+ * `events(...)` only when one transition genuinely changes several
  * projections atomically.
  *
  * When no useful fact, outcome, or independently consumed projection exists,
@@ -147,14 +147,14 @@ import type {
  * };
  *
  * // One transition updates two independently rendered regions.
- * target.dispatchEvent(events.create({
+ * target.dispatchEvent(events({
  *   navigationUpdated: nextNavigation,
  *   editorUpdated: nextEditor,
  * }));
  *
  * Extend it with an event-detail map, create one descriptor instance for the
  * component/object, then use normal `dispatchEvent(...)` everywhere. Event
- * `create(...)` creates product events, `on(...)` is the listener API, and
+ * Calling `events(...)` creates product events, `on(...)` is the listener API, and
  * `<events.on.someEvent render={...} />` renders from the latest event.
  * Name that local descriptor `events`. A domain-specific name belongs on a
  * reusable descriptor class, such as `class DrummerEvents extends
@@ -168,14 +168,14 @@ import type {
  * can update a component-local model, but the descriptor does not expose a
  * state-store API.
  *
- * A single dispatch can include several event details with `events.create(...)`.
+ * A single dispatch can include several event details with `events(...)`.
  * The descriptor expands that batch as one UI transaction. Event components
  * update first, then descriptor listeners rendered inside those event components
  * run on the committed DOM. This keeps common flows like “render an enabled
  * input, then select it” or “render a cell, then focus it” in event order
  * without extra component state.
  *
- * `create(...)` can also accept a callback detail when a small
+ * Calling `events(...)` can also accept a callback detail when a small
  * transition depends on the previous published detail. The callback runs during
  * descriptor processing, after the browser has established the real dispatch
  * target and nearest host. Descriptor `events.on(...)` listeners and event
@@ -190,7 +190,7 @@ import type {
  * }> {}
  *
  * let events = new DocumentEvents();
- * let initialDocument = events.create("documentSaved", {
+ * let initialDocument = events("documentSaved", {
  *   revision: 0,
  *   savedAt: new Date(),
  * });
@@ -207,7 +207,7 @@ import type {
  * </section>
  *
  * @example
- * button.dispatchEvent(events.create("revision", ({ revision }) => (
+ * button.dispatchEvent(events("revision", ({ revision }) => (
  *   (revision ?? 0) + 1
  * )));
  */

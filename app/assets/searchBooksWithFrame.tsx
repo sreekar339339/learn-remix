@@ -8,8 +8,8 @@ export const SearchBooksWithFrame = clientEntry(
     let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
     let initialChangeEvent = query
-      ? events.create({ querySubmitted: null })
-      : events.create({ queryEmpty: null });
+      ? events({ querySubmitted: null })
+      : events({ queryEmpty: null });
 
     return () => (
       <>
@@ -23,8 +23,8 @@ export const SearchBooksWithFrame = clientEntry(
               ).trim();
               evt.currentTarget.dispatchEvent(
                 query
-                  ? events.create("querySubmitted")
-                  : events.create("queryEmpty"),
+                  ? events("querySubmitted")
+                  : events("queryEmpty"),
               );
             }),
           ]}

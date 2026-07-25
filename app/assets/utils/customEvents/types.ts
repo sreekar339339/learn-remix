@@ -7,9 +7,9 @@ import {
 // Public and internal types
 //
 // The public descriptor surface is type-derived: product engineers declare an
-// event-detail map once, and the proxy-backed descriptor exposes event factory
-// methods, render components, event type strings, host helpers, and typed target
-// maps.
+// event-detail map once. The callable descriptor creates events, while its
+// proxy-backed `on` and `types` surfaces provide render components and event
+// type strings.
 export type EventDetails = Record<string, unknown>;
 
 /** A payload map, or a union of null-detail event names. */
@@ -21,14 +21,6 @@ export type NormalizeCustomEventsDefinition<
 > = [Definition] extends [string]
   ? Record<Definition, null>
   : Extract<Definition, EventDetails>;
-
-type CustomEventsReservedKey =
-  | typeof CHANGE_EVENT_NAME
-  | "create"
-  | "host"
-  | "map"
-  | "on"
-  | "types";
 
 export type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
   /**
@@ -78,9 +70,9 @@ type LocalCustomEventTypes<EventMap extends EventDetails> = {
   [K in keyof EventMap & string]: CustomEventWithMetadata<EventMap[K]>;
 };
 
-type EventMapReservedKeys<EventMap extends EventDetails> = Extract<
+type EventMapChangeKey<EventMap extends EventDetails> = Extract<
   keyof EventMap,
-  CustomEventsReservedKey
+  typeof CHANGE_EVENT_NAME
 >;
 
 type EventMapColonKeys<EventMap extends EventDetails> = Extract<
@@ -88,9 +80,9 @@ type EventMapColonKeys<EventMap extends EventDetails> = Extract<
   `${string}:${string}`
 >;
 
-type ReservedCustomEventMapKeyError<Keys extends PropertyKey> = {
-  readonly __customEventMapReservedKeyError: "CustomEventMap event maps cannot define reserved event keys.";
-  readonly reservedEventKeys: Keys;
+type ChangeCustomEventMapKeyError<Keys extends PropertyKey> = {
+  readonly __customEventMapChangeKeyError: "CustomEventMap event maps cannot define the derived 'change' event.";
+  readonly changeEventKeys: Keys;
 };
 
 type ColonCustomEventMapKeyError<Keys extends PropertyKey> = {
@@ -99,11 +91,11 @@ type ColonCustomEventMapKeyError<Keys extends PropertyKey> = {
 };
 
 type CustomEventMapError<EventMap extends EventDetails> =
-  EventMapReservedKeys<EventMap> extends never
+  EventMapChangeKey<EventMap> extends never
     ? EventMapColonKeys<EventMap> extends never
       ? never
       : ColonCustomEventMapKeyError<EventMapColonKeys<EventMap>>
-    : ReservedCustomEventMapKeyError<EventMapReservedKeys<EventMap>>;
+    : ChangeCustomEventMapKeyError<EventMapChangeKey<EventMap>>;
 
 export type CustomEventMap<EventMap extends EventDetails> =
   CustomEventMapError<EventMap> extends never
@@ -265,7 +257,8 @@ type UniqueEventTypes<
       : Types
   : Types;
 
-export type CustomEventsCreateFunction<Events extends EventDetails> = {
+/** Callable factory surface of a custom-events descriptor. */
+export type CustomEventsFactory<Events extends EventDetails> = {
   /**
    * Creates a batch from non-payload event names.
    *
@@ -273,7 +266,7 @@ export type CustomEventsCreateFunction<Events extends EventDetails> = {
    * type-checked, including duplicate names.
    *
    * @example
-   * canvas.dispatchEvent(events.create([
+   * canvas.dispatchEvent(events([
    *   "canvasUpdated",
    *   "historyUpdated",
    * ], { composed: true }));
@@ -298,7 +291,7 @@ export type CustomEventsCreateFunction<Events extends EventDetails> = {
    * also notify listeners for each changed event type.
    *
    * @example
-   * target.dispatchEvent(events.create({ user, settings }));
+   * target.dispatchEvent(events({ user, settings }));
    */
   (events: Partial<Events>, init?: CustomEventsInit): CustomEventsEvent<
     Events,
@@ -315,7 +308,7 @@ export type CustomEventsCreateFunction<Events extends EventDetails> = {
    * product event may observe the unresolved callback detail.
    *
    * @example
-   * button.dispatchEvent(events.create(({ count }) => ({
+   * button.dispatchEvent(events(({ count }) => ({
    *   count: (count ?? 0) + 1,
    * })));
    */
@@ -338,10 +331,10 @@ export type CustomEventsCreateFunction<Events extends EventDetails> = {
    * A corresponding `change` event is derived automatically.
    *
    * @example
-   * form.dispatchEvent(events.create("actionSubmitted"));
+   * form.dispatchEvent(events("actionSubmitted"));
    *
    * @example
-   * form.dispatchEvent(events.create("actionErrored", { error }, { signal }));
+   * form.dispatchEvent(events("actionErrored", { error }, { signal }));
    */
   <
     Type extends keyof Events & string & CustomEventsEventType<Events>,
@@ -366,7 +359,7 @@ export type CustomEventsCreateFunction<Events extends EventDetails> = {
    * `addEventListener(...)` observers.
    *
    * @example
-   * button.dispatchEvent(events.create("count", (count, { incrementOffset }) => (
+   * button.dispatchEvent(events("count", (count, { incrementOffset }) => (
    *   (count ?? 0) + (incrementOffset ?? 1)
    * )));
    */
@@ -496,32 +489,34 @@ export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
   ): MixinDescriptor<HostElement, any>;
 };
 
-export type CustomEventsDescriptor<Events extends EventDetails> = {
+export type CustomEventsDescriptor<Events extends EventDetails> =
   /**
    * Creates a custom event for native `dispatchEvent(...)`.
    *
-   * Pass a name and detail for one event, an array of null-detail names, or a
-   * detail map for a coordinated batch. `change` remains derived and
-   * listener-facing; product code does not create it directly.
+   * Call the descriptor with a name and detail for one event, an array of
+   * null-detail names, or a detail map for a coordinated batch. `change`
+   * remains derived and listener-facing; product code does not create it
+   * directly.
    */
-  create: CustomEventsCreateFunction<Events>;
+  CustomEventsFactory<Events> &
+  {
+    /**
+     * Reacts to a product event from this descriptor.
+     *
+     * Use this when an element should update itself from custom events in its
+     * host boundary, sibling branches, or the page-level fallback. Use
+     * `events.on.someEvent` when rendering children from the latest event.
+     */
+    on: CustomEventsOnFunction<Events>;
 
-  /**
-   * Reacts to a product event from this descriptor.
-   *
-   * Use this when an element should update itself from custom events in its
-   * host boundary, sibling branches, or the page-level fallback. Use
-   * `events.on.someEvent` when rendering children from the latest event.
-   */
-  on: CustomEventsOnFunction<Events>;
+    /**
+     * Generated event type strings for low-level event interop.
+     */
+    readonly types: CustomEventsTypes<Events>;
 
-  /**
-   * Generated event type strings for low-level event interop.
-   */
-  readonly types: CustomEventsTypes<Events>;
-
-  /**
-   * Local event map for `TypedEventTarget` and strongly typed event details.
-   */
-  readonly map: CustomEventMap<Events>;
-} & HostableCustomEventsDescriptor<Events>;
+    /**
+     * Local event map for `TypedEventTarget` and strongly typed event details.
+     */
+    readonly map: CustomEventMap<Events>;
+  } &
+  HostableCustomEventsDescriptor<Events>;

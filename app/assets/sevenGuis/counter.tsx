@@ -19,7 +19,7 @@ export const SevenGuisCounter = clientEntry(
             buttonCss,
             on("click", ({ currentTarget }) => {
               count += 1;
-              currentTarget.dispatchEvent(events.create("countIncremented"));
+              currentTarget.dispatchEvent(events("countIncremented"));
             }),
           ]}
         >

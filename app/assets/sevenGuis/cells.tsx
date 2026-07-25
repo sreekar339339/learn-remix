@@ -111,7 +111,7 @@ export const SevenGuisCells = clientEntry(
                         ),
                     );
                     currentTarget.dispatchEvent(
-                      events.create(cellUpdates(new Set([...changedIds, id]))),
+                      events(cellUpdates(new Set([...changedIds, id]))),
                     );
                   }),
                   on("keydown", ({ key, currentTarget }) => {
@@ -135,7 +135,7 @@ export const SevenGuisCells = clientEntry(
                   }),
                   on("click", ({ currentTarget }) => {
                     sheet.editing = id;
-                    currentTarget.dispatchEvent(events.create(id));
+                    currentTarget.dispatchEvent(events(id));
                   }),
                 ]}
               >

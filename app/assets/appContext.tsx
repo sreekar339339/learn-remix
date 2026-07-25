@@ -31,7 +31,7 @@ class AppContext extends TypedEventTarget<
 
   patch(value: Partial<AppContextValue>) {
     Object.assign(this.#value, value);
-    this.dispatchEvent(this.events.create(value));
+    this.dispatchEvent(this.events(value));
   }
 }
 

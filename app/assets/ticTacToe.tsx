@@ -85,8 +85,8 @@ export const TicTacToeCustomEvents = clientEntry(
               game.focusCellId = nextFreeCellIdx;
               currentTarget.dispatchEvent(
                 game.result === null
-                  ? events.create(["nextTurn", "nextFocus"])
-                  : events.create(["nextTurn"]),
+                  ? events(["nextTurn", "nextFocus"])
+                  : events(["nextTurn"]),
               );
             }),
             on("keydown", ({ key, target, currentTarget }) => {
@@ -109,7 +109,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 }
               }
               game.focusCellId = nextFreeCellIdx;
-              currentTarget.dispatchEvent(events.create("nextFocus"));
+              currentTarget.dispatchEvent(events("nextFocus"));
             }),
           ]}
         >
@@ -158,10 +158,10 @@ export const TicTacToeCustomEvents = clientEntry(
               game.nextPlayer = "X";
               game.focusCellId = 0;
               currentTarget.dispatchEvent(
-                events.create(["nextTurn", "nextFocus"]),
+                events(["nextTurn", "nextFocus"]),
               );
             }),
-            ref((reset) => reset.dispatchEvent(events.create("nextFocus"))),
+            ref((reset) => reset.dispatchEvent(events("nextFocus"))),
           ]}
         >
           Reset
