@@ -73,9 +73,7 @@ export const SevenGuisFlightBooker = clientEntry(
                 <input
                   aria-label="Start date"
                   defaultValue={flight.startDate}
-                  aria-invalid={
-                    presentValidation(flight)?.startDateInvalid ?? false
-                  }
+                  aria-invalid={presentValidation(flight).startDateInvalid}
                   mix={[
                     inputCss,
                     on("input", ({ currentTarget }) => {
@@ -87,12 +85,8 @@ export const SevenGuisFlightBooker = clientEntry(
                 <input
                   aria-label="Return date"
                   defaultValue={flight.returnDate}
-                  disabled={
-                    presentValidation(flight)?.returnDateDisabled ?? true
-                  }
-                  aria-invalid={
-                    presentValidation(flight)?.returnDateInvalid ?? false
-                  }
+                  disabled={presentValidation(flight).returnDateDisabled}
+                  aria-invalid={presentValidation(flight).returnDateInvalid}
                   mix={[
                     inputCss,
                     on("input", ({ currentTarget }) => {

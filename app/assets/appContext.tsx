@@ -91,8 +91,8 @@ function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {appContext.value.settings?.layout}, Theme:{" "}
-        {appContext.value.settings?.theme}
+        Layout: {appContext.value.settings.layout}, Theme:{" "}
+        {appContext.value.settings.theme}
       </pre>
     </div>
   );

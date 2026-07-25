@@ -73,7 +73,7 @@ export const SearchBooksWithoutFrame = clientEntry(
                 type="text"
                 defaultValue={initialQuery}
                 class={
-                  changeEvent?.detail.event?.type === "querySubmitted"
+                  changeEvent.detail.event?.type === "querySubmitted"
                     ? "pending"
                     : ""
                 }
@@ -103,7 +103,7 @@ export const SearchBooksWithoutFrame = clientEntry(
         </label>
         <events.on.change
           render={(changeEvent = initialChangeEvent) => {
-            let event = changeEvent?.detail.event;
+            let event = changeEvent.detail.event;
             switch (event?.type) {
               case "queryEmpty":
               case undefined:
