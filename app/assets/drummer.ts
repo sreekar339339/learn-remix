@@ -1,5 +1,5 @@
 import { TypedEventTarget } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type TempoBpm = number;
 

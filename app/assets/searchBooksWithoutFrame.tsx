@@ -1,6 +1,6 @@
 import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type Book = {
   title: string;

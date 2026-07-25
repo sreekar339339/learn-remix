@@ -1,5 +1,5 @@
 import { clientEntry, css, on, ref } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw";

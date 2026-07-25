@@ -1,5 +1,5 @@
 import { clientEntry, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { inputCss, rowCss, taskCss } from "./styles.ts";
 
 function parseTemperature(value: string) {

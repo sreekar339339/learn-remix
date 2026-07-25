@@ -3,7 +3,7 @@ import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
-import { CustomEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 
 export const events = new CustomEvents<{
   actionSubmitted: TodoActionDetail | null;

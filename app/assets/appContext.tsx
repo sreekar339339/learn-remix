@@ -4,7 +4,7 @@ import {
   type Handle,
   type RemixNode,
 } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type AppContextValue = {
   user: { name: string; age: number } | null;

@@ -1,5 +1,5 @@
-import { createCustomEventsDescriptor } from "./customEvents/descriptor.tsx";
-import { __customEventsTest } from "./customEvents/runtime.ts";
+import { createCustomEventsDescriptor } from "./descriptor.tsx";
+import { __customEventsTest } from "./runtime.ts";
 import type {
   CustomEventMap,
   CustomEventsConstructor,
@@ -7,7 +7,7 @@ import type {
   CustomEventsDescriptor,
   CustomEventsDefinition,
   NormalizeCustomEventsDefinition,
-} from "./customEvents/types.ts";
+} from "./types.ts";
 
 /**
  * Base class for a component or object event set.

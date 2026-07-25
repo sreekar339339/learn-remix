@@ -1,5 +1,5 @@
 import { createMixin, on } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type DraggableCustomEventDetail = {
   left: number;

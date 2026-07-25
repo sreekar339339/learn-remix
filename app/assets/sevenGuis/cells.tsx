@@ -1,5 +1,5 @@
 import { clientEntry, css, on, ref } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { inputCss, taskCss } from "./styles.ts";
 
 const columns = ["A", "B", "C", "D", "E", "F"] as const;

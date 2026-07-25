@@ -1,5 +1,5 @@
 import { clientEntry, css, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type Circle = {

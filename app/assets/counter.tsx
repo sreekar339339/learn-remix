@@ -1,5 +1,5 @@
 import { clientEntry, on } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents.tsx";
+import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 export const Counter = clientEntry(import.meta.url, function Counter(handle) {
   let events = new CustomEvents<"countIncremented">();

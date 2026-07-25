@@ -1,5 +1,5 @@
 import { clientEntry, on, ref } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents.tsx";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type TimerModel = { elapsed: number; duration: number };
