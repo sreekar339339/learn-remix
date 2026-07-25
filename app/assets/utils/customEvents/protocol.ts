@@ -48,7 +48,7 @@ export function subscribeEventTypes(
 // Change detail helpers
 //
 // Every granular product event derives a change event. A product change event
-// behaves as a batch: it records all provided details and expands into granular
+// behaves as a batch: it contains all provided details and expands into granular
 // events.
 export function createCustomEventChangeDetail(
   entries: Array<[string, unknown]>,
@@ -88,7 +88,7 @@ function getEntriesObject(entries: Array<[string, unknown]>) {
   return object;
 }
 
-export function resolveCustomEventsDispatchEntries(
+export function getCustomEventsDispatchEntries(
   events: Partial<EventDetails>,
 ) {
   let entries: Array<[string, unknown]> = [];

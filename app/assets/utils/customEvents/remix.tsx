@@ -127,7 +127,7 @@ const forwardEventsMixin = createMixin<
     unsubscribeHost = undefined;
 
     if (currentState) {
-      unsubscribeHost = currentState.subscribe(listen);
+      unsubscribeHost = currentState.subscribeHosts(listen);
     }
   }
 

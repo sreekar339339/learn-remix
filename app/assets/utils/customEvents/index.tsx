@@ -105,9 +105,9 @@ import type {
  * only when their consumers can update independently; if they are always
  * dispatched together and consumed together, they are one event.
  *
- * Resolver callbacks such as `events("revision", previous => ...)` are for a
- * small transition that depends on descriptor-managed history. Prefer a local
- * model for multi-step business logic or substantial history.
+ * Keep transitions, history, and private mutable model data in component setup
+ * scope or a domain object. Build the next event detail from that model, then
+ * dispatch the resulting event with the descriptor.
  */
 class CustomEventsBase<Definition extends CustomEventsDefinition> {
   declare readonly map: CustomEventMap<

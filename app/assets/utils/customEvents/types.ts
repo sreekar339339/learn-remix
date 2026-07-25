@@ -113,29 +113,6 @@ export type CustomEventsInit = EventInit & {
   signal?: AbortSignal;
 };
 
-export type CustomEventsResolverContext = {
-  /**
-   * The target that originally dispatched the product event.
-   */
-  readonly target: EventTarget;
-};
-
-export type CustomEventsDetailResolver<
-  Events extends EventDetails,
-  Detail,
-> = (
-  previous: Detail | undefined,
-  eventMap: Partial<Events>,
-  change: ChangeEventDetailFromMap<Events> | undefined,
-  context: CustomEventsResolverContext,
-) => Detail | undefined;
-
-export type CustomEventsChangeResolver<Events extends EventDetails> = (
-  eventMap: Partial<Events>,
-  change: ChangeEventDetailFromMap<Events> | undefined,
-  context: CustomEventsResolverContext,
-) => Partial<Events> | undefined;
-
 export type CustomEventsConstructorOptions = {
   /**
    * Register this target as a host immediately.
@@ -299,18 +276,7 @@ type UniqueEventTypes<
 
 /** Callable factory surface of a custom-events descriptor. */
 export type CustomEventsFactory<Events extends EventDetails> = {
-  /**
-   * Creates a batch from non-payload event names.
-   *
-   * Use this when several signal-only events change together. The tuple is
-   * type-checked, including duplicate names.
-   *
-   * @example
-   * canvas.dispatchEvent(events([
-   *   "canvasUpdated",
-   *   "historyUpdated",
-   * ], { composed: true }));
-   */
+  /** Creates a batch from non-payload event names. */
   <
     const Types extends readonly [
       NullDetailEventTypes<Events>,
@@ -338,27 +304,6 @@ export type CustomEventsFactory<Events extends EventDetails> = {
     typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
   >;
 
-  /**
-   * Creates a batch event from the latest descriptor-managed event memory.
-   *
-   * The callback runs when the product event is processed, after the browser has
-   * established the dispatch target. Return `undefined` to cancel the dispatch.
-   * Descriptor `events.on(...)` listeners see
-   * only the resolved derived events. Raw immediate DOM listeners on the
-   * product event may observe the unresolved callback detail.
-   *
-   * @example
-   * button.dispatchEvent(events(({ count }) => ({
-   *   count: (count ?? 0) + 1,
-   * })));
-   */
-  (
-    resolve: CustomEventsChangeResolver<Events>,
-    init?: CustomEventsInit,
-  ): CustomEventsEvent<
-    Events,
-    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
-  >;
   /** Creates one null-detail product event. */
   <Type extends NullDetailEventTypes<Events> & CustomEventsEventType<Events>>(
     type: Type,
@@ -385,29 +330,6 @@ export type CustomEventsFactory<Events extends EventDetails> = {
     init?: CustomEventsInit,
   ): CustomEventsEvent<Events, Type>;
 
-  /**
-   * Creates this product event from its latest published detail.
-   *
-   * The callback is resolved during custom-event processing. Use this when a
-   * next event detail depends on its previous detail. The latest event map is
-   * available as the second argument when the transition coordinates other
-   * published event types. Prefer a component-local model for complex history,
-   * bookkeeping, or multi-step transitions. Return `undefined` to cancel the
-   * dispatch.
-   * Descriptor `events.on(...)` listeners receive only the resolved derived
-   * event; this callback form is not intended for raw immediate
-   * `addEventListener(...)` observers.
-   *
-   * @example
-   * button.dispatchEvent(events("count", (count, { incrementOffset }) => (
-   *   (count ?? 0) + (incrementOffset ?? 1)
-   * )));
-   */
-  <Type extends keyof Events & string & CustomEventsEventType<Events>>(
-    type: Type,
-    resolve: CustomEventsDetailResolver<Events, Events[Type]>,
-    init?: CustomEventsInit,
-  ): CustomEventsEvent<Events, Type>;
 };
 
 export type CustomEventsEventElementGroups<Events extends EventDetails> = {

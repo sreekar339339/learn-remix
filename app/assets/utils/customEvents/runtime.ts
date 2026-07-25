@@ -2,27 +2,17 @@ import {
   createCustomEventsOwnerId,
   CUSTOM_EVENTS_EVENT_PREFIX,
 } from "./constants.ts";
-import { defineEventValue, isElement } from "./dom.ts";
+import { defineEventValue } from "./dom.ts";
 import { processCustomEventsEvent } from "./events.ts";
 import { addEventListeners } from "remix/ui";
 import {
-  createCustomEventChangeDetail,
   getEventName,
   subscribeEventTypes,
 } from "./protocol.ts";
-import type {
-  ChangeEventDetailFromMap,
-  EventDetails,
-} from "./types.ts";
 
 type BridgedEvent = { source: Event; replay?: boolean };
 
 type DispatchTargetRegistration = { count: number; cleanup: () => void };
-
-type CustomEventsMemory = {
-  change?: ChangeEventDetailFromMap<EventDetails>;
-  eventMap: Partial<EventDetails>;
-};
 
 export type CustomEventsTransaction = {
   events: Map<string, CustomEvent>;
@@ -34,8 +24,8 @@ export function createCustomEventsTransaction(): CustomEventsTransaction {
 
 // Descriptor runtime
 //
-// Each descriptor instance owns its host registry, latest-event memory, event
-// metadata, dispatch-target registrations, and listener notifications. Keeping
+// Each descriptor instance owns its host registry, event metadata,
+// dispatch-target registrations, and listener notifications. Keeping
 // this state local means descriptors do not need an owner key inside every data
 // structure.
 export class CustomEventsRuntime {
@@ -48,9 +38,7 @@ export class CustomEventsRuntime {
   #hosts = new WeakMap<Element, number>();
   #registeredHosts = new Set<WeakRef<EventTarget>>();
   #registeredHostCounts = new WeakMap<EventTarget, number>();
-  #memory = new WeakMap<EventTarget, CustomEventsMemory>();
-  #descriptorMemory: CustomEventsMemory | undefined;
-  #listeners = new Set<() => void>();
+  #hostSubscribers = new Set<() => void>();
   #dispatchTargetRegistrations = new WeakMap<
     EventTarget,
     DispatchTargetRegistration
@@ -133,7 +121,7 @@ export class CustomEventsRuntime {
 
     let hosts = this.#registeredHosts;
     hosts.add(new WeakRef(target));
-    this.notifySoon();
+    this.notifyHostsSoon();
   }
 
   removeRegisteredHost(target: EventTarget) {
@@ -153,7 +141,7 @@ export class CustomEventsRuntime {
         if (registeredTarget === target) break;
       }
     }
-    this.notifySoon();
+    this.notifyHostsSoon();
   }
 
   getSoleRegisteredHost() {
@@ -188,15 +176,10 @@ export class CustomEventsRuntime {
     let count = this.#hosts.get(element) ?? 0;
     if (count <= 1) {
       this.#hosts.delete(element);
-      this.removeMemory(element);
       this.removeRegisteredHost(element);
     } else {
       this.#hosts.set(element, count - 1);
     }
-  }
-
-  removeMemory(target: EventTarget) {
-    this.#memory.delete(target);
   }
 
   findHost(element: Element | undefined) {
@@ -218,57 +201,19 @@ export class CustomEventsRuntime {
     );
   }
 
-  getMemoryTarget(target: EventTarget | undefined) {
-    if (isElement(target)) {
-      return this.findHost(target);
-    }
-    return target;
-  }
-
-  getMemory(target: EventTarget | undefined) {
-    let memoryTarget = this.getMemoryTarget(target);
-    if (!memoryTarget) return this.#descriptorMemory;
-
-    return this.#memory.get(memoryTarget);
-  }
-
-  setMemory(target: EventTarget | undefined, memory: CustomEventsMemory) {
-    let memoryTarget = this.getMemoryTarget(target);
-    if (!memoryTarget) {
-      this.#descriptorMemory = memory;
-      return;
-    }
-
-    this.#memory.set(memoryTarget, memory);
-  }
-
-  record(target: EventTarget | undefined, entries: Array<[string, unknown]>) {
-    let changeDetail = createCustomEventChangeDetail(entries);
-    let current = this.getMemory(target);
-    let eventMap = current?.eventMap ?? {};
-    for (let [type, detail] of entries) {
-      eventMap[type] = detail;
-    }
-    this.setMemory(target, {
-      change: changeDetail,
-      eventMap,
-    });
-    return changeDetail;
-  }
-
-  notifySoon() {
+  notifyHostsSoon() {
     if (this.#notificationPending) return;
     this.#notificationPending = true;
     queueMicrotask(() => {
       this.#notificationPending = false;
-      for (let listener of this.#listeners) listener();
+      for (let subscriber of this.#hostSubscribers) subscriber();
     });
   }
 
-  subscribe(listener: () => void) {
-    this.#listeners.add(listener);
+  subscribeHosts(subscriber: () => void) {
+    this.#hostSubscribers.add(subscriber);
     return () => {
-      this.#listeners.delete(listener);
+      this.#hostSubscribers.delete(subscriber);
     };
   }
 
@@ -331,7 +276,7 @@ type CustomEventsWindowListener = {
 };
 
 class WindowBridge {
-  #listeners = new Map<string, CustomEventsWindowListener>();
+  #windowListeners = new Map<string, CustomEventsWindowListener>();
   #finalizer =
     typeof FinalizationRegistry === "undefined"
       ? undefined
@@ -343,11 +288,11 @@ class WindowBridge {
     if (typeof window === "undefined") return;
 
     let eventName = getEventName(descriptor, type);
-    if (this.#listeners.has(eventName)) return;
+    if (this.#windowListeners.has(eventName)) return;
 
     let controller = new AbortController();
     let descriptorRef = new WeakRef(descriptor);
-    this.#listeners.set(eventName, {
+    this.#windowListeners.set(eventName, {
       controller,
       descriptor: descriptorRef,
     });
@@ -357,7 +302,7 @@ class WindowBridge {
       [eventName]: (event: Event) => {
         if (!(event instanceof CustomEvent)) return;
 
-        let listener = this.#listeners.get(eventName);
+        let listener = this.#windowListeners.get(eventName);
         let descriptor = listener?.descriptor.deref();
         if (!descriptor) {
           this.remove(eventName);
@@ -370,18 +315,18 @@ class WindowBridge {
   }
 
   remove(eventName: string) {
-    let listener = this.#listeners.get(eventName);
+    let listener = this.#windowListeners.get(eventName);
     if (!listener) return;
     listener.controller.abort();
-    this.#listeners.delete(eventName);
+    this.#windowListeners.delete(eventName);
   }
 
   has(eventName: string) {
-    return this.#listeners.has(eventName);
+    return this.#windowListeners.has(eventName);
   }
 
   expire(eventName: string) {
-    let listener = this.#listeners.get(eventName);
+    let listener = this.#windowListeners.get(eventName);
     if (!listener) return false;
     listener.descriptor = {
       deref: () => undefined,
@@ -390,7 +335,7 @@ class WindowBridge {
   }
 
   count() {
-    return this.#listeners.size;
+    return this.#windowListeners.size;
   }
 }
 

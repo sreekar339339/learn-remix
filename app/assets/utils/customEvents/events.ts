@@ -7,7 +7,6 @@ import {
   getEventInit,
   getEventName,
   getEventType,
-  resolveCustomEventsDispatchEntries,
 } from "./protocol.ts";
 import {
   createCustomEventsTransaction,
@@ -60,9 +59,9 @@ function createDescriptorEvent(
 
 // Event processing
 //
-// Product events are user-dispatched events. Processing records host memory and
-// emits the derived event(s) back on the original event target. Derived events
-// are runtime-owned but not product events, so they never recurse.
+// Product events are user-dispatched events. Processing emits the derived
+// event(s) back on the original event target. Derived events are runtime-owned
+// but not product events, so they never recurse.
 //
 // Each processing pass creates one transaction for every derived event emitted
 // from that product event. Event-aware elements use that transaction to render first
@@ -90,7 +89,7 @@ function emitDerivedChangeEvent(
   init: EventInit,
   transaction: CustomEventsTransaction,
 ) {
-  let changeDetail = descriptor.record(target, entries);
+  let changeDetail = createCustomEventChangeDetail(entries);
   target.dispatchEvent(
     createDescriptorEvent(
       descriptor,
@@ -164,57 +163,18 @@ function commitProductEvent(
   emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
 }
 
-function resolveCustomEventsDetail(
-  resolve: (
-    ...args: Array<unknown>
-  ) => unknown,
-  descriptor: CustomEventsRuntime,
-  target: EventTarget,
-  type: string,
-) {
-  let latest = descriptor.getMemory(target);
-  let eventMap = { ...(latest?.eventMap ?? {}) };
-  let context = { target };
-  return type === CHANGE_EVENT_NAME
-    ? resolve(eventMap, latest?.change, context)
-    : resolve(eventMap[type], eventMap, latest?.change, context);
-}
-
-function resolveProductEventEntries(
+function getProductEventEntries(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
-  target: EventTarget,
 ) {
   let type = getEventType(descriptor, event.type);
   if (!type) return undefined;
 
   if (type !== CHANGE_EVENT_NAME) {
-    let detail =
-      typeof event.detail === "function"
-        ? resolveCustomEventsDetail(event.detail, descriptor, target, type)
-        : event.detail;
-    if (detail === undefined) return undefined;
-    return [[type, detail]] satisfies Array<[string, unknown]>;
+    return [[type, event.detail]] satisfies Array<[string, unknown]>;
   }
 
-  let resolved =
-    typeof event.detail === "function"
-      ? resolveCustomEventsDetail(
-          event.detail,
-          descriptor,
-          target,
-          CHANGE_EVENT_NAME,
-        )
-      : undefined;
-  if (typeof event.detail === "function" && resolved === undefined) {
-    return undefined;
-  }
-
-  let detail = typeof event.detail === "function"
-    ? createCustomEventChangeDetail(
-        resolveCustomEventsDispatchEntries(resolved as Partial<EventDetails>),
-      )
-    : (event.detail as ChangeEventDetailFromMap<EventDetails>);
+  let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
   let entries = getChangeEventEntries(detail);
   for (let [type] of entries) addEventType(descriptor, type);
   return entries;
@@ -231,7 +191,7 @@ export function processCustomEventsEvent(
   if (!origin) return;
 
   let init = getEventInit(event);
-  let entries = resolveProductEventEntries(event, descriptor, origin);
+  let entries = getProductEventEntries(event, descriptor);
   if (!entries?.length) return;
 
   queueMicrotask(() => {

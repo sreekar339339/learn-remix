@@ -7,7 +7,7 @@ import {
   createCustomEventChangeDetail,
   getEventInit,
   getEventName,
-  resolveCustomEventsDispatchEntries,
+  getCustomEventsDispatchEntries,
 } from "./protocol.ts";
 import {
   CustomEventsRuntime,
@@ -41,29 +41,23 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   function createBatchChangeEvent(
     events:
       | Partial<Events>
-      | readonly string[]
-      | ((latest: unknown) => Partial<Events>),
+      | readonly string[],
     init?: CustomEventsInit,
   ) {
     if (init?.signal?.aborted) {
       return createAbortedEvent();
     }
 
-    let detail: unknown;
-    if (typeof events === "function") {
-      detail = events;
-    } else {
-      if (Array.isArray(events) && new Set(events).size !== events.length) {
-        throw new TypeError(
-          'CustomEvents change arrays cannot contain duplicate event names.',
-        );
-      }
-      let entries = Array.isArray(events)
-        ? events.map((type) => [type, null] as [string, unknown])
-        : resolveCustomEventsDispatchEntries(events as Partial<Events>);
-      for (let [type] of entries) addDescriptorEventType(type);
-      detail = createCustomEventChangeDetail(entries);
+    if (Array.isArray(events) && new Set(events).size !== events.length) {
+      throw new TypeError(
+        'CustomEvents change arrays cannot contain duplicate event names.',
+      );
     }
+    let entries = Array.isArray(events)
+      ? events.map((type) => [type, null] as [string, unknown])
+      : getCustomEventsDispatchEntries(events as Partial<Events>);
+    for (let [type] of entries) addDescriptorEventType(type);
+    let detail = createCustomEventChangeDetail(entries);
     enableDescriptorEventType(CHANGE_EVENT_NAME);
     return createProductCustomEvent(
       state,
@@ -120,7 +114,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       state.addRegisteredHost(target);
       cleanupHost = () => {
         state.removeRegisteredHost(target);
-        state.removeMemory(target);
       };
     }
 
@@ -212,7 +205,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
   let events = ((...args: Array<unknown>) => {
     let [typeOrEvents, detailOrInit, maybeInit] = args as [
-      string | Partial<Events> | readonly string[] | Function,
+      string | Partial<Events> | readonly string[],
       unknown?,
       CustomEventsInit?,
     ];
@@ -227,8 +220,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     return createBatchChangeEvent(
       typeOrEvents as
         | Partial<Events>
-        | readonly string[]
-        | ((latest: unknown) => Partial<Events>),
+        | readonly string[],
       detailOrInit as CustomEventsInit | undefined,
     );
   }) as CustomEventsFactory<Events>;
