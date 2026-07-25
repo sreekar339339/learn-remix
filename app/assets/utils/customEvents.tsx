@@ -99,8 +99,8 @@ import type {
  * projections atomically.
  *
  * When no useful fact, outcome, or independently consumed projection exists,
- * use ordinary component logic instead. Descriptor memory is a delivery and
- * rendering convenience, not the default authoritative state store.
+ * use ordinary component logic instead. A descriptor delivers events and
+ * render projections; it is not the default authoritative state store.
  *
  * ## Null-detail event names
  *
@@ -135,9 +135,9 @@ import type {
  * for an event-driven side effect. Reserve an event component for output that
  * must be rendered or replaced from the event detail.
  *
- * Without a descriptor or component `seed`, `render` receives `null` before
- * the first matching event. Handle that empty state directly, or provide a
- * seed when the region has a meaningful initial projection.
+ * Before the first matching event, `render` receives `undefined`. Handle that
+ * empty state directly, or use a JavaScript default parameter when the region
+ * has a meaningful initial projection.
  *
  * @example
  * type EditorEventsMap = {
@@ -190,9 +190,10 @@ import type {
  * }> {}
  *
  * let events = new DocumentEvents();
- * events.seed(
- *   events.create("documentSaved", { revision: 0, savedAt: new Date() }),
- * );
+ * let initialDocument = events.create("documentSaved", {
+ *   revision: 0,
+ *   savedAt: new Date(),
+ * });
  *
  * <section>
  *   <button mix={events.on("documentSaved", ({ detail, currentTarget }) => {
@@ -200,8 +201,8 @@ import type {
  *   })}>
  *     Save
  *   </button>
- *   <events.on.documentSaved render={(event) =>
- *     event ? `Saved revision ${event.detail.revision}` : "Not saved"
+ *   <events.on.documentSaved render={(event = initialDocument) =>
+ *     `Saved revision ${event.detail.revision}`
  *   } />
  * </section>
  *

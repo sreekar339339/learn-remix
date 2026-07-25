@@ -78,14 +78,6 @@ export const SevenGuisCells = clientEntry(
       values: computeValues(formulas),
       editing: null,
     };
-    events.seed(
-      events.create(
-        cellUpdates(
-          rows.flatMap((row) => columns.map((column) => cellId(column, row))),
-        ),
-      ),
-    );
-
     function renderCell(id: CellId) {
       let Cell = events.on[id];
 

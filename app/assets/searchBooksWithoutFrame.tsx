@@ -59,18 +59,16 @@ export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithoutFrame(handle: Handle<{ initialQuery: string }>) {
     let initialQuery = handle.props.initialQuery.trim();
-    events.seed(
-      initialQuery
-        ? events.create("querySubmitted", { query: initialQuery })
-        : events.create("queryEmpty"),
-    );
+    let initialChangeEvent = initialQuery
+      ? events.create({ querySubmitted: { query: initialQuery } })
+      : events.create({ queryEmpty: null });
 
     return () => (
       <>
         <label>
           Search{" "}
           <events.on.change
-            render={(changeEvent) => (
+            render={(changeEvent = initialChangeEvent) => (
               <input
                 type="text"
                 defaultValue={initialQuery}
@@ -104,7 +102,7 @@ export const SearchBooksWithoutFrame = clientEntry(
           />
         </label>
         <events.on.change
-          render={(changeEvent) => {
+          render={(changeEvent = initialChangeEvent) => {
             let event = changeEvent?.detail.event;
             switch (event?.type) {
               case "queryEmpty":

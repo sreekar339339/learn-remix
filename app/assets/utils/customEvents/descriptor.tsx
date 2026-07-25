@@ -49,7 +49,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       return createAbortedEvent();
     }
 
-    let resolveDetail = typeof events === "function";
     let detail: unknown;
     if (typeof events === "function") {
       detail = events;
@@ -72,8 +71,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       CHANGE_EVENT_NAME,
       getEventInit(init),
       detail,
-      "change",
-      { resolveDetail },
     );
   }
 
@@ -92,8 +89,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       type,
       getEventInit(init),
       detail,
-      "event",
-      { resolveDetail: typeof detail === "function" },
     );
   }
 
@@ -111,13 +106,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     });
     if (isElement(target)) {
       state.addHost(target);
-      state.seedInitialMemory(target);
       cleanupHost = () => {
         state.removeHost(target);
       };
     } else {
       state.addRegisteredHost(target);
-      state.seedInitialMemory(target);
       cleanupHost = () => {
         state.removeRegisteredHost(target);
         state.removeMemory(target);
@@ -155,7 +148,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       addEventType(state, type);
       mappedListeners[getEventName(state, type)] = (event, reentry) => {
         if (!(event instanceof CustomEvent)) return;
-        if (state.getProductMetadata(event) || !state.ownsEvent(event)) return;
+        if (state.isProductEvent(event) || !state.ownsEvent(event)) return;
         listener(event as never, reentry);
       };
     }
@@ -238,12 +231,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     create,
     on,
     types,
-    seed(event: Event) {
-      state.initial = event;
-      state.seedInitialDescriptorMemory();
-      state.seedInitialRegisteredHosts();
-      state.notifySoon();
-    },
     host(listeners = {}) {
       return ref((target, signal) => {
         registerHost(target, signal);

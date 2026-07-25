@@ -7,6 +7,9 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
+    let initialChangeEvent = query
+      ? events.create({ querySubmitted: null })
+      : events.create({ queryEmpty: null });
 
     return () => (
       <>
@@ -53,10 +56,7 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         <events.on.change
-          seed={
-            query ? events.create("querySubmitted") : events.create("queryEmpty")
-          }
-          render={(changeEvent) => {
+          render={(changeEvent = initialChangeEvent) => {
             switch (changeEvent.detail.event?.type) {
               case "queryEmpty":
               case undefined:

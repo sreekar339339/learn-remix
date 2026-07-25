@@ -56,7 +56,6 @@ class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map
   constructor(initial: Partial<AppContextValue>) {
     super();
     this.#value = initial as AppContextValue;
-    this.events.seed(this.events.create(initial));
   }
 
   get value(): AppContextValue {
@@ -253,7 +252,6 @@ function ScopedActionForms(handle: Handle) {
 
 function SearchForm(handle: Handle<Props<"div">>) {
   let events = new SearchEvents();
-  events.seed(events.create("idle"));
 
   let fetchBooks = async (
     query: string,

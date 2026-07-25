@@ -4,18 +4,29 @@ import { processCustomEventsEvent } from "./events.ts";
 import {
   createCustomEventChangeDetail,
   getEventName,
-  getInitialEventEntries,
   subscribeEventTypes,
 } from "./protocol.ts";
 import type {
-  CustomEventProductKind,
-  CustomEventProductMetadata,
-  CustomEventsBridgedEvent,
-  CustomEventsDispatchTargetRegistration,
-  CustomEventsMemory,
-  CustomEventsTransaction,
+  ChangeEventDetailFromMap,
   EventDetails,
 } from "./types.ts";
+
+type BridgedEvent = { source: Event; replay?: boolean };
+
+type DispatchTargetRegistration = { count: number; cleanup: () => void };
+
+type CustomEventsMemory = {
+  change?: ChangeEventDetailFromMap<EventDetails>;
+  eventMap: Partial<EventDetails>;
+};
+
+export type CustomEventsTransaction = {
+  events: Map<string, CustomEvent>;
+};
+
+export function createCustomEventsTransaction(): CustomEventsTransaction {
+  return { events: new Map() };
+}
 
 // Descriptor runtime
 //
@@ -25,7 +36,6 @@ import type {
 // structure.
 export class CustomEventsRuntime {
   readonly ownerId = createCustomEventsOwnerId();
-  initial?: Event;
   readonly eventTypes = new Set<string>();
   readonly typeListeners = new Set<() => void>();
 
@@ -37,11 +47,12 @@ export class CustomEventsRuntime {
   #listeners = new Set<() => void>();
   #dispatchTargetRegistrations = new WeakMap<
     EventTarget,
-    CustomEventsDispatchTargetRegistration
+    DispatchTargetRegistration
   >();
   #ownedEvents = new WeakSet<Event>();
-  #productEvents = new WeakMap<Event, CustomEventProductMetadata>();
-  #bridgedEvents = new WeakMap<Event, CustomEventsBridgedEvent>();
+  #productEvents = new WeakSet<Event>();
+  #processedProductEvents = new WeakSet<Event>();
+  #bridgedEvents = new WeakMap<Event, BridgedEvent>();
   #originTargets = new WeakMap<Event, EventTarget>();
   #transactions = new WeakMap<Event, CustomEventsTransaction>();
   #notificationPending = false;
@@ -50,13 +61,15 @@ export class CustomEventsRuntime {
     return this.#ownedEvents.has(event);
   }
 
-  getProductMetadata(event: Event) {
-    return this.#productEvents.get(event);
+  isProductEvent(event: Event) {
+    return this.#productEvents.has(event);
   }
 
-  markProductEventProcessed(event: Event) {
-    let metadata = this.#productEvents.get(event);
-    if (metadata) metadata.processed = true;
+  claimProductEvent(event: Event) {
+    if (!this.#productEvents.has(event)) return false;
+    if (this.#processedProductEvents.has(event)) return false;
+    this.#processedProductEvents.add(event);
+    return true;
   }
 
   isBridgedEvent(event: Event) {
@@ -76,23 +89,14 @@ export class CustomEventsRuntime {
     init: EventInit,
     detail: unknown,
     metadata?: {
-      product?: {
-        kind: CustomEventProductKind;
-        resolveDetail?: boolean;
-      };
+      product?: boolean;
       origin?: EventTarget;
     },
   ) {
     let event = new CustomEvent(type, { ...init, detail });
     this.#ownedEvents.add(event);
 
-    if (metadata?.product) {
-      this.#productEvents.set(event, {
-        kind: metadata.product.kind,
-        processed: false,
-        resolveDetail: metadata.product.resolveDetail ?? false,
-      });
-    }
+    if (metadata?.product) this.#productEvents.add(event);
 
     if (metadata?.origin) {
       this.#originTargets.set(event, metadata.origin);
@@ -104,7 +108,7 @@ export class CustomEventsRuntime {
     return event;
   }
 
-  markBridgedEvent(event: Event, bridgedEvent: CustomEventsBridgedEvent) {
+  markBridgedEvent(event: Event, bridgedEvent: BridgedEvent) {
     this.#bridgedEvents.set(event, bridgedEvent);
   }
 
@@ -144,19 +148,6 @@ export class CustomEventsRuntime {
       }
     }
     this.notifySoon();
-  }
-
-  forEachRegisteredHost(callback: (target: EventTarget) => void) {
-    let hosts = this.#registeredHosts;
-
-    for (let host of hosts) {
-      let target = host.deref();
-      if (!target) {
-        hosts.delete(host);
-        continue;
-      }
-      callback(target);
-    }
   }
 
   getSoleRegisteredHost() {
@@ -235,15 +226,6 @@ export class CustomEventsRuntime {
     return this.#memory.get(memoryTarget);
   }
 
-  getReference(target: EventTarget) {
-    let memory = this.getMemory(target);
-    return {
-      latest: memory?.change
-        ? { change: memory.change, eventMap: memory.eventMap }
-        : undefined,
-    };
-  }
-
   setMemory(target: EventTarget | undefined, memory: CustomEventsMemory) {
     let memoryTarget = this.getMemoryTarget(target);
     if (!memoryTarget) {
@@ -282,22 +264,6 @@ export class CustomEventsRuntime {
     return () => {
       this.#listeners.delete(listener);
     };
-  }
-
-  seedInitialMemory(target: EventTarget | undefined) {
-    let entries = getInitialEventEntries(this);
-    if (!entries?.length) return;
-    this.record(target, entries);
-  }
-
-  seedInitialDescriptorMemory() {
-    this.seedInitialMemory(undefined);
-  }
-
-  seedInitialRegisteredHosts() {
-    this.forEachRegisteredHost((target) => {
-      this.seedInitialMemory(target);
-    });
   }
 
   registerDispatchTarget(target: EventTarget, options?: { hosted?: boolean }) {

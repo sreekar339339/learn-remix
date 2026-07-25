@@ -246,8 +246,14 @@ describe("CustomEvents", () => {
     assert.equal(input.dataset.latestEvent, "paid");
   });
 
-  it("renders from seed and later custom events without mirrored component state", async (t) => {
+  it("renders from a default event and later custom events without mirrored component state", async (t) => {
     let events = new CheckoutEvents();
+    let initialSubmittedEvent = events.create("submitted", {
+      id: "initial-order",
+    });
+    let initialChangeEvent = events.create({
+      submitted: { id: "initial-order" },
+    });
 
     function CheckoutSummary(handle: Handle) {
       return () => (
@@ -264,16 +270,14 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <events.on.submitted
-            seed={events.create("submitted", { id: "initial-order" })}
-            render={({ detail }) => (
+            render={({ detail } = initialSubmittedEvent) => (
               <output data-testid="checkout-summary">
                 {detail.id}
               </output>
             )}
           />
           <events.on.change
-            seed={events.create("submitted", { id: "initial-order" })}
-            render={({ detail }) => {
+            render={({ detail } = initialChangeEvent) => {
               let text =
                 detail.event?.type === "submitted"
                   ? detail.event.detail.id
@@ -388,6 +392,7 @@ describe("CustomEvents", () => {
     };
     class GameEvents extends CustomEvents<GameDetails> {}
     let events = new GameEvents();
+    let initialTurnEvent = events.create("turn", { locked: true });
 
     function GameBoard(handle: Handle) {
       return () => (
@@ -407,8 +412,7 @@ describe("CustomEvents", () => {
             Reset
           </button>
           <events.on.turn
-            seed={events.create("turn", { locked: true })}
-            render={({ detail }) => (
+            render={({ detail } = initialTurnEvent) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -453,6 +457,7 @@ describe("CustomEvents", () => {
     };
     class GameEvents extends CustomEvents<GameDetails> {}
     let events = new GameEvents();
+    let initialTurnEvent = events.create("turn", { locked: true });
 
     function GameBoard(handle: Handle) {
       return () => (
@@ -467,8 +472,7 @@ describe("CustomEvents", () => {
             Focus
           </button>
           <events.on.turn
-            seed={events.create("turn", { locked: true })}
-            render={({ detail }) => (
+            render={({ detail } = initialTurnEvent) => (
               <button
                 type="button"
                 data-testid="game-cell"
@@ -506,6 +510,9 @@ describe("CustomEvents", () => {
 
   it("does not run stale event-component-scoped listeners for replaced nodes", async (t) => {
     let events = new CheckoutEvents();
+    let initialChangeEvent = events.create({
+      submitted: { id: "pending-order" },
+    });
 
     function CheckoutStatus(handle: Handle) {
       return () => (
@@ -520,8 +527,7 @@ describe("CustomEvents", () => {
             Pay
           </button>
           <events.on.change
-            seed={events.create("submitted", { id: "pending-order" })}
-            render={({ detail }) =>
+            render={({ detail } = initialChangeEvent) =>
               detail.event?.type === "paid" ? (
                 <output data-testid="paid-output">Paid</output>
               ) : (
@@ -554,19 +560,19 @@ describe("CustomEvents", () => {
     assert.ok(result.$('[data-testid="paid-output"]'));
   });
 
-  it("does not fire event-component-scoped listeners for render-only seed", async (t) => {
+  it("does not fire event-component-scoped listeners for a default event", async (t) => {
     let events = new CheckoutEvents();
+    let initialSubmittedEvent = events.create("submitted", { id: "initial-order" });
 
     function CheckoutStatus(handle: Handle) {
       return () => (
         <events.on.submitted
-          seed={events.create("submitted", { id: "seed-order" })}
-          render={({ detail }) => (
+          render={({ detail } = initialSubmittedEvent) => (
             <input
-              data-testid="seeded-checkout-input"
+              data-testid="initial-checkout-input"
               value={detail.id}
               mix={events.on("submitted", ({ currentTarget }) => {
-                currentTarget.dataset.seedListenerCall = "true";
+                currentTarget.dataset.initialListenerCall = "true";
               })}
             />
           )}
@@ -578,13 +584,13 @@ describe("CustomEvents", () => {
     t.after(() => result.cleanup());
 
     let input = result.$(
-      '[data-testid="seeded-checkout-input"]',
+      '[data-testid="initial-checkout-input"]',
     ) as HTMLInputElement;
-    assert.equal(input.value, "seed-order");
-    assert.equal(input.dataset.seedListenerCall, undefined);
+    assert.equal(input.value, "initial-order");
+    assert.equal(input.dataset.initialListenerCall, undefined);
   });
 
-  it("renders with a null event before the first seed or matching event", async (t) => {
+  it("renders with an undefined event before the first matching event", async (t) => {
     let events = new CheckoutEvents();
 
     function CheckoutSummary(handle: Handle) {
@@ -629,12 +635,12 @@ describe("CustomEvents", () => {
     assert.equal(summary.textContent, "first-order");
   });
 
-  it("accepts constructor host option and explicit seed", async (t) => {
+  it("uses a default event with a constructor host option", async (t) => {
     let terminal = new EventTarget();
     let events = new CheckoutEvents({
       host: terminal,
     });
-    events.seed(events.create("submitted", { id: "seeded-order" }));
+    let initialEvent = events.create("submitted", { id: "initial-order" });
 
     function CheckoutTerminalSummary(handle: Handle) {
       return () => (
@@ -651,7 +657,7 @@ describe("CustomEvents", () => {
             Submit
           </button>
           <events.on.submitted
-            render={(event) => (
+            render={(event = initialEvent) => (
               <output data-testid="terminal-summary">
                 {event?.detail.id ?? "idle"}
               </output>
@@ -671,7 +677,7 @@ describe("CustomEvents", () => {
       '[data-testid="terminal-submit"]',
     ) as HTMLButtonElement;
 
-    assert.equal(summary.textContent, "seeded-order");
+    assert.equal(summary.textContent, "initial-order");
 
     await result.act(() => button.click());
 
@@ -809,16 +815,21 @@ describe("CustomEvents", () => {
     };
     class CounterEvents extends CustomEvents<CounterDetails> {}
     let events = new CounterEvents();
-    events.seed(
-      events.create({
-        count: 0,
-        incrementOffset: 2,
-      }),
-    );
 
     function Counter(handle: Handle) {
       return () => (
         <section data-testid="counter-host" mix={events.host()}>
+          <button
+            type="button"
+            data-testid="prime-counter"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                events.create({ count: 0, incrementOffset: 2 }),
+              );
+            })}
+          >
+            Prime
+          </button>
           <button
             type="button"
             data-testid="increment-counter"
@@ -851,7 +862,11 @@ describe("CustomEvents", () => {
     let button = result.$(
       '[data-testid="increment-counter"]',
     ) as HTMLButtonElement;
+    let primeButton = result.$(
+      '[data-testid="prime-counter"]',
+    ) as HTMLButtonElement;
 
+    await result.act(() => primeButton.click());
     await result.act(() => button.click());
 
     assert.equal(button.dataset.detailType, "number");
@@ -911,7 +926,7 @@ describe("CustomEvents", () => {
           <section data-testid="slow-host" mix={events.host()}>
             <button
               type="button"
-              data-testid="slow-seed"
+              data-testid="slow-initial"
               mix={ref((button) => {
                 button.dispatchEvent(
                   events.create({
@@ -947,7 +962,7 @@ describe("CustomEvents", () => {
           <section data-testid="fast-host" mix={events.host()}>
             <button
               type="button"
-              data-testid="fast-seed"
+              data-testid="fast-initial"
               mix={ref((button) => {
                 button.dispatchEvent(
                   events.create({
@@ -1010,16 +1025,24 @@ describe("CustomEvents", () => {
     };
     class GameEvents extends CustomEvents<GameDetails> {}
     let events = new GameEvents();
-    events.seed(
-      events.create({
-        turn: { nextPlayer: "X", moves: 0 },
-        focus: { cellId: 0 },
-      }),
-    );
 
     function GameControls(handle: Handle) {
       return () => (
         <section data-testid="game-host" mix={events.host()}>
+          <button
+            type="button"
+            data-testid="initialize-game"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                events.create({
+                  turn: { nextPlayer: "X", moves: 0 },
+                  focus: { cellId: 0 },
+                }),
+              );
+            })}
+          >
+            Initialize
+          </button>
           <button
             type="button"
             data-testid="play-turn"
@@ -1062,6 +1085,9 @@ describe("CustomEvents", () => {
     t.after(() => result.cleanup());
 
     let button = result.$('[data-testid="play-turn"]') as HTMLButtonElement;
+    let initializeButton = result.$(
+      '[data-testid="initialize-game"]',
+    ) as HTMLButtonElement;
     let turnOutput = result.$(
       '[data-testid="turn-output"]',
     ) as HTMLOutputElement;
@@ -1069,6 +1095,7 @@ describe("CustomEvents", () => {
       '[data-testid="focus-output"]',
     ) as HTMLOutputElement;
 
+    await result.act(() => initializeButton.click());
     await result.act(() => button.click());
 
     assert.equal(turnOutput.textContent, "O:1");

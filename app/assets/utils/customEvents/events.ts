@@ -9,14 +9,15 @@ import {
   getEventType,
   resolveCustomEventsDispatchEntries,
 } from "./protocol.ts";
-import type { CustomEventsRuntime } from "./runtime.ts";
+import {
+  createCustomEventsTransaction,
+  type CustomEventsRuntime,
+  type CustomEventsTransaction,
+} from "./runtime.ts";
 import type {
   ChangeEventDetailFromMap,
-  CustomEventProductKind,
-  CustomEventsTransaction,
   EventDetails,
 } from "./types.ts";
-import { createCustomEventsTransaction } from "./types.ts";
 
 // Event construction
 //
@@ -29,19 +30,12 @@ export function createProductCustomEvent(
   type: string,
   init: EventInit,
   detail: unknown,
-  product: CustomEventProductKind,
-  options?: { resolveDetail?: boolean },
 ) {
   return descriptor.createCustomEvent(
     getEventName(descriptor, type),
     init,
     detail,
-    {
-      product: {
-        kind: product,
-        resolveDetail: options?.resolveDetail,
-      },
-    },
+    { product: true },
   );
 }
 
@@ -147,17 +141,9 @@ function commitProductEvent(
   target: EventTarget,
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
-  product: CustomEventProductKind,
   init: EventInit,
 ) {
   let transaction = createCustomEventsTransaction();
-
-  if (product === "event") {
-    emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
-    emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
-    return;
-  }
-
   emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
   emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
 }
@@ -170,7 +156,7 @@ function resolveCustomEventsDetail(
   target: EventTarget,
   type: string,
 ) {
-  let latest = descriptor.getReference(target).latest;
+  let latest = descriptor.getMemory(target);
   let eventMap = { ...(latest?.eventMap ?? {}) };
   let context = { target };
   return type === CHANGE_EVENT_NAME
@@ -183,14 +169,12 @@ function resolveProductEventEntries(
   descriptor: CustomEventsRuntime,
   target: EventTarget,
 ) {
-  let metadata = descriptor.getProductMetadata(event);
-  if (!metadata) return undefined;
+  let type = getEventType(descriptor, event.type);
+  if (!type) return undefined;
 
-  if (metadata.kind === "event") {
-    let type = getEventType(descriptor, event.type);
-    if (!type || type === CHANGE_EVENT_NAME) return undefined;
+  if (type !== CHANGE_EVENT_NAME) {
     let detail =
-      metadata.resolveDetail && typeof event.detail === "function"
+      typeof event.detail === "function"
         ? resolveCustomEventsDetail(event.detail, descriptor, target, type)
         : event.detail;
     if (detail === undefined) return undefined;
@@ -198,7 +182,7 @@ function resolveProductEventEntries(
   }
 
   let resolved =
-    metadata.resolveDetail && typeof event.detail === "function"
+    typeof event.detail === "function"
       ? resolveCustomEventsDetail(
           event.detail,
           descriptor,
@@ -206,9 +190,11 @@ function resolveProductEventEntries(
           CHANGE_EVENT_NAME,
         )
       : undefined;
-  if (metadata.resolveDetail && resolved === undefined) return undefined;
+  if (typeof event.detail === "function" && resolved === undefined) {
+    return undefined;
+  }
 
-  let detail = metadata.resolveDetail
+  let detail = typeof event.detail === "function"
     ? createCustomEventChangeDetail(
         resolveCustomEventsDispatchEntries(resolved as Partial<EventDetails>),
       )
@@ -223,19 +209,16 @@ export function processCustomEventsEvent(
   descriptor: CustomEventsRuntime,
 ) {
   if (!descriptor.ownsEvent(event)) return;
-
-  let metadata = descriptor.getProductMetadata(event);
-  if (!metadata || metadata.processed) return;
+  if (!descriptor.claimProductEvent(event)) return;
 
   let origin = isEventTarget(event.target) ? event.target : undefined;
   if (!origin) return;
 
-  descriptor.markProductEventProcessed(event);
   let init = getEventInit(event);
   let entries = resolveProductEventEntries(event, descriptor, origin);
   if (!entries?.length) return;
 
   queueMicrotask(() => {
-    commitProductEvent(origin, descriptor, entries, metadata.kind, init);
+    commitProductEvent(origin, descriptor, entries, init);
   });
 }

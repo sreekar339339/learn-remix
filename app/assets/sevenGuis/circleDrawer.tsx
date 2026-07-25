@@ -71,14 +71,6 @@ export const SevenGuisCircleDrawer = clientEntry(
       redo: [],
       nextId: 1,
     };
-    events.seed(
-      events.create([
-        "canvasUpdated",
-        "historyUpdated",
-        "diameterEditorUpdated",
-      ]),
-    );
-
     return () => (
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>

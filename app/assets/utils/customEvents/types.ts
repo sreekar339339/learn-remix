@@ -3,7 +3,6 @@ import {
   CHANGE_EVENT_NAME,
   CUSTOM_EVENTS_EVENT_PREFIX,
 } from "./constants.ts";
-import type { CustomEventsRuntime } from "./runtime.ts";
 
 // Public and internal types
 //
@@ -29,16 +28,7 @@ type CustomEventsReservedKey =
   | "host"
   | "map"
   | "on"
-  | "seed"
   | "types";
-
-export type CustomEventProductKind = "event" | "change";
-
-export type CustomEventProductMetadata = {
-  kind: CustomEventProductKind;
-  processed: boolean;
-  resolveDetail: boolean;
-};
 
 export type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
   /**
@@ -194,51 +184,18 @@ export type CustomEventsEvent<
 export type CustomEventsRenderEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = CustomEventsEvent<Events, Type> | null;
-
-export type CustomEventsSeedEvent<Events extends EventDetails> =
-  CustomEventsEvent<Events, CustomEventsEventType<Events>>;
+> = CustomEventsEvent<Events, Type> | undefined;
 
 export type CustomEventsRenderProps<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-  Seed extends CustomEventsSeedEvent<Events> | undefined = undefined,
-> = (undefined extends Seed
-  ? {
-      /**
-       * Event object used to render before a matching event is received.
-       *
-       * `seed` is render-only; it does not dispatch or run DOM listeners. Use
-       * the descriptor's `.seed(...)` method when event components should share
-       * the same starting event.
-       *
-       * @example
-       * <events.on.change seed={events.create("queryEmpty")} render={...} />
-       */
-      seed?: Seed;
-    }
-  : {
-      /**
-       * Event object used to render before a matching event is received.
-       *
-       * `seed` is render-only; it does not dispatch or run DOM listeners. Use
-       * the descriptor's `.seed(...)` method when event components should share
-       * the same starting event.
-       *
-       * @example
-       * <events.on.change seed={events.create("queryEmpty")} render={...} />
-       */
-      seed: Seed;
-    }) & {
+> = {
   /**
    * Renders children for the matching event.
    *
-   * When `seed` is provided, the render event is non-null. Without `seed`, the
-   * event is `null` before a matching event exists; use that branch for empty,
-   * idle, or placeholder UI without inventing a fake event.
-   *
-   * The seed must be created by the same descriptor and be able to initialize
-   * this event component.
+   * Before a matching event exists, `event` is `undefined`. Use a JavaScript
+   * default parameter for a local initial projection, or handle that branch for
+   * empty, idle, or placeholder UI.
    *
    * Descriptor `events.on(...)` listeners inside this rendered subtree run after
    * the event render commits when the same dispatch also updates this event
@@ -250,7 +207,7 @@ export type CustomEventsRenderProps<
    * event in the dispatched object.
    *
    * @example
-   * <events.on.turn render={(event) => event?.detail.nextPlayer ?? "X"} />
+   * <events.on.turn render={(event = initialTurn) => event.detail.nextPlayer} />
    *
    * @example
    * <events.on.change render={(event) => {
@@ -266,20 +223,16 @@ export type CustomEventsRenderProps<
    * }} />
    */
   render: (
-    event: [Seed] extends [undefined]
-      ? CustomEventsRenderEvent<Events, Type>
-      : CustomEventsEvent<Events, Type>,
-    handle: Handle<CustomEventsRenderProps<Events, Type, Seed>>,
+    event: CustomEventsRenderEvent<Events, Type>,
+    handle: Handle<CustomEventsRenderProps<Events, Type>>,
   ) => RemixNode;
 };
 
 export type CustomEventsEventComponent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-> = <
-  Seed extends CustomEventsSeedEvent<Events> | undefined = undefined,
->(
-  handle: Handle<CustomEventsRenderProps<Events, Type, Seed>>,
+> = (
+  handle: Handle<CustomEventsRenderProps<Events, Type>>,
 ) => () => RemixNode;
 
 type ExactEventDetail<Expected, Actual> = Actual extends Expected
@@ -568,47 +521,7 @@ export type CustomEventsDescriptor<Events extends EventDetails> = {
   readonly types: CustomEventsTypes<Events>;
 
   /**
-   * Seeds event components with a descriptor-created event.
-   *
-   * This does not dispatch. It gives `<events.on.someEvent render={...} />`
-   * a starting point. Dispatch explicitly when event listeners should run.
-   */
-  seed(event: CustomEventsSeedEvent<Events>): void;
-
-  /**
    * Local event map for `TypedEventTarget` and strongly typed event details.
    */
   readonly map: CustomEventMap<Events>;
 } & HostableCustomEventsDescriptor<Events>;
-
-export type CustomEventsMemory = {
-  change?: ChangeEventDetailFromMap<EventDetails>;
-  eventMap: Partial<EventDetails>;
-};
-
-export type CustomEventsDispatchTargetRegistration = {
-  count: number;
-  cleanup: () => void;
-};
-
-export type CustomEventsRenderScope = {
-  descriptor: CustomEventsRuntime;
-  eventName: string;
-  transaction: CustomEventsTransaction | null;
-  version: number;
-};
-
-export type CustomEventsBridgedEvent = {
-  source: Event;
-  replay?: boolean;
-};
-
-export type CustomEventsTransaction = {
-  events: Map<string, CustomEvent>;
-};
-
-export function createCustomEventsTransaction() {
-  return {
-    events: new Map<string, CustomEvent>(),
-  };
-}

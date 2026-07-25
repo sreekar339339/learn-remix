@@ -7,11 +7,13 @@ import {
 } from "remix/ui";
 import {
   addEventType,
-  createInitialEvent,
   getEventName,
   subscribeEventTypes,
 } from "./protocol.ts";
-import type { CustomEventsRuntime } from "./runtime.ts";
+import type {
+  CustomEventsRuntime,
+  CustomEventsTransaction,
+} from "./runtime.ts";
 import type {
   AnyCustomEventsName,
   CustomEventWithMetadata,
@@ -20,10 +22,15 @@ import type {
   CustomEventsEventType,
   CustomEventsRenderEvent,
   CustomEventsRenderProps,
-  CustomEventsRenderScope,
-  CustomEventsSeedEvent,
   EventDetails,
 } from "./types.ts";
+
+type RenderScope = {
+  descriptor: CustomEventsRuntime;
+  eventName: string;
+  transaction: CustomEventsTransaction | null;
+  version: number;
+};
 
 // Bridged events are non-bubbling clones dispatched on a mixin host so Remix
 // on(...) listeners see the host as currentTarget.
@@ -55,10 +62,10 @@ function createBridgedEvent(
 function CustomEventsRenderScopeProvider(
   handle: Handle<
     {
-      scope: CustomEventsRenderScope;
+      scope: RenderScope;
       children: RemixNode;
     },
-    CustomEventsRenderScope
+    RenderScope
   >,
 ) {
   return () => {
@@ -67,16 +74,9 @@ function CustomEventsRenderScopeProvider(
   };
 }
 
-function getSourceEventForListener(
-  descriptor: CustomEventsRuntime,
-  event: Event,
-) {
-  return descriptor.getBridgedEvent(event)?.source ?? event;
-}
-
 function shouldDeferScopedListener(
   descriptor: CustomEventsRuntime,
-  scope: CustomEventsRenderScope | undefined,
+  scope: RenderScope | undefined,
   event: Event,
 ) {
   if (scope?.descriptor !== descriptor) return false;
@@ -85,11 +85,9 @@ function shouldDeferScopedListener(
 
 function shouldBridgeEventToElement(
   event: Event,
-  descriptor: CustomEventsRuntime,
   element: Element | undefined,
 ): element is Element {
   if (!element) return false;
-  if (descriptor.isBridgedEvent(event)) return false;
   if (event.composedPath().includes(element)) return false;
   return true;
 }
@@ -142,10 +140,11 @@ const forwardEventsMixin = createMixin<
         getEventName(descriptor, type),
         (event) => {
           if (!(event instanceof CustomEvent)) return;
-          if (descriptor.getProductMetadata(event)) return;
+          if (descriptor.isProductEvent(event)) return;
           if (!descriptor.ownsEvent(event)) return;
+          if (descriptor.isBridgedEvent(event)) return;
           let element = currentElement;
-          if (!shouldBridgeEventToElement(event, descriptor, element)) return;
+          if (!shouldBridgeEventToElement(event, element)) return;
           element.dispatchEvent(createBridgedEvent(event, descriptor));
         },
         { signal },
@@ -225,10 +224,10 @@ export const customEventsOnMixin = createMixin<
       event: CustomEventWithMetadata<any>,
       signal: AbortSignal,
     ) => {
-      if (descriptor.getProductMetadata(event)) return;
+      if (descriptor.isProductEvent(event)) return;
 
       let bridgedEvent = descriptor.getBridgedEvent(event);
-      let sourceEvent = getSourceEventForListener(descriptor, event);
+      let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
       let scope = handle.context.get(CustomEventsRenderScopeProvider);
 
       if (
@@ -252,11 +251,11 @@ export const customEventsOnMixin = createMixin<
   };
 });
 
-// Descriptor event components render from the latest matching event, or from
-// `null` before any matching event exists. They depend on host discovery to
-// choose a default target and on initial event projection for SSR/first-render
-// output. An inert template marker discovers the parent host element; unlike a
-// span, it is valid inside table sections and does not cause HTML reparenting
+// Descriptor event components render from the latest matching event, or
+// `undefined` before any matching event exists. They depend on host discovery
+// to choose a default target. An inert template marker discovers the parent
+// host element; unlike a span, it is valid inside table sections and does not
+// cause HTML reparenting
 // during hydration. Rendering itself remains owned by Remix.
 export function createCustomEventsEventComponent<
   Events extends EventDetails,
@@ -268,26 +267,16 @@ export function createCustomEventsEventComponent<
   addEventType(descriptor, type);
   let component = function CustomEventsEventComponent(
     handle: Handle<
-      CustomEventsRenderProps<
-        Events,
-        Type,
-        CustomEventsSeedEvent<Events> | undefined
-      >
+      CustomEventsRenderProps<Events, Type>
     >,
   ) {
     let eventName = getEventName(descriptor, type);
-    let hasSeed = handle.props.seed !== undefined;
-    let initialEvent = createInitialEvent(
-      type,
-      descriptor,
-      handle.props.seed ?? descriptor.initial,
-    );
     let hostElement: HTMLElement | undefined;
-    let currentEvent: Event | null = initialEvent ?? null;
+    let currentEvent: Event | undefined;
     let currentTarget: EventTarget | undefined;
     let controller: AbortController | undefined;
     let unsubscribeHost: (() => void) | undefined;
-    let renderScope: CustomEventsRenderScope = {
+    let renderScope: RenderScope = {
       descriptor,
       eventName,
       transaction: null,
@@ -295,7 +284,7 @@ export function createCustomEventsEventComponent<
     };
 
     function canRender(event: Event) {
-      return event === initialEvent || descriptor.ownsEvent(event);
+      return descriptor.ownsEvent(event);
     }
 
     function syncDefaultTarget() {
@@ -334,7 +323,7 @@ export function createCustomEventsEventComponent<
       currentTarget.addEventListener(
         eventName,
         (event) => {
-          if (descriptor.getProductMetadata(event)) return;
+          if (descriptor.isProductEvent(event)) return;
           if (descriptor.isBridgedEvent(event)) return;
           if (!canRender(event)) return;
           currentEvent = event;
@@ -370,28 +359,12 @@ export function createCustomEventsEventComponent<
       let event =
         currentEvent?.type === eventName && canRender(currentEvent)
           ? (currentEvent as CustomEventsEvent<Events, Type>)
-          : null;
-      let node: RemixNode;
-      if (hasSeed) {
-        if (!event) {
-          throw new TypeError(
-            `CustomEvents seed for "${type}" must initialize that event component.`,
-          );
-        }
-        node = handle.props.render(event, handle);
-      } else {
-        let render = handle.props.render as unknown as (
-          event: CustomEventsRenderEvent<Events, Type>,
-          handle: Handle<
-            CustomEventsRenderProps<
-              Events,
-              Type,
-              CustomEventsSeedEvent<Events> | undefined
-            >
-          >,
-        ) => RemixNode;
-        node = render(event, handle);
-      }
+          : undefined;
+      let render = handle.props.render as unknown as (
+        event: CustomEventsRenderEvent<Events, Type>,
+        handle: Handle<CustomEventsRenderProps<Events, Type>>,
+      ) => RemixNode;
+      let node = render(event, handle);
 
       return (
         <CustomEventsRenderScopeProvider scope={renderScope}>
