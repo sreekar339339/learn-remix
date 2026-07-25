@@ -1,4 +1,5 @@
 import { clientEntry, css, on } from "remix/ui";
+import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { taskCss } from "./styles.ts";
 
 const columns = ["A", "B", "C", "D", "E", "F"] as const;
@@ -54,12 +55,12 @@ let cellCss = css({
   padding: "4px 6px",
   font: "inherit",
   boxSizing: "border-box",
-  "&:focus": { borderColor: "#71717a", outline: "none" },
 });
 
 export const SevenGuisCells = clientEntry(
   import.meta.url,
-  function SevenGuisCells(handle) {
+  function SevenGuisCells() {
+    let events = new CustomEvents<"sheetUpdated">();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
 
@@ -95,26 +96,35 @@ export const SevenGuisCells = clientEntry(
                   <th>{row}</th>
                   {columns.map((column) => {
                     let id = cellId(column, row);
+                    let lastRenderedValue = sheet.values[id] ?? "";
                     return (
-                      <td>
-                        <input
-                          key={`${id}:${sheet.values[id] ?? ""}`}
-                          aria-label={id}
-                          defaultValue={sheet.values[id] ?? ""}
-                          mix={[
-                            cellCss,
-                            on("focus", ({ currentTarget }) => {
-                              currentTarget.value = sheet.formulas[id] ?? "";
-                            }),
-                            on("blur", ({ currentTarget }) => {
-                              sheet.formulas[id] = currentTarget.value;
-                              sheet.values = calculate(sheet.formulas);
-                              currentTarget.value = sheet.values[id] ?? "";
-                              handle.update();
-                            }),
-                          ]}
-                        />
-                      </td>
+                      <events.on.sheetUpdated.td
+                        guard={() => sheet.values[id] !== lastRenderedValue}
+                        child={() => (
+                          <input
+                            key={`${id}:${sheet.values[id] ?? ""}`}
+                            aria-label={id}
+                            defaultValue={(() => {
+                              let value = sheet.values[id] ?? "";
+                              lastRenderedValue = value;
+                              return value;
+                            })()}
+                            mix={[
+                              cellCss,
+                              on("focus", ({ currentTarget }) => {
+                                currentTarget.value = sheet.formulas[id] ?? "";
+                              }),
+                              on("blur", ({ currentTarget }) => {
+                                sheet.formulas[id] = currentTarget.value;
+                                sheet.values = calculate(sheet.formulas);
+                                currentTarget.dispatchEvent(
+                                  events("sheetUpdated"),
+                                );
+                              }),
+                            ]}
+                          />
+                        )}
+                      />
                     );
                   })}
                 </tr>

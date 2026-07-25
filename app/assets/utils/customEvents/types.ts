@@ -200,12 +200,23 @@ export type CustomEventsEventElementRender<
   handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
 ) => RemixNode;
 
+export type CustomEventsEventElementGuard<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+> = (
+  detail: CustomEventsRenderDetail<Events, Type>,
+  event: CustomEventsRenderEvent<Events, Type>,
+) => boolean;
+
 /** Props for an intrinsic element driven by one descriptor event. */
 export type CustomEventsEventElementProps<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
   Tag extends keyof JSX.IntrinsicElements,
-> = Omit<CustomEventsReactiveElementProps<Events, Type, Tag>, "children"> &
+> = Omit<CustomEventsReactiveElementProps<Events, Type, Tag>, "children"> & {
+  /** Return true to project this event; false skips the render update. */
+  guard?: CustomEventsEventElementGuard<Events, Type>;
+} &
   (
     | {
         children?: CustomEventsIntrinsicChildren<Tag>;
@@ -277,13 +288,20 @@ type UniqueEventTypes<
 /** Callable factory surface of a custom-events descriptor. */
 export type CustomEventsFactory<Events extends EventDetails> = {
   /** Creates a batch from non-payload event names. */
-  <
-    const Types extends readonly [
-      NullDetailEventTypes<Events>,
-      ...Array<NullDetailEventTypes<Events>>,
-    ],
-  >(
+  <const Types extends readonly [
+    NullDetailEventTypes<Events>,
+    ...Array<NullDetailEventTypes<Events>>,
+  ]>(
     types: Types & UniqueEventTypes<Types>,
+    init?: CustomEventsInit,
+  ): CustomEventsEvent<
+    Events,
+    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
+  >;
+
+  /** Creates a dynamic batch from null-detail event names. */
+  <const Types extends readonly NullDetailEventTypes<Events>[]>(
+    types: Types & (number extends Types["length"] ? unknown : never),
     init?: CustomEventsInit,
   ): CustomEventsEvent<
     Events,

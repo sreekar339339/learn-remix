@@ -359,6 +359,16 @@ function createCustomEventsEventElement<
         if (!descriptor.ownsEvent(event)) return;
         if (descriptor.getBridgedEvent(event)?.replay) return;
 
+        let customEvent = event as unknown as CustomEventsEvent<Events, Type>;
+        let detail = (event as CustomEvent).detail as CustomEventsRenderDetail<
+          Events,
+          Type
+        >;
+        let guard = (
+          handle.props as CustomEventsEventElementProps<Events, Type, Tag>
+        ).guard;
+        if (guard && !guard(detail, customEvent)) return;
+
         currentEvent = event;
         let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
         renderScope.transaction = descriptor.getTransaction(sourceEvent) ?? null;
@@ -384,7 +394,7 @@ function createCustomEventsEventElement<
         Type,
         Tag
       >;
-      let { children, mix, child, ...elementProps } = props as Record<
+      let { children, mix, child, guard: _guard, ...elementProps } = props as Record<
         string,
         unknown
       >;

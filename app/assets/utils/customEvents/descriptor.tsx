@@ -48,13 +48,8 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       return createAbortedEvent();
     }
 
-    if (Array.isArray(events) && new Set(events).size !== events.length) {
-      throw new TypeError(
-        'CustomEvents change arrays cannot contain duplicate event names.',
-      );
-    }
     let entries = Array.isArray(events)
-      ? events.map((type) => [type, null] as [string, unknown])
+      ? [...new Set(events)].map((type) => [type, null] as [string, unknown])
       : getCustomEventsDispatchEntries(events as Partial<Events>);
     for (let [type] of entries) addDescriptorEventType(type);
     let detail = createCustomEventChangeDetail(entries);
