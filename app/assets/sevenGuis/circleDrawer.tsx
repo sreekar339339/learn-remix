@@ -71,6 +71,13 @@ export const SevenGuisCircleDrawer = clientEntry(
       redo: [],
       nextId: 1,
     };
+
+    function editingCircle() {
+      return drawing.circles.find(
+        (circle) => circle.id === drawing.editingCircleId,
+      );
+    }
+
     return () => (
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
@@ -207,7 +214,7 @@ export const SevenGuisCircleDrawer = clientEntry(
           )}
         />
         <events.on.diameterEditorUpdated.form
-          hidden={() => drawing.editingCircleId === null}
+          hidden={() => editingCircle() === undefined}
           mix={[
             rowCss,
             on("submit", (event) => {
@@ -233,17 +240,11 @@ export const SevenGuisCircleDrawer = clientEntry(
                   type="range"
                   min={10}
                   max={120}
-                  value={
-                    drawing.circles.find(
-                      (circle) => circle.id === drawing.editingCircleId,
-                    )?.diameter
-                  }
+                  value={editingCircle()?.diameter ?? 10}
                   mix={[
                     inputCss,
                     on("input", ({ currentTarget }) => {
-                      let circle = drawing.circles.find(
-                        (circle) => circle.id === drawing.editingCircleId,
-                      );
+                      let circle = editingCircle();
                       if (!circle) return;
                       circle.diameter = currentTarget.valueAsNumber;
                       drawing.diameterAdjusted = true;

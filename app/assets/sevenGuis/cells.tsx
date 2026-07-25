@@ -1,35 +1,27 @@
-import { clientEntry, css, on, ref } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
-import { inputCss, taskCss } from "./styles.ts";
+import { clientEntry, css, on } from "remix/ui";
+import { taskCss } from "./styles.ts";
 
 const columns = ["A", "B", "C", "D", "E", "F"] as const;
 const rows = Array.from({ length: 12 }, (_, index) => index);
-
 type CellId = `${(typeof columns)[number]}${number}`;
-type SheetModel = {
-  formulas: Partial<Record<CellId, string>>;
-  values: Partial<Record<CellId, string>>;
-  editing: CellId | null;
+type Values = Partial<Record<CellId, string>>;
+type Sheet = {
+  formulas: Values;
+  values: Values;
 };
-
-type CellUpdates = Partial<Record<CellId, null>>;
 
 function cellId(column: (typeof columns)[number], row: number): CellId {
   return `${column}${row}`;
 }
 
-function evaluateFormula(
-  formula: string | undefined,
-  values: Partial<Record<CellId, string>>,
-) {
+function evaluate(formula: string | undefined, values: Values): string {
   if (!formula) return "";
   if (!formula.startsWith("=")) return formula;
   let expression = formula
     .slice(1)
-    .replace(/\b[A-F](?:[0-9]|1[01])\b/g, (reference) => {
-      let value = Number(values[reference as CellId] ?? 0);
-      return Number.isFinite(value) ? String(value) : "0";
-    });
+    .replace(/\b[A-F](?:[0-9]|1[01])\b/g, (reference) =>
+      String(Number(values[reference as CellId] ?? 0)),
+    );
   if (!/^[\d+\-*/().\s]+$/.test(expression)) return "#ERR";
   try {
     let result = Function(`"use strict"; return (${expression})`)();
@@ -39,113 +31,37 @@ function evaluateFormula(
   }
 }
 
-function computeValues(formulas: Partial<Record<CellId, string>>) {
-  let values: Partial<Record<CellId, string>> = {};
-  for (let index = 0; index < 8; index += 1) {
-    let changed = false;
+function calculate(formulas: Values): Values {
+  let values: Values = {};
+  for (let pass = 0; pass < 8; pass++) {
     for (let row of rows) {
       for (let column of columns) {
         let id = cellId(column, row);
-        let value = evaluateFormula(formulas[id], values);
-        if (values[id] !== value) {
-          values[id] = value;
-          changed = true;
-        }
+        values[id] = evaluate(formulas[id], values);
       }
     }
-    if (!changed) break;
   }
   return values;
 }
 
-function cellUpdates(cellIds: Iterable<CellId>) {
-  let updates: CellUpdates = {};
-  for (let id of cellIds) updates[id] = null;
-  return updates;
-}
+let cellCss = css({
+  width: "100%",
+  minHeight: 28,
+  border: "1px solid transparent",
+  borderRadius: 0,
+  background: "transparent",
+  textAlign: "right",
+  padding: "4px 6px",
+  font: "inherit",
+  boxSizing: "border-box",
+  "&:focus": { borderColor: "#71717a", outline: "none" },
+});
 
 export const SevenGuisCells = clientEntry(
   import.meta.url,
-  function SevenGuisCells() {
-    let events = new CustomEvents<CellId>();
-    let formulas = {
-      A0: "10",
-      B0: "20",
-      C0: "=A0+B0",
-    } satisfies SheetModel["formulas"];
-    let sheet: SheetModel = {
-      formulas,
-      values: computeValues(formulas),
-      editing: null,
-    };
-    function renderCell(id: CellId) {
-      let Cell = events.on[id].div;
-
-      return (
-        <Cell
-          child={() => {
-            let editing = sheet.editing === id;
-            return editing ? (
-              <input
-                aria-label={id}
-                defaultValue={sheet.formulas[id] ?? ""}
-                mix={[
-                  inputCss,
-                  css({
-                    width: "100%",
-                    border: 0,
-                    borderRadius: 0,
-                  }),
-                  ref((input) => input.focus()),
-                  on("blur", ({ currentTarget }) => {
-                    let previousValues = { ...sheet.values };
-                    sheet.formulas[id] = currentTarget.value;
-                    let nextValues = computeValues(sheet.formulas);
-                    Object.assign(sheet.values, nextValues);
-                    sheet.editing = null;
-                    let changedIds = rows.flatMap((row) =>
-                      columns
-                        .map((column) => cellId(column, row))
-                        .filter(
-                          (cell) => previousValues[cell] !== nextValues[cell],
-                        ),
-                    );
-                    currentTarget.dispatchEvent(
-                      events(cellUpdates(new Set([...changedIds, id]))),
-                    );
-                  }),
-                  on("keydown", ({ key, currentTarget }) => {
-                    if (key === "Enter") currentTarget.blur();
-                  }),
-                ]}
-              />
-            ) : (
-              <button
-                type="button"
-                aria-label={id}
-                mix={[
-                  css({
-                    width: "100%",
-                    minHeight: 28,
-                    border: 0,
-                    background: "transparent",
-                    textAlign: "right",
-                    padding: "4px 6px",
-                    font: "inherit",
-                  }),
-                  on("click", ({ currentTarget }) => {
-                    sheet.editing = id;
-                    currentTarget.dispatchEvent(events(id));
-                  }),
-                ]}
-              >
-                {sheet.values[id] ?? ""}
-              </button>
-            );
-          }}
-        />
-      );
-    }
+  function SevenGuisCells(handle) {
+    let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
+    let sheet: Sheet = { formulas, values: calculate(formulas) };
 
     return () => (
       <section mix={taskCss}>
@@ -161,13 +77,8 @@ export const SevenGuisCells = clientEntry(
             mix={css({
               borderCollapse: "collapse",
               minWidth: 620,
-              "& th, & td": {
-                border: "1px solid #e4e4e7",
-                padding: 0,
-              },
-              "& th": {
-                padding: "4px 6px",
-              },
+              "& th, & td": { border: "1px solid #e4e4e7", padding: 0 },
+              "& th": { padding: "4px 6px" },
             })}
           >
             <thead>
@@ -182,9 +93,30 @@ export const SevenGuisCells = clientEntry(
               {rows.map((row) => (
                 <tr>
                   <th>{row}</th>
-                  {columns.map((column) => (
-                    <td>{renderCell(cellId(column, row))}</td>
-                  ))}
+                  {columns.map((column) => {
+                    let id = cellId(column, row);
+                    return (
+                      <td>
+                        <input
+                          key={`${id}:${sheet.values[id] ?? ""}`}
+                          aria-label={id}
+                          defaultValue={sheet.values[id] ?? ""}
+                          mix={[
+                            cellCss,
+                            on("focus", ({ currentTarget }) => {
+                              currentTarget.value = sheet.formulas[id] ?? "";
+                            }),
+                            on("blur", ({ currentTarget }) => {
+                              sheet.formulas[id] = currentTarget.value;
+                              sheet.values = calculate(sheet.formulas);
+                              currentTarget.value = sheet.values[id] ?? "";
+                              handle.update();
+                            }),
+                          ]}
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

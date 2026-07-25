@@ -263,6 +263,14 @@ describe("7GUIs custom-event choreography", () => {
     let canvas = result.container.querySelector<SVGSVGElement>(
       '[aria-label="Circle canvas"]',
     )!;
+    assert.equal(
+      (result.container.querySelector("form") as HTMLFormElement).hidden,
+      true,
+    );
+    assert.equal(
+      getComputedStyle(result.container.querySelector("form")!).display,
+      "none",
+    );
     // The isolated render root is not laid out, unlike the real page. Supply
     // the canvas's view-space dimensions so this test can exercise pointer math.
     Object.defineProperty(canvas, "getBoundingClientRect", {
@@ -309,6 +317,10 @@ describe("7GUIs custom-event choreography", () => {
     );
     await settle(result);
 
+    assert.equal(
+      (result.container.querySelector("form") as HTMLFormElement).hidden,
+      false,
+    );
     let diameter = result.$('form input[type="range"]') as HTMLInputElement;
     assert.equal(diameter.value, "30");
     await result.act(() => {
@@ -316,7 +328,10 @@ describe("7GUIs custom-event choreography", () => {
       diameter.dispatchEvent(new InputEvent("input", { bubbles: true }));
     });
     await settle(result);
-    assert.equal(result.container.querySelector("circle")?.getAttribute("r"), "30");
+    assert.equal(
+      result.container.querySelector("circle")?.getAttribute("r"),
+      "30",
+    );
 
     let close = Array.from(
       result.container.querySelectorAll<HTMLButtonElement>("form button"),
@@ -348,61 +363,33 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(result.container.querySelectorAll("circle").length, 1);
   });
 
-  it("recalculates dependent cells and reports invalid formulas", async (t) => {
+  it("keeps every cell editable and recalculates formulas", async (t) => {
     let result = render(<SevenGuisCells />);
     t.after(() => result.cleanup());
 
-    assert.equal(result.$('button[aria-label="C0"]')?.textContent, "30");
+    let a0 = result.$('input[aria-label="A0"]') as HTMLInputElement;
+    let c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
+    assert.equal(a0.value, "10");
+    assert.equal(c0.value, "30");
 
-    let cell = result.$('button[aria-label="A0"]') as HTMLButtonElement;
-    let unaffectedCell = result.$(
-      'button[aria-label="D0"]',
-    ) as HTMLButtonElement;
+    await result.act(() => c0.focus());
+    assert.equal(c0.value, "=A0+B0");
+    await result.act(() => c0.blur());
+    assert.equal(c0.value, "30");
 
-    await result.act(() => cell.click());
-    await settle(result);
-
-    assert.ok(result.$('button[aria-label="D0"]') === unaffectedCell);
-
-    let editor = result.$('input[aria-label="A0"]') as HTMLInputElement;
-    assert.equal(document.activeElement, editor);
     await result.act(() => {
-      editor.focus();
-      editor.value = "15";
-      editor.blur();
+      a0.focus();
+      a0.value = "15";
+      a0.dispatchEvent(new InputEvent("input", { bubbles: true }));
     });
-    await settle(result);
 
-    let updatedCell = result.$(
-      'button[aria-label="A0"]',
-    ) as HTMLButtonElement;
-    assert.equal(updatedCell.textContent, "15");
-    assert.equal(result.$('button[aria-label="C0"]')?.textContent, "35");
-    assert.ok(result.$('button[aria-label="D0"]') === unaffectedCell);
+    assert.equal((result.$('input[aria-label="C0"]') as HTMLInputElement).value, "30");
 
-    cell = result.$('button[aria-label="B0"]') as HTMLButtonElement;
-    await result.act(() => cell.click());
-    await settle(result);
-
-    editor = result.$('input[aria-label="B0"]') as HTMLInputElement;
-    await result.act(() => {
-      editor.value = "25";
-      editor.blur();
-    });
-    await settle(result);
-    assert.equal(result.$('button[aria-label="C0"]')?.textContent, "40");
-
-    cell = result.$('button[aria-label="C0"]') as HTMLButtonElement;
-    await result.act(() => cell.click());
-    await settle(result);
-
-    editor = result.$('input[aria-label="C0"]') as HTMLInputElement;
-    await result.act(() => {
-      editor.focus();
-      editor.value = "=A0+invalid";
-      editor.blur();
-    });
-    await settle(result);
-    assert.equal(result.$('button[aria-label="C0"]')?.textContent, "#ERR");
+    await result.act(() => a0.blur());
+    assert.equal(
+      (result.$('input[aria-label="C0"]') as HTMLInputElement).value,
+      "35",
+    );
   });
+
 });

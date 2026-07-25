@@ -14,6 +14,9 @@ export const rowCss = css({
   alignItems: "center",
   gap: 8,
   flexWrap: "wrap",
+  "&[hidden]": {
+    display: "none",
+  },
 });
 
 export const inputCss = css({
