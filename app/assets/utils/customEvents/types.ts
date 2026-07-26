@@ -155,6 +155,16 @@ export type CustomEventsRenderEvent<
   Type extends CustomEventsEventType<Events>,
 > = CustomEventsEvent<Events, Type> | undefined;
 
+type CustomEventsIntrinsicElement<
+  Tag extends keyof JSX.IntrinsicElements,
+> = Tag extends keyof HTMLElementTagNameMap
+  ? HTMLElementTagNameMap[Tag]
+  : Tag extends keyof SVGElementTagNameMap
+    ? SVGElementTagNameMap[Tag]
+    : Tag extends keyof MathMLElementTagNameMap
+      ? MathMLElementTagNameMap[Tag]
+      : Element;
+
 /** Detail passed to an event-aware element before the matching native event. */
 export type CustomEventsRenderDetail<
   Events extends EventDetails,
@@ -166,10 +176,15 @@ export type CustomEventsRenderDetail<
 type CustomEventsElementProjection<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
+  Tag extends keyof JSX.IntrinsicElements,
   Value,
 > = (
   detail: CustomEventsRenderDetail<Events, Type>,
-  event: CustomEventsRenderEvent<Events, Type>,
+  event:
+    | (Omit<CustomEventsEvent<Events, Type>, "currentTarget"> & {
+        readonly currentTarget: CustomEventsIntrinsicElement<Tag>;
+      })
+    | undefined,
 ) => Value;
 
 type CustomEventsReactiveElementProps<
@@ -182,7 +197,7 @@ type CustomEventsReactiveElementProps<
       ? Props<Tag>[Key]
       :
           | Props<Tag>[Key]
-          | CustomEventsElementProjection<Events, Type, Props<Tag>[Key]>
+          | CustomEventsElementProjection<Events, Type, Tag, Props<Tag>[Key]>
     : Props<Tag>[Key];
 };
 
@@ -200,7 +215,7 @@ export type CustomEventsEventElementRender<
   handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
 ) => RemixNode;
 
-export type CustomEventsEventElementGuard<
+export type CustomEventsEventElementWhen<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > = (
@@ -215,7 +230,7 @@ export type CustomEventsEventElementProps<
   Tag extends keyof JSX.IntrinsicElements,
 > = Omit<CustomEventsReactiveElementProps<Events, Type, Tag>, "children"> & {
   /** Return true to project this event; false skips the render update. */
-  guard?: CustomEventsEventElementGuard<Events, Type>;
+  when?: CustomEventsEventElementWhen<Events, Type>;
 } &
   (
     | {

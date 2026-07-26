@@ -154,7 +154,7 @@ describe("CustomEvents", () => {
     assert.equal(form.dataset.nativeSubmit, "true");
   });
 
-  it("guards event-aware projections before rerendering", async (t) => {
+  it("filters event-aware projections before rerendering", async (t) => {
     let events = new CheckoutEvents();
 
     function Status() {
@@ -164,7 +164,7 @@ describe("CustomEvents", () => {
             data-testid="submit"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                events("submitted", { id: "guarded-order" }),
+                events("submitted", { id: "accepted-order" }),
               );
             })}
           />
@@ -176,7 +176,7 @@ describe("CustomEvents", () => {
           />
           <events.on.change.output
             data-testid="status"
-            guard={(detail) => detail?.event?.type === "submitted"}
+            when={(detail) => detail?.event?.type === "submitted"}
             child={(detail) =>
               detail?.event?.type === "submitted"
                 ? detail.event.detail.id
@@ -195,13 +195,13 @@ describe("CustomEvents", () => {
     await result.act(() => submit.click());
     assert.equal(
       result.$('[data-testid="status"]')?.textContent,
-      "guarded-order",
+      "accepted-order",
     );
 
     await result.act(() => paid.click());
     assert.equal(
       result.$('[data-testid="status"]')?.textContent,
-      "guarded-order",
+      "accepted-order",
     );
   });
 

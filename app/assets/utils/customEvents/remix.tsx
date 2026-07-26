@@ -364,10 +364,10 @@ function createCustomEventsEventElement<
           Events,
           Type
         >;
-        let guard = (
+        let when = (
           handle.props as CustomEventsEventElementProps<Events, Type, Tag>
-        ).guard;
-        if (guard && !guard(detail, customEvent)) return;
+        ).when;
+        if (when && !when(detail, customEvent)) return;
 
         currentEvent = event;
         let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
@@ -394,7 +394,7 @@ function createCustomEventsEventElement<
         Type,
         Tag
       >;
-      let { children, mix, child, guard: _guard, ...elementProps } = props as Record<
+      let { children, mix, child, when: _when, ...elementProps } = props as Record<
         string,
         unknown
       >;

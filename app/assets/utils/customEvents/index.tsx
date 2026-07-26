@@ -84,7 +84,7 @@ import type {
  * passes `null`. Use `detail === undefined` when that distinction matters. The
  * native event is available only when metadata is useful. Handle the empty
  * branch or use a JavaScript default parameter for a local initial projection.
- * Use `guard={(detail, event) => boolean}` to decide whether an incoming event
+ * Use `when={(detail, event) => boolean}` to decide whether an incoming event
  * should update that event-aware element. A false result skips the projection
  * update before the event is stored or rendered.
  * Event-aware element descendants that use `events.on(...)` observe the matching
