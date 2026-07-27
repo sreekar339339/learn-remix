@@ -363,6 +363,52 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(result.container.querySelectorAll("circle").length, 1);
   });
 
+  it("resizes only the addressed circle", async (t) => {
+    let result = render(<SevenGuisCircleDrawer />);
+    t.after(() => result.cleanup());
+
+    let canvas = result.container.querySelector<SVGSVGElement>(
+      '[aria-label="Circle canvas"]',
+    )!;
+    Object.defineProperty(canvas, "getBoundingClientRect", {
+      value: () => new DOMRect(0, 0, 420, 220),
+    });
+
+    await result.act(() =>
+      canvas.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, clientX: 80, clientY: 80 }),
+      ),
+    );
+    await result.act(() =>
+      canvas.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, clientX: 320, clientY: 160 }),
+      ),
+    );
+    await settle(result);
+
+    let circles = result.container.querySelectorAll("circle");
+    assert.equal(circles.length, 2);
+    let secondCircle = circles[1];
+    await result.act(() =>
+      circles[0].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      ),
+    );
+    await settle(result);
+
+    let diameter = result.$('form input[type="range"]') as HTMLInputElement;
+    await result.act(() => {
+      diameter.value = "60";
+      diameter.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    await settle(result);
+
+    circles = result.container.querySelectorAll("circle");
+    assert.equal(circles[0].getAttribute("r"), "30");
+    assert.equal(circles[1], secondCircle);
+    assert.equal(circles[1].getAttribute("r"), "15");
+  });
+
   it("keeps every cell editable and recalculates formulas", async (t) => {
     let result = render(<SevenGuisCells />);
     t.after(() => result.cleanup());

@@ -205,6 +205,50 @@ describe("CustomEvents", () => {
     );
   });
 
+  it("routes keyed events to matching event-aware elements", async (t) => {
+    let events = new CheckoutEvents();
+
+    function Orders() {
+      return () => (
+        <section>
+          <button
+            data-testid="update-first"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                events("submitted", { id: "first" }, { key: "first" }),
+              );
+            })}
+          />
+          <events.on.submitted.output
+            data-testid="first-order"
+            id="first"
+            child={(detail) => detail?.id ?? "idle"}
+          />
+          <events.on.submitted.output
+            data-testid="second-order"
+            id="second"
+            child={(detail) => detail?.id ?? "idle"}
+          />
+          <events.on.submitted.output
+            data-testid="all-orders"
+            child={(detail) => detail?.id ?? "idle"}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Orders />);
+    t.after(() => result.cleanup());
+
+    await result.act(() =>
+      (result.$('[data-testid="update-first"]') as HTMLButtonElement).click(),
+    );
+
+    assert.equal(result.$('[data-testid="first-order"]')?.textContent, "first");
+    assert.equal(result.$('[data-testid="second-order"]')?.textContent, "idle");
+    assert.equal(result.$('[data-testid="all-orders"]')?.textContent, "first");
+  });
+
   it("keeps event-aware elements inside their own host boundary", async (t) => {
     let events = new CheckoutEvents();
 

@@ -41,6 +41,7 @@ import type {
  * ```tsx
  * form.dispatchEvent(events("saveStarted"));
  * form.dispatchEvent(events("saveSucceeded", { revision }));
+ * form.dispatchEvent(events("saveSucceeded", { revision }, { key: revision }));
  *
  * // One transition refreshes two independent regions.
  * form.dispatchEvent(events(["listUpdated", "editorUpdated"]));
@@ -78,6 +79,11 @@ import type {
  * ordinary Remix meaning. Use Remix's `on(...)` inside `mix` for native DOM
  * handlers. `child` supplies dynamic children, so it cannot be combined with
  * static JSX children.
+ * Use `key` in the event options and the matching DOM `id` on repeated
+ * event-aware elements to update only the addressed projection. Unkeyed
+ * projections continue to receive keyed events for aggregate views. This
+ * bridges keyed event routing until the renderer exposes JSX reconciliation
+ * keys to component props.
  *
  * Child callbacks receive `(detail, event, handle)`. Before the first matching
  * event, `detail` and `event` are `undefined`; a dispatched null-detail event

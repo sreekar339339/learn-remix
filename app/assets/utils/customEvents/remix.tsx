@@ -54,6 +54,9 @@ function createBridgedEvent(
     event.detail,
     {
       ...(origin ? { origin } : {}),
+      ...(descriptor.getEventKey(event) === undefined
+        ? {}
+        : { key: descriptor.getEventKey(event) }),
     },
   );
   descriptor.markBridgedEvent(bridgedEvent, {
@@ -368,6 +371,17 @@ function createCustomEventsEventElement<
           handle.props as CustomEventsEventElementProps<Events, Type, Tag>
         ).when;
         if (when && !when(detail, customEvent)) return;
+        let elementId = (
+          handle.props as CustomEventsEventElementProps<Events, Type, Tag>
+        ).id;
+        let eventKey = descriptor.getEventKey(event);
+        if (
+          eventKey !== undefined &&
+          typeof elementId === "string" &&
+          String(eventKey) !== elementId
+        ) {
+          return;
+        }
 
         currentEvent = event;
         let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
@@ -394,7 +408,13 @@ function createCustomEventsEventElement<
         Type,
         Tag
       >;
-      let { children, mix, child, when: _when, ...elementProps } = props as Record<
+      let {
+        children,
+        mix,
+        child,
+        when: _when,
+        ...elementProps
+      } = props as Record<
         string,
         unknown
       >;

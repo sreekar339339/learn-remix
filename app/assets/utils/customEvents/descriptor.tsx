@@ -27,6 +27,19 @@ import type {
   EventDetails,
 } from "./types.ts";
 
+const customEventsInitKeys = new Set([
+  "bubbles",
+  "cancelable",
+  "composed",
+  "key",
+  "signal",
+]);
+
+function isCustomEventsInit(value: unknown): value is CustomEventsInit {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.keys(value).every((key) => customEventsInitKeys.has(key));
+}
+
 // `on.someEvent` and `types.someEvent` are proxy-backed so event elements and
 // low-level names remain type-shaped without duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
@@ -59,6 +72,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       CHANGE_EVENT_NAME,
       getEventInit(init),
       detail,
+      init?.key,
     );
   }
 
@@ -76,6 +90,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       type,
       getEventInit(init),
       detail,
+      init?.key,
     );
   }
 
@@ -205,10 +220,12 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       CustomEventsInit?,
     ];
     if (typeof typeOrEvents === "string") {
+      let isOptionsOnly =
+        args.length === 2 && isCustomEventsInit(detailOrInit);
       return createGranularEvent(
         typeOrEvents,
-        args.length === 1 ? null : detailOrInit,
-        maybeInit,
+        args.length === 1 || isOptionsOnly ? null : detailOrInit,
+        isOptionsOnly ? (detailOrInit as CustomEventsInit) : maybeInit,
       );
     }
 

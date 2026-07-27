@@ -22,19 +22,20 @@ import type {
 //
 // Event factory methods return normal CustomEvent instances for native
 // dispatchEvent(). The runtime stores ownership and processing metadata in weak
-// collections; `originTarget` is the only public property added to derived or
-// bridged events.
+// collections; `originTarget` and an optional routing key are the public event
+// metadata exposed by derived or bridged events.
 export function createProductCustomEvent(
   descriptor: CustomEventsRuntime,
   type: string,
   init: EventInit,
   detail: unknown,
+  key?: PropertyKey,
 ) {
   return descriptor.createCustomEvent(
     getEventName(descriptor, type),
     init,
     detail,
-    { product: true },
+    { product: true, ...(key === undefined ? {} : { key }) },
   );
 }
 
@@ -44,13 +45,14 @@ function createDescriptorEvent(
   init: EventInit,
   detail: unknown,
   origin: EventTarget,
+  key?: PropertyKey,
   transaction?: CustomEventsTransaction,
 ) {
   let event = descriptor.createCustomEvent(
     getEventName(descriptor, type),
     init,
     detail,
-    { origin },
+    { origin, ...(key === undefined ? {} : { key }) },
   );
   transaction?.events.set(event.type, event);
   if (transaction) descriptor.markTransaction(event, transaction);
@@ -72,12 +74,14 @@ function dispatchLocalTypedEvent(
   type: string,
   init: EventInit,
   detail: unknown,
+  key?: PropertyKey,
 ) {
   if (isElement(target)) return;
   if (typeof window !== "undefined" && target === window) return;
   target.dispatchEvent(
     descriptor.createCustomEvent(type, init, detail, {
       origin: target,
+      ...(key === undefined ? {} : { key }),
     }),
   );
 }
@@ -87,6 +91,7 @@ function emitDerivedChangeEvent(
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
   init: EventInit,
+  key: PropertyKey | undefined,
   transaction: CustomEventsTransaction,
 ) {
   let changeDetail = createCustomEventChangeDetail(entries);
@@ -97,6 +102,7 @@ function emitDerivedChangeEvent(
       init,
       changeDetail,
       target,
+      key,
       transaction,
     ),
   );
@@ -106,6 +112,7 @@ function emitDerivedChangeEvent(
     CHANGE_EVENT_NAME,
     init,
     changeDetail,
+    key,
   );
 }
 
@@ -114,6 +121,7 @@ function emitExpandedGranularEvents(
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
   init: EventInit,
+  key: PropertyKey | undefined,
   transaction: CustomEventsTransaction,
 ) {
   if (entries.length === 1) {
@@ -125,10 +133,11 @@ function emitExpandedGranularEvents(
         init,
         detail,
         target,
+        key,
         transaction,
       ),
     );
-    dispatchLocalTypedEvent(target, descriptor, type, init, detail);
+    dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
     return;
   }
 
@@ -139,6 +148,7 @@ function emitExpandedGranularEvents(
       init,
       detail,
       target,
+      key,
       transaction,
     ),
   );
@@ -148,7 +158,7 @@ function emitExpandedGranularEvents(
   }
 
   for (let [type, detail] of entries) {
-    dispatchLocalTypedEvent(target, descriptor, type, init, detail);
+    dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
   }
 }
 
@@ -157,10 +167,11 @@ function commitProductEvent(
   descriptor: CustomEventsRuntime,
   entries: Array<[string, unknown]>,
   init: EventInit,
+  key: PropertyKey | undefined,
 ) {
   let transaction = createCustomEventsTransaction();
-  emitDerivedChangeEvent(target, descriptor, entries, init, transaction);
-  emitExpandedGranularEvents(target, descriptor, entries, init, transaction);
+  emitDerivedChangeEvent(target, descriptor, entries, init, key, transaction);
+  emitExpandedGranularEvents(target, descriptor, entries, init, key, transaction);
 }
 
 function getProductEventEntries(
@@ -191,10 +202,11 @@ export function processCustomEventsEvent(
   if (!origin) return;
 
   let init = getEventInit(event);
+  let key = descriptor.getEventKey(event);
   let entries = getProductEventEntries(event, descriptor);
   if (!entries?.length) return;
 
   queueMicrotask(() => {
-    commitProductEvent(origin, descriptor, entries, init);
+    commitProductEvent(origin, descriptor, entries, init, key);
   });
 }

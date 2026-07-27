@@ -28,6 +28,8 @@ export type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
    * event is observed from a sibling branch or through a derived `change` event.
    */
   originTarget?: EventTarget;
+  /** Optional item key used to route an event to keyed projections. */
+  key?: PropertyKey;
 };
 
 export type AnyCustomEventsName =
@@ -111,6 +113,8 @@ export type CustomEventMap<EventMap extends EventDetails> =
 export type CustomEventsInit = EventInit & {
   /** When already aborted, the factory returns an inert event. */
   signal?: AbortSignal;
+  /** Routes the event to event-aware elements with the same DOM `id`. */
+  key?: PropertyKey;
 };
 
 export type CustomEventsConstructorOptions = {
@@ -199,6 +203,11 @@ type CustomEventsReactiveElementProps<
           | Props<Tag>[Key]
           | CustomEventsElementProjection<Events, Type, Tag, Props<Tag>[Key]>
     : Props<Tag>[Key];
+} & {
+  [Key in `data-${string}`]?:
+    | string
+    | undefined
+    | CustomEventsElementProjection<Events, Type, Tag, string | undefined>;
 };
 
 type CustomEventsIntrinsicChildren<
@@ -337,9 +346,13 @@ export type CustomEventsFactory<Events extends EventDetails> = {
     typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
   >;
 
-  /** Creates one null-detail product event. */
+  /**
+   * Creates one null-detail product event. For string-union descriptors, the
+   * options bag may be passed as the second argument because no detail exists.
+   */
   <Type extends NullDetailEventTypes<Events> & CustomEventsEventType<Events>>(
     type: Type,
+    init?: CustomEventsInit,
   ): CustomEventsEvent<Events, Type>;
 
   /**

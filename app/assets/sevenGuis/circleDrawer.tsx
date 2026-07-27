@@ -11,13 +11,18 @@ type Circle = {
 
 type DrawingModel = {
   circles: Array<Circle>;
-  selectedId: number | null;
   editingCircleId: number | null;
   adjustmentUndo: Array<Circle> | null;
   diameterAdjusted: boolean;
   undo: Array<Array<Circle>>;
   redo: Array<Array<Circle>>;
   nextId: number;
+};
+
+type EditSession = {
+  activeCircleId: number | null;
+  previousCircleId: number | null;
+  historyCommitted: boolean;
 };
 
 function hitCircle(circles: Array<Circle>, x: number, y: number) {
@@ -57,13 +62,13 @@ function getCanvasPoint(
 
 export const SevenGuisCircleDrawer = clientEntry(
   import.meta.url,
-  function SevenGuisCircleDrawer() {
-    let events = new CustomEvents<
-      "canvasUpdated" | "historyUpdated" | "diameterEditorUpdated"
-    >();
+  function SevenGuisCircleDrawer(handle) {
+    let events = new CustomEvents<{
+      editSession: EditSession;
+      resized: null;
+    }>();
     let drawing: DrawingModel = {
       circles: [],
-      selectedId: null,
       editingCircleId: null,
       adjustmentUndo: null,
       diameterAdjusted: false,
@@ -81,76 +86,60 @@ export const SevenGuisCircleDrawer = clientEntry(
     return () => (
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
-        <events.on.historyUpdated.div
+        <events.on.editSession.div
           mix={rowCss}
-          child={() => (
-            <>
-              <button
-                type="button"
-                disabled={!drawing.undo.length}
-                mix={[
-                  buttonCss,
-                  on("click", ({ currentTarget }) => {
-                    let circles = drawing.undo.at(-1);
-                    if (!circles) return;
-                    drawing.undo.pop();
-                    drawing.redo.unshift(cloneCircles(drawing.circles));
-                    drawing.circles.splice(
-                      0,
-                      drawing.circles.length,
-                      ...cloneCircles(circles),
-                    );
-                    drawing.selectedId = null;
-                    drawing.editingCircleId = null;
-                    drawing.adjustmentUndo = null;
-                    drawing.diameterAdjusted = false;
-                    currentTarget.dispatchEvent(
-                      events([
-                        "canvasUpdated",
-                        "historyUpdated",
-                        "diameterEditorUpdated",
-                      ]),
-                    );
-                  }),
-                ]}
-              >
-                Undo
-              </button>
-              <button
-                type="button"
-                disabled={!drawing.redo.length}
-                mix={[
-                  buttonCss,
-                  on("click", ({ currentTarget }) => {
-                    let circles = drawing.redo[0];
-                    if (!circles) return;
-                    drawing.redo.shift();
-                    drawing.undo.push(cloneCircles(drawing.circles));
-                    drawing.circles.splice(
-                      0,
-                      drawing.circles.length,
-                      ...cloneCircles(circles),
-                    );
-                    drawing.selectedId = null;
-                    drawing.editingCircleId = null;
-                    drawing.adjustmentUndo = null;
-                    drawing.diameterAdjusted = false;
-                    currentTarget.dispatchEvent(
-                      events([
-                        "canvasUpdated",
-                        "historyUpdated",
-                        "diameterEditorUpdated",
-                      ]),
-                    );
-                  }),
-                ]}
-              >
-                Redo
-              </button>
-            </>
-          )}
-        />
-        <events.on.canvasUpdated.svg
+          when={(session) => session?.historyCommitted === true}
+        >
+          <button
+            type="button"
+            disabled={!drawing.undo.length}
+            mix={[
+              buttonCss,
+              on("click", () => {
+                let circles = drawing.undo.at(-1);
+                if (!circles) return;
+                drawing.undo.pop();
+                drawing.redo.unshift(cloneCircles(drawing.circles));
+                drawing.circles.splice(
+                  0,
+                  drawing.circles.length,
+                  ...cloneCircles(circles),
+                );
+                drawing.editingCircleId = null;
+                drawing.adjustmentUndo = null;
+                drawing.diameterAdjusted = false;
+                handle.update();
+              }),
+            ]}
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            disabled={!drawing.redo.length}
+            mix={[
+              buttonCss,
+              on("click", () => {
+                let circles = drawing.redo[0];
+                if (!circles) return;
+                drawing.redo.shift();
+                drawing.undo.push(cloneCircles(drawing.circles));
+                drawing.circles.splice(
+                  0,
+                  drawing.circles.length,
+                  ...cloneCircles(circles),
+                );
+                drawing.editingCircleId = null;
+                drawing.adjustmentUndo = null;
+                drawing.diameterAdjusted = false;
+                handle.update();
+              }),
+            ]}
+          >
+            Redo
+          </button>
+        </events.on.editSession.div>
+        <svg
           viewBox="0 0 420 220"
           aria-label="Circle canvas"
           mix={[
@@ -174,96 +163,113 @@ export const SevenGuisCircleDrawer = clientEntry(
               recordHistory(drawing);
               drawing.circles.push(circle);
               drawing.nextId = circle.id + 1;
-              currentTarget.dispatchEvent(
-                events(["canvasUpdated", "historyUpdated"]),
-              );
-            }),
-            on("mousemove", ({ currentTarget, clientX, clientY }) => {
-              if (drawing.editingCircleId !== null) return;
-              let point = getCanvasPoint(currentTarget, clientX, clientY);
-              if (!point) return;
-              let selectedId =
-                hitCircle(drawing.circles, point.x, point.y)?.id ?? null;
-              if (selectedId === drawing.selectedId) return;
-              drawing.selectedId = selectedId;
-              currentTarget.dispatchEvent(events("canvasUpdated"));
+              handle.update();
             }),
           ]}
-          child={() => (
-            <>
-              {drawing.circles.map((circle) => (
-                <circle
-                  cx={circle.x}
-                  cy={circle.y}
-                  r={circle.diameter / 2}
-                  fill={circle.id === drawing.selectedId ? "#d4d4d8" : "none"}
-                  stroke="#18181b"
-                  mix={on("contextmenu", (event) => {
+        >
+          {drawing.circles.map((circle) => (
+            <events.on.editSession.g
+              key={circle.id}
+              id={String(circle.id)}
+              when={(session) =>
+                session !== undefined &&
+                (session.activeCircleId === circle.id ||
+                  session.previousCircleId === circle.id)
+              }
+              data-editing={(session) =>
+                String(
+                  session?.activeCircleId === circle.id ||
+                    drawing.editingCircleId === circle.id,
+                )
+              }
+            >
+              <events.on.resized.circle
+                id={String(circle.id)}
+                cx={circle.x}
+                cy={circle.y}
+                r={() => circle.diameter / 2}
+                mix={[
+                  css({
+                    pointerEvents: "all",
+                    "&:hover, g[data-editing=true] &": {
+                      fill: "#d4d4d8",
+                    },
+                    stroke: "#18181b",
+                    fill: "none",
+                  }),
+                  on("contextmenu", (event) => {
                     event.preventDefault();
-                    drawing.selectedId = circle.id;
+                    let previousEditingCircleId = drawing.editingCircleId;
+                    if (previousEditingCircleId === circle.id) return;
                     drawing.editingCircleId = circle.id;
                     drawing.adjustmentUndo = cloneCircles(drawing.circles);
                     drawing.diameterAdjusted = false;
                     event.currentTarget.dispatchEvent(
-                      events(["canvasUpdated", "diameterEditorUpdated"]),
+                      events("editSession", {
+                        activeCircleId: circle.id,
+                        previousCircleId: previousEditingCircleId,
+                        historyCommitted: false,
+                      }),
                     );
-                  })}
-                />
-              ))}
-            </>
-          )}
-        />
-        <events.on.diameterEditorUpdated.form
-          hidden={() => editingCircle() === undefined}
+                  }),
+                ]}
+              />
+            </events.on.editSession.g>
+          ))}
+        </svg>
+        <events.on.editSession.form
+          hidden={() => drawing.editingCircleId === null}
           mix={[
             rowCss,
             on("submit", (event) => {
               event.preventDefault();
               if (drawing.editingCircleId === null) return;
-              if (drawing.adjustmentUndo && drawing.diameterAdjusted) {
-                drawing.undo.push(drawing.adjustmentUndo);
+              let editingCircleId = drawing.editingCircleId;
+              let adjustmentUndo = drawing.adjustmentUndo;
+              let committedAdjustment = false;
+              if (adjustmentUndo !== null && drawing.diameterAdjusted) {
+                drawing.undo.push(adjustmentUndo);
+                committedAdjustment = true;
               }
               drawing.editingCircleId = null;
               drawing.adjustmentUndo = null;
               drawing.diameterAdjusted = false;
               drawing.redo.length = 0;
               event.currentTarget.dispatchEvent(
-                events(["historyUpdated", "diameterEditorUpdated"]),
+                events("editSession", {
+                  activeCircleId: null,
+                  previousCircleId: editingCircleId,
+                  historyCommitted: committedAdjustment,
+                }),
               );
             }),
           ]}
-          child={() => (
-            <>
-              <label>
-                Diameter{" "}
-                <input
-                  type="range"
-                  min={10}
-                  max={120}
-                  value={editingCircle()?.diameter ?? 10}
-                  mix={[
-                    inputCss,
-                    on("input", ({ currentTarget }) => {
-                      let circle = editingCircle();
-                      if (!circle) return;
-                      circle.diameter = currentTarget.valueAsNumber;
-                      drawing.diameterAdjusted = true;
-                      currentTarget.dispatchEvent(
-                        events([
-                          "canvasUpdated",
-                          "diameterEditorUpdated",
-                        ]),
-                      );
-                    }),
-                  ]}
-                />
-              </label>
-              <button type="submit" mix={buttonCss}>
-                Close
-              </button>
-            </>
-          )}
-        />
+        >
+          <label>
+            Diameter{" "}
+            <events.on.editSession.input
+              type="range"
+              min={10}
+              max={120}
+              defaultValue={() => editingCircle()?.diameter ?? 10}
+              mix={[
+                inputCss,
+                on("input", ({ currentTarget }) => {
+                  let circle = editingCircle();
+                  if (!circle) return;
+                  circle.diameter = currentTarget.valueAsNumber;
+                  drawing.diameterAdjusted = true;
+                  currentTarget.dispatchEvent(
+                    events("resized", { key: circle.id }),
+                  );
+                }),
+              ]}
+            />
+          </label>
+          <button type="submit" mix={buttonCss}>
+            Close
+          </button>
+        </events.on.editSession.form>
       </section>
     );
   },

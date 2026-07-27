@@ -48,6 +48,7 @@ export class CustomEventsRuntime {
   #processedProductEvents = new WeakSet<Event>();
   #bridgedEvents = new WeakMap<Event, BridgedEvent>();
   #originTargets = new WeakMap<Event, EventTarget>();
+  #eventKeys = new WeakMap<Event, PropertyKey>();
   #transactions = new WeakMap<Event, CustomEventsTransaction>();
   #notificationPending = false;
 
@@ -78,6 +79,10 @@ export class CustomEventsRuntime {
     return this.#originTargets.get(event);
   }
 
+  getEventKey(event: Event) {
+    return this.#eventKeys.get(event);
+  }
+
   createCustomEvent(
     type: string,
     init: EventInit,
@@ -85,6 +90,7 @@ export class CustomEventsRuntime {
     metadata?: {
       product?: boolean;
       origin?: EventTarget;
+      key?: PropertyKey;
     },
   ) {
     let event = new CustomEvent(type, { ...init, detail });
@@ -97,6 +103,11 @@ export class CustomEventsRuntime {
       defineEventValue(event, "originTarget", metadata.origin, {
         enumerable: true,
       });
+    }
+
+    if (metadata?.key !== undefined) {
+      this.#eventKeys.set(event, metadata.key);
+      defineEventValue(event, "key", metadata.key, { enumerable: true });
     }
 
     return event;
