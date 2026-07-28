@@ -5,8 +5,8 @@ import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 type TimerModel = { elapsed: number; duration: number };
 export const SevenGuisTimer = clientEntry(
   import.meta.url,
-  function SevenGuisTimer() {
-    let events = new CustomEvents<"clockAdvanced" | "durationAdjusted">();
+  function SevenGuisTimer(handle) {
+    let events = new CustomEvents<"clockAdvanced">();
     let timer: TimerModel = { elapsed: 0, duration: 10 };
 
     return () => (
@@ -54,15 +54,11 @@ export const SevenGuisTimer = clientEntry(
               on("input", ({ currentTarget }) => {
                 timer.duration = currentTarget.valueAsNumber;
                 timer.elapsed = Math.min(timer.elapsed, timer.duration);
-                currentTarget.dispatchEvent(
-                  events(["clockAdvanced", "durationAdjusted"]),
-                );
+                handle.update();
               }),
             ]}
           />
-          <events.on.durationAdjusted.span
-            child={() => timer.duration.toFixed(1) + "s"}
-          />
+          <span>{timer.duration.toFixed(1)}s</span>
         </label>
         <button
           type="button"

@@ -40,8 +40,8 @@ function presentValidation(flight: FlightState) {
 
 export const SevenGuisFlightBooker = clientEntry(
   import.meta.url,
-  function SevenGuisFlightBooker() {
-    let events = new CustomEvents<"itineraryChanged" | "bookingConfirmed">();
+  function SevenGuisFlightBooker(handle) {
+    let events = new CustomEvents<"bookingConfirmed">();
     let today = new Date().toISOString().slice(0, 10);
     let flight: FlightState = {
       kind: "one-way flight" as const,
@@ -59,17 +59,14 @@ export const SevenGuisFlightBooker = clientEntry(
             inputCss,
             on("change", ({ currentTarget }) => {
               flight.kind = currentTarget.value as FlightKind;
-              currentTarget.dispatchEvent(events("itineraryChanged"));
+              handle.update();
             }),
           ]}
         >
           <option>one-way flight</option>
           <option>return flight</option>
         </select>
-        <events.on.itineraryChanged.div
-          mix={rowCss}
-          child={() => (
-            <>
+        <div mix={rowCss}>
               <input
                 aria-label="Start date"
                 defaultValue={flight.startDate}
@@ -78,7 +75,7 @@ export const SevenGuisFlightBooker = clientEntry(
                   inputCss,
                   on("input", ({ currentTarget }) => {
                     flight.startDate = currentTarget.value;
-                    currentTarget.dispatchEvent(events("itineraryChanged"));
+                    handle.update();
                   }),
                 ]}
               />
@@ -91,16 +88,14 @@ export const SevenGuisFlightBooker = clientEntry(
                   inputCss,
                   on("input", ({ currentTarget }) => {
                     flight.returnDate = currentTarget.value;
-                    currentTarget.dispatchEvent(events("itineraryChanged"));
+                    handle.update();
                   }),
                 ]}
               />
-            </>
-          )}
-        />
-        <events.on.itineraryChanged.button
+        </div>
+        <button
           type="button"
-          disabled={() => !canBook(flight)}
+          disabled={!canBook(flight)}
           mix={[
             buttonCss,
             on("click", ({ currentTarget }) => {
@@ -109,7 +104,7 @@ export const SevenGuisFlightBooker = clientEntry(
           ]}
         >
           Book
-        </events.on.itineraryChanged.button>
+        </button>
         <events.on.bookingConfirmed.output
           child={(_, event) =>
             event

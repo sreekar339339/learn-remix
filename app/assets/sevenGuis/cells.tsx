@@ -60,7 +60,7 @@ let cellCss = css({
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = new CustomEvents<"sheetPublished">();
+    let events = new CustomEvents<"sheetRecalculated">();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
 
@@ -111,12 +111,15 @@ export const SevenGuisCells = clientEntry(
                               sheet.formulas[id] = currentTarget.value;
                               sheet.values = calculate(sheet.formulas);
                               currentTarget.dispatchEvent(
-                                events("sheetPublished"),
+                                events("sheetRecalculated"),
                               );
                             }),
-                            events.on("sheetPublished", ({ currentTarget }) => {
-                              currentTarget.value = sheet.values[id] ?? "";
-                            }),
+                            events.on(
+                              "sheetRecalculated",
+                              ({ currentTarget }) => {
+                                currentTarget.value = sheet.values[id] ?? "";
+                              },
+                            ),
                           ]}
                         />
                       </td>

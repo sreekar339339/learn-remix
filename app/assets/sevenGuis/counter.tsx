@@ -1,25 +1,23 @@
 import { clientEntry, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, taskCss } from "./styles.ts";
 
 export const SevenGuisCounter = clientEntry(
   import.meta.url,
-  function SevenGuisCounter() {
-    let events = new CustomEvents<"countIncremented">();
+  function SevenGuisCounter(handle) {
     let count = 0;
     return () => (
       <section mix={taskCss}>
         <h2>Counter</h2>
         <output aria-label="count">
-          <events.on.countIncremented.span child={() => count} />
+          <span>{count}</span>
         </output>
         <button
           type="button"
           mix={[
             buttonCss,
-            on("click", ({ currentTarget }) => {
+            on("click", () => {
               count += 1;
-              currentTarget.dispatchEvent(events("countIncremented"));
+              handle.update();
             }),
           ]}
         >

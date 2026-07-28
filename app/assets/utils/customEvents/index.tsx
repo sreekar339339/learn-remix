@@ -103,20 +103,34 @@ import type {
  *
  * ## Design guidance
  *
- * Prefer ordinary Remix `on(...)` handlers and local component code for an
- * immediate, one-element update. Do not turn a native interaction into a chain
- * such as `fieldEdited -> draftUpdated -> buttonEnabled`; publish the useful
- * resulting fact or projection, if any.
+ * Keep state authoritative in component setup scope or a domain object. A user
+ * interaction should complete one model transition and then publish one
+ * meaningful fact; event payloads and previously rendered events are not a
+ * second state store. Consumers derive their next projection from the current
+ * model.
  *
- * Do not use a descriptor as the authoritative state store. Keep calculation,
- * history, and private mutable model data in component setup scope or a domain
- * object. Dispatch a minimal event after that model changes. Split event names
- * only when their consumers can update independently; if they are always
- * dispatched together and consumed together, they are one event.
+ * Name events after completed state transitions or independently consumed
+ * projections, not rendering instructions. Prefer `editSessionSet` or
+ * `saveSucceeded` over `openEditor`, `refreshPanel`, or a chain such as
+ * `fieldEdited -> draftUpdated -> buttonEnabled`. Synchronous consequences
+ * should react independently to the original event rather than dispatching
+ * more events.
  *
- * Keep transitions, history, and private mutable model data in component setup
- * scope or a domain object. Build the next event detail from that model, then
- * dispatch the resulting event with the descriptor.
+ * Choose the render boundary before adding event names:
+ *
+ * - Use local code for an immediate, one-element effect.
+ * - Use `handle.update()` when a structural transition affects most of the
+ *   component.
+ * - Use one custom event when one stable projection changes.
+ * - Use a keyed event when one repeated entity changes.
+ *
+ * If many instances need `when` predicates, or one handler dispatches several
+ * UI-oriented events, reconsider ownership. A smaller projection, keyed
+ * routing, or a different representation (for example, one selection overlay
+ * instead of updating every item) usually expresses the transition more
+ * clearly. Split events only when their consumers truly update independently;
+ * if events are always dispatched and consumed together, they describe one
+ * transition.
  */
 class CustomEventsBase<Definition extends CustomEventsDefinition> {
   declare readonly map: CustomEventMap<
