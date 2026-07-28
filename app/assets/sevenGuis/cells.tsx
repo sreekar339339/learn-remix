@@ -1,4 +1,4 @@
-import { clientEntry, css, on } from "remix/ui";
+import { clientEntry, css, on, ref } from "remix/ui";
 import { CustomEvents } from "../utils/customEvents/index.tsx";
 import { taskCss } from "./styles.ts";
 
@@ -47,12 +47,11 @@ function calculate(formulas: Values): Values {
 
 let cellCss = css({
   width: "100%",
-  minHeight: 28,
+  padding: "4px 6px",
+  textAlign: "right",
   border: "1px solid transparent",
   borderRadius: 0,
   background: "transparent",
-  textAlign: "right",
-  padding: "4px 6px",
   font: "inherit",
   boxSizing: "border-box",
 });
@@ -60,9 +59,10 @@ let cellCss = css({
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = new CustomEvents<"sheetRecalculated">();
+    let events = new CustomEvents<"edit">();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
+    let localEditEvtOpts = { bubbles: false };
 
     return () => (
       <section mix={taskCss}>
@@ -94,37 +94,38 @@ export const SevenGuisCells = clientEntry(
               {rows.map((row) => (
                 <tr>
                   <th>{row}</th>
-                  {columns.map((column) => {
-                    let id = cellId(column, row);
-                    return (
-                      <td>
-                        <input
-                          key={`${id}:${sheet.values[id] ?? ""}`}
-                          aria-label={id}
-                          defaultValue={sheet.values[id] ?? ""}
-                          mix={[
-                            cellCss,
-                            on("focus", ({ currentTarget }) => {
-                              currentTarget.value = sheet.formulas[id] ?? "";
-                            }),
-                            on("blur", ({ currentTarget }) => {
-                              sheet.formulas[id] = currentTarget.value;
-                              sheet.values = calculate(sheet.formulas);
-                              currentTarget.dispatchEvent(
-                                events("sheetRecalculated"),
+                  {columns.map((column, __, _, id = cellId(column, row)) => (
+                    <td key={`${id}:${sheet.values[id] ?? ""}`}>
+                      <events.on.edit.input
+                        aria-label={id}
+                        value={(_, event) => {
+                          if (event?.currentTarget.dataset.editing) return;
+                          return sheet.values[id];
+                        }}
+                        placeholder={() => sheet.formulas[id]}
+                        mix={[
+                          cellCss,
+                          on("blur", ({ currentTarget }) => {
+                            delete currentTarget.dataset.editing;
+                            if (!currentTarget.value) {
+                              return void currentTarget.dispatchEvent(
+                                events("edit", localEditEvtOpts),
                               );
-                            }),
-                            events.on(
-                              "sheetRecalculated",
-                              ({ currentTarget }) => {
-                                currentTarget.value = sheet.values[id] ?? "";
-                              },
-                            ),
-                          ]}
-                        />
-                      </td>
-                    );
-                  })}
+                            }
+                            sheet.formulas[id] = currentTarget.value;
+                            sheet.values = calculate(sheet.formulas);
+                            currentTarget.dispatchEvent(events("edit"));
+                          }),
+                          on("focus", ({ currentTarget }) => {
+                            currentTarget.dataset.editing = "true";
+                            currentTarget.dispatchEvent(
+                              events("edit", localEditEvtOpts),
+                            );
+                          }),
+                        ]}
+                      />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

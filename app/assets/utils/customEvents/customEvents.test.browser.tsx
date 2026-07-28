@@ -249,6 +249,38 @@ describe("CustomEvents", () => {
     assert.equal(result.$('[data-testid="all-orders"]')?.textContent, "first");
   });
 
+  it("processes a non-bubbling event dispatched on its event-aware element", async (t) => {
+    let events = new CustomEvents<"activated">();
+
+    function LocalEvent() {
+      return () => (
+        <events.on.activated.button
+          data-testid="local-event"
+          class={(detail) => detail === null ? "active" : ""}
+          data-current-target={(_, event) =>
+            event?.currentTarget.dataset.testid ?? "none"
+          }
+          mix={on("click", ({ currentTarget }) => {
+            currentTarget.dispatchEvent(
+              events("activated", { bubbles: false }),
+            );
+          })}
+        >
+          Activate
+        </events.on.activated.button>
+      );
+    }
+
+    let result = render(<LocalEvent />);
+    t.after(() => result.cleanup());
+
+    let button = result.$('[data-testid="local-event"]') as HTMLButtonElement;
+    await result.act(() => button.click());
+
+    assert.equal(button.className, "active");
+    assert.equal(button.dataset.currentTarget, "local-event");
+  });
+
   it("keeps event-aware elements inside their own host boundary", async (t) => {
     let events = new CheckoutEvents();
 

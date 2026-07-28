@@ -415,27 +415,30 @@ describe("7GUIs custom-event choreography", () => {
 
     let a0 = result.$('input[aria-label="A0"]') as HTMLInputElement;
     let c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
+    assert.ok(a0, "A0 should render as an input");
+    assert.ok(c0, "C0 should render as an input");
     assert.equal(a0.value, "10");
     assert.equal(c0.value, "30");
 
     await result.act(() => c0.focus());
-    assert.equal(c0.value, "=A0+B0");
+    assert.equal(c0.placeholder, "=A0+B0");
     await result.act(() => c0.blur());
     assert.equal(c0.value, "30");
 
+    await result.act(() => a0.focus());
     await result.act(() => {
-      a0.focus();
       a0.value = "15";
       a0.dispatchEvent(new InputEvent("input", { bubbles: true }));
     });
 
-    assert.equal((result.$('input[aria-label="C0"]') as HTMLInputElement).value, "30");
+    c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
+    assert.ok(c0, "C0 should remain rendered while A0 is edited");
+    assert.equal(c0.value, "30");
 
     await result.act(() => a0.blur());
-    assert.equal(
-      (result.$('input[aria-label="C0"]') as HTMLInputElement).value,
-      "35",
-    );
+    c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
+    assert.ok(c0, "C0 should remain rendered after recalculation");
+    assert.equal(c0.value, "35");
   });
 
 });

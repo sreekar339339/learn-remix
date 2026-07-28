@@ -12,6 +12,7 @@ import {
   getEventName,
   subscribeEventTypes,
 } from "./protocol.ts";
+import { defineEventValue } from "./dom.ts";
 import type {
   CustomEventsRuntime,
   CustomEventsTransaction,
@@ -64,6 +65,17 @@ function createBridgedEvent(
     ...(options?.replay ? { replay: true } : {}),
   });
   return bridgedEvent;
+}
+
+function createProjectionEvent(
+  event: CustomEvent,
+  descriptor: CustomEventsRuntime,
+  currentTarget: Element,
+) {
+  let projectionEvent = createBridgedEvent(event, descriptor);
+  defineEventValue(projectionEvent, "target", event.target);
+  defineEventValue(projectionEvent, "currentTarget", currentTarget);
+  return projectionEvent;
 }
 
 function CustomEventsRenderScopeProvider(
@@ -356,6 +368,10 @@ function createCustomEventsEventElement<
     };
 
     let projectionMix = [
+      ref((element, signal) => {
+        let cleanup = descriptor.registerDispatchTarget(element);
+        signal.addEventListener("abort", cleanup, { once: true });
+      }),
       forwardEventsMixin(descriptor),
       remixOn(eventName as AnyCustomEventsName, (event) => {
         if (descriptor.isProductEvent(event)) return;
@@ -383,7 +399,11 @@ function createCustomEventsEventElement<
           return;
         }
 
-        currentEvent = event;
+        currentEvent = createProjectionEvent(
+          event as CustomEvent,
+          descriptor,
+          event.currentTarget,
+        );
         let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
         renderScope.transaction = descriptor.getTransaction(sourceEvent) ?? null;
         let version = ++renderScope.version;

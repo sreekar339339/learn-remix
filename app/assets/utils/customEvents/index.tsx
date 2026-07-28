@@ -88,13 +88,17 @@ import type {
  * Child callbacks receive `(detail, event, handle)`. Before the first matching
  * event, `detail` and `event` are `undefined`; a dispatched null-detail event
  * passes `null`. Use `detail === undefined` when that distinction matters. The
- * native event is available only when metadata is useful. Handle the empty
+ * native event is available only when metadata is useful. Projection callbacks
+ * receive a snapshot whose `currentTarget` is the event-aware element; the
+ * original event remains untouched during DOM propagation. Handle the empty
  * branch or use a JavaScript default parameter for a local initial projection.
  * Use `when={(detail, event) => boolean}` to decide whether an incoming event
  * should update that event-aware element. A false result skips the projection
  * update before the event is stored or rendered.
  * Event-aware element descendants that use `events.on(...)` observe the matching
  * transaction after the rendered DOM has committed.
+ * An event-aware element also processes product events dispatched directly on
+ * itself, so `{ bubbles: false }` can be used for a strictly local update.
  *
  * Events reach sibling branches through the page fallback. Add
  * `mix={events.host(...)}` only when a widget root needs a local boundary or

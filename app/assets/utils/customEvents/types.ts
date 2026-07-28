@@ -159,6 +159,14 @@ export type CustomEventsRenderEvent<
   Type extends CustomEventsEventType<Events>,
 > = CustomEventsEvent<Events, Type> | undefined;
 
+/** Detail passed to an event-aware element before the matching native event. */
+export type CustomEventsRenderDetail<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+> = CustomEventMap<Events>[Type] extends CustomEvent<infer Detail>
+  ? Detail | undefined
+  : never;
+
 type CustomEventsIntrinsicElement<
   Tag extends keyof JSX.IntrinsicElements,
 > = Tag extends keyof HTMLElementTagNameMap
@@ -168,14 +176,6 @@ type CustomEventsIntrinsicElement<
     : Tag extends keyof MathMLElementTagNameMap
       ? MathMLElementTagNameMap[Tag]
       : Element;
-
-/** Detail passed to an event-aware element before the matching native event. */
-export type CustomEventsRenderDetail<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> = CustomEventMap<Events>[Type] extends CustomEvent<infer Detail>
-  ? Detail | undefined
-  : never;
 
 type CustomEventsElementProjection<
   Events extends EventDetails,
