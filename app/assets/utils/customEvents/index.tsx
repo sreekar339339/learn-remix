@@ -135,14 +135,31 @@ import type {
  * not a second authoritative store. If other logic later needs the value
  * without the event, promote it to the durable model.
  *
- * Name events after completed facts, outcomes, or independently consumed
- * projection transitions. Use a completed suffix such as `Set`, `Changed`, or
- * `Succeeded` only when that statement is already true at dispatch time.
+ * Native DOM events form recognizable families, but historical names such as
+ * `submit`, `focus`, and `change` do not share one tense or reveal their full
+ * semantics. Do not copy that ambiguity into a new event vocabulary. An event
+ * contract includes its timing, target, detail, routing key, propagation,
+ * cancelability, and default consequence; its name should summarize the
+ * transition, not carry the whole contract.
  *
- * Use `Requested` when the producer can express an intent but another owner
- * must realize it. A request is not a completed fact, and should remain the
- * exception rather than a disguise for rendering instructions. Avoid
- * imperative names such as `openEditor`, `focusItem`, or `refreshPanel`.
+ * Name event families by intent:
+ *
+ * - Completed facts, outcomes, and projection transitions use precise suffixes:
+ *   `Set` for an assigned snapshot, `Changed` only when a difference exists,
+ *   and `Succeeded` or `Failed` for known outcomes. Dispatch them only after
+ *   the statement is true.
+ * - `Requested` means the producer expresses an intent that another owner must
+ *   realize. Requests are not completed facts and should remain the exception,
+ *   not a disguise for rendering instructions.
+ * - `Before...` followed by a completed event is appropriate only when
+ *   consumers independently need a preventable pre-transition phase and a
+ *   post-transition fact.
+ * - `Started`, `Updated`, and `Ended` are appropriate only for a genuine
+ *   multi-stage lifecycle whose phases are consumed independently.
+ *
+ * Avoid bare imperative names such as `openEditor`, `focusItem`, or
+ * `refreshPanel`. Do not add phases merely for symmetry: one meaningful event
+ * is better when consumers do not need to distinguish them.
  *
  * Prefer one meaningful transition over a chain such as
  * `fieldEdited -> draftUpdated -> buttonEnabled`. Synchronous consequences
@@ -155,7 +172,8 @@ import type {
  * - Use `handle.update()` when a structural transition affects most of the
  *   component.
  * - Use one custom event when one stable projection changes.
- * - Use a keyed event when one repeated entity changes.
+ * - Use a keyed event when one repeated entity changes. The key addresses the
+ *   consumer; detail carries only additional transition data it needs.
  *
  * If many instances need `when` predicates, or one handler dispatches several
  * UI-oriented events, reconsider ownership. A smaller projection, keyed

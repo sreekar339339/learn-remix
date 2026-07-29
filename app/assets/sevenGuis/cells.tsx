@@ -87,8 +87,8 @@ export const SevenGuisCells = clientEntry(
   function SevenGuisCells() {
     let events = new CustomEvents<
       | "sheetRecalculated"
-      | { cellEditValueSet: string }
       | "cellFocusRequested"
+      | { cellDraftSet: string }
     >();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
@@ -130,7 +130,7 @@ export const SevenGuisCells = clientEntry(
                         id={id}
                         type='text'
                         value={(det) => {
-                          if (det?.event?.type === "cellEditValueSet") {
+                          if (det?.event?.type === "cellDraftSet") {
                             return det.event.detail;
                           }
                           return sheet.values[id];
@@ -153,7 +153,7 @@ export const SevenGuisCells = clientEntry(
                           on("focus", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
                               events(
-                                "cellEditValueSet",
+                                "cellDraftSet",
                                 sheet.formulas[id] ?? "",
                                 localEvtOpts,
                               ),
@@ -163,7 +163,7 @@ export const SevenGuisCells = clientEntry(
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
                               events(
-                                "cellEditValueSet",
+                                "cellDraftSet",
                                 currentTarget.value,
                                 localEvtOpts,
                               ),
