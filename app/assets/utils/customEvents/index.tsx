@@ -29,13 +29,14 @@ import type {
  * let signals = new CustomEvents<"listUpdated" | "editorUpdated">();
  * // Signal-only and detailed events may share one definition:
  * let mixed = new CustomEvents<
- *   "sheetRecalculated" | { edit: string } | "selectionCleared"
+ *   "operationStarted" | { valueProposed: string } | "operationCompleted"
  * >();
  * ```
  *
- * An event detail is a consumer contract. Use a detail when a listener needs
- * the value outside local setup scope. Use `null` when producers and consumers
- * already share a private model and the event is only a precise render signal.
+ * An event detail is a consumer contract. Use it when the transition itself
+ * must transfer a value to its consumer. Omit it when producers and consumers
+ * already share the authoritative model and the event is only a precise
+ * signal.
  *
  * ## Dispatch
  *
@@ -111,11 +112,28 @@ import type {
  *
  * ## Design guidance
  *
- * Keep state authoritative in component setup scope or a domain object. A user
+ * Keep durable state authoritative in component setup scope or a domain object.
+ * This includes values needed by business rules, persistence, history, later
+ * calculations, or code that must read them independently of an event. A user
  * interaction should complete one model transition and then publish one
- * meaningful fact; event payloads and previously rendered events are not a
- * second state store. Consumers derive their next projection from the current
+ * meaningful fact. Consumers normally derive their next projection from that
  * model.
+ *
+ * Event detail may replace function-scoped model state when the value is
+ * transition-scoped projection data rather than durable state. This is
+ * appropriate when the value:
+ *
+ * - exists only because one transition occurred,
+ * - must be transferred exactly from producer to consumer,
+ * - is used only by the addressed projection,
+ * - is naturally replaced or ended by a later transition, and
+ * - would otherwise require model bookkeeping solely to render that projection.
+ *
+ * In that case, detail is the transition's immutable snapshot and the
+ * projection owns its bounded lifetime: the event creates it, the projection
+ * consumes it, and the next relevant transition replaces or ends it. This is
+ * not a second authoritative store. If other logic later needs the value
+ * without the event, promote it to the durable model.
  *
  * Name events after completed state transitions or independently consumed
  * projections, not rendering instructions. Prefer `editSessionSet` or

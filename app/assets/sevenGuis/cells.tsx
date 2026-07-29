@@ -95,7 +95,7 @@ export const SevenGuisCells = clientEntry(
                 <tr>
                   <th>{row}</th>
                   {columns.map((column, __, _, id = cellId(column, row)) => (
-                    <td key={`${id}:${sheet.values[id] ?? ""}`}>
+                    <td key={id}>
                       <events.on.change.input
                         aria-label={id}
                         value={(det) => {
