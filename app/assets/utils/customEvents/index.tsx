@@ -87,6 +87,14 @@ import type {
  *     : <p>Not saved yet.</p>
  *   }
  * />
+ *
+ * // Subscribe one projection to a precise subset of the event vocabulary.
+ * let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
+ * <saveOutcome.output
+ *   child={(_, event) => event?.type === "saveSucceeded"
+ *     ? "Saved"
+ *     : "Save failed"}
+ * />
  * ```
 
  * On event-aware elements, ordinary attributes accept either a static value or
@@ -98,8 +106,15 @@ import type {
  * event-aware elements or elements using `events.on(...)`. Only the addressed
  * projection updates and only the addressed DOM-effect listener runs.
  * Projections and listeners without an `id` continue to receive keyed events
- * as aggregate consumers. This bridges keyed event routing until the renderer
- * exposes JSX reconciliation keys to component props.
+ * as aggregate consumers. The DOM `id` is the explicit runtime address because
+ * JSX reconciliation keys are not exposed to component props.
+ *
+ * Use `events.on(["eventA", "eventB"])` when a projection or effect depends on
+ * a known subset of events. Its callback receives the matching granular detail,
+ * and `event.type` identifies which member triggered it. Use `events.on.change`
+ * only for a true aggregate consumer that must observe every event produced by
+ * the descriptor. `change` carries the transaction envelope rather than a
+ * granular detail.
  *
  * Child callbacks receive `(detail, event, handle)`. Before the first matching
  * event, `detail` and `event` are `undefined`; a dispatched null-detail event
@@ -111,8 +126,8 @@ import type {
  * Use `when={(detail, event) => boolean}` to decide whether an incoming event
  * should update that event-aware element. A false result skips the projection
  * update before the event is stored or rendered.
- * Event-aware element descendants that use `events.on(...)` observe the matching
- * transaction after the rendered DOM has committed.
+ * Within one dispatch transaction, all matching event-aware projections commit
+ * before any matching `events.on(...)` DOM effects run.
  * An event-aware element also processes product events dispatched directly on
  * itself, so `{ bubbles: false }` can be used for a strictly local update.
  *

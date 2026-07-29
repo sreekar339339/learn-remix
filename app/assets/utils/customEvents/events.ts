@@ -1,29 +1,24 @@
 import { CHANGE_EVENT_NAME } from "./constants.ts";
 import { isElement, isEventTarget } from "./dom.ts";
 import {
-  addEventType,
   createCustomEventChangeDetail,
-  getChangeEventEntries,
   getEventInit,
   getEventName,
   getEventType,
 } from "./protocol.ts";
 import {
   createCustomEventsTransaction,
+  type CustomEventsBatchRuntimeEntry,
   type CustomEventsRuntime,
   type CustomEventsTransaction,
 } from "./runtime.ts";
-import type {
-  ChangeEventDetailFromMap,
-  EventDetails,
-} from "./types.ts";
 
 // Event construction
 //
 // Event factory methods return normal CustomEvent instances for native
 // dispatchEvent(). The runtime stores ownership and processing metadata in weak
 // collections; `originTarget` and an optional routing key are the public event
-// metadata exposed by derived or bridged events.
+// metadata exposed by derived events.
 export function createProductCustomEvent(
   descriptor: CustomEventsRuntime,
   type: string,
@@ -55,7 +50,6 @@ function createDescriptorEvent(
     { origin, ...(key === undefined ? {} : { key }) },
   );
   transaction?.events.set(event.type, event);
-  if (transaction) descriptor.markTransaction(event, transaction);
   return event;
 }
 
@@ -66,8 +60,8 @@ function createDescriptorEvent(
 // but not product events, so they never recurse.
 //
 // Each processing pass creates one transaction for every derived event emitted
-// from that product event. Event-aware elements use that transaction to render first
-// and let descriptor-scoped listeners in the rendered subtree run afterward.
+// from that product event. All matching projections render before matching
+// post-render effects run.
 function dispatchLocalTypedEvent(
   target: EventTarget,
   descriptor: CustomEventsRuntime,
@@ -116,71 +110,13 @@ function emitDerivedChangeEvent(
   );
 }
 
-function emitExpandedGranularEvents(
+function commitTransaction(
   target: EventTarget,
   descriptor: CustomEventsRuntime,
-  entries: Array<[string, unknown]>,
-  init: EventInit,
-  key: PropertyKey | undefined,
-  transaction: CustomEventsTransaction,
-) {
-  if (entries.length === 1) {
-    let [[type, detail]] = entries;
-    target.dispatchEvent(
-      createDescriptorEvent(
-        descriptor,
-        type,
-        init,
-        detail,
-        target,
-        key,
-        transaction,
-      ),
-    );
-    dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
-    return;
-  }
-
-  let events = entries.map(([type, detail]) =>
-    createDescriptorEvent(
-      descriptor,
-      type,
-      init,
-      detail,
-      target,
-      key,
-      transaction,
-    ),
-  );
-
-  for (let event of events) {
-    target.dispatchEvent(event);
-  }
-
-  for (let [type, detail] of entries) {
-    dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
-  }
-}
-
-function commitProductEvent(
-  target: EventTarget,
-  descriptor: CustomEventsRuntime,
-  entries: Array<[string, unknown]>,
-  init: EventInit,
-  key: PropertyKey | undefined,
-) {
-  let transaction = createCustomEventsTransaction();
-  emitDerivedChangeEvent(target, descriptor, entries, init, key, transaction);
-  emitExpandedGranularEvents(target, descriptor, entries, init, key, transaction);
-}
-
-function commitConfiguredBatchEvent(
-  target: EventTarget,
-  descriptor: CustomEventsRuntime,
-  entries: NonNullable<
-    ReturnType<CustomEventsRuntime["getProductBatchEntries"]>
-  >,
+  entries: CustomEventsBatchRuntimeEntry[],
   aggregateInit: EventInit,
+  aggregateKey: PropertyKey | undefined,
+  originScope: EventTarget,
 ) {
   let transaction = createCustomEventsTransaction();
   let details = entries.map(({ type, detail }) => [type, detail] as [
@@ -192,46 +128,34 @@ function commitConfiguredBatchEvent(
     descriptor,
     details,
     aggregateInit,
-    undefined,
+    aggregateKey,
     transaction,
   );
 
+  let granularEvents = entries.map(({ type, detail, init, key }) =>
+    createDescriptorEvent(
+      descriptor,
+      type,
+      init,
+      detail,
+      target,
+      key,
+      transaction,
+    )
+  );
+  for (let granularEvent of granularEvents) {
+    target.dispatchEvent(granularEvent);
+  }
   for (let { type, detail, init, key } of entries) {
-    target.dispatchEvent(
-      createDescriptorEvent(
-        descriptor,
-        type,
-        init,
-        detail,
-        target,
-        key,
-        transaction,
-      ),
-    );
     dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
   }
-}
-
-function getProductEventEntries(
-  event: CustomEvent,
-  descriptor: CustomEventsRuntime,
-) {
-  let type = getEventType(descriptor, event.type);
-  if (!type) return undefined;
-
-  if (type !== CHANGE_EVENT_NAME) {
-    return [[type, event.detail]] satisfies Array<[string, unknown]>;
-  }
-
-  let detail = event.detail as ChangeEventDetailFromMap<EventDetails>;
-  let entries = getChangeEventEntries(detail);
-  for (let [type] of entries) addEventType(descriptor, type);
-  return entries;
+  descriptor.notifyTransaction(transaction, originScope, target);
 }
 
 export function processCustomEventsEvent(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
+  originScope: EventTarget,
 ) {
   if (!descriptor.ownsEvent(event)) return;
   if (!descriptor.claimProductEvent(event)) return;
@@ -240,24 +164,20 @@ export function processCustomEventsEvent(
   if (!origin) return;
 
   let init = getEventInit(event);
-  let configuredBatchEntries = descriptor.getProductBatchEntries(event);
-  if (configuredBatchEntries) {
-    queueMicrotask(() => {
-      commitConfiguredBatchEvent(
-        origin,
-        descriptor,
-        configuredBatchEntries,
-        init,
-      );
-    });
-    return;
+  let key = descriptor.getEventKey(event);
+  let entries = descriptor.getProductBatchEntries(event);
+  if (!entries) {
+    let type = getEventType(descriptor, event.type);
+    if (!type || type === CHANGE_EVENT_NAME) return;
+    entries = [{
+      type,
+      detail: event.detail,
+      init,
+      ...(key === undefined ? {} : { key }),
+    }];
   }
 
-  let key = descriptor.getEventKey(event);
-  let entries = getProductEventEntries(event, descriptor);
-  if (!entries?.length) return;
-
   queueMicrotask(() => {
-    commitProductEvent(origin, descriptor, entries, init, key);
+    commitTransaction(origin, descriptor, entries, init, key, originScope);
   });
 }

@@ -1,14 +1,11 @@
 import { CHANGE_EVENT_NAME } from "./constants.ts";
 import type { CustomEventsRuntime } from "./runtime.ts";
-import type {
-  ChangeEventDetailFromMap,
-  EventDetails,
-} from "./types.ts";
+import type { EventDetails } from "./types.ts";
 
 // Event type strings and known event types
 //
 // Descriptor event type strings are globally unique, so descriptor-owned events
-// can be bridged or processed without colliding with browser events or another
+// can be observed and processed without colliding with browser events or another
 // CustomEvents instance. Known event types are discovered lazily through proxy
 // property access and event factory calls.
 export function getEventName(descriptor: CustomEventsRuntime, type: string) {
@@ -68,16 +65,6 @@ export function createCustomEventChangeDetail(
     event: null,
     events: getEntriesObject(entries),
   };
-}
-
-export function getChangeEventEntries(
-  detail: ChangeEventDetailFromMap<EventDetails>,
-) {
-  if (!detail.event) return Object.entries(detail.events);
-
-  return [[detail.event.type, detail.event.detail]] satisfies Array<
-    [string, unknown]
-  >;
 }
 
 function getEntriesObject(entries: Array<[string, unknown]>) {

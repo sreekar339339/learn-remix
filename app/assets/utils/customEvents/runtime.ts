@@ -10,9 +10,14 @@ import {
   subscribeEventTypes,
 } from "./protocol.ts";
 
-type BridgedEvent = { source: Event; replay?: boolean };
-
 type DispatchTargetRegistration = { count: number; cleanup: () => void };
+
+type CustomEventsSubscription = {
+  element: Element;
+  eventNames: ReadonlySet<string>;
+  phase: "projection" | "effect";
+  notify(event: CustomEvent, committed?: () => void): boolean | void;
+};
 
 export type CustomEventsBatchRuntimeEntry = {
   type: string;
@@ -28,6 +33,14 @@ export type CustomEventsTransaction = {
 export function createCustomEventsTransaction(): CustomEventsTransaction {
   return { events: new Map() };
 }
+
+type CustomEventsEventMetadata = {
+  product?: boolean;
+  processed?: boolean;
+  origin?: EventTarget;
+  key?: PropertyKey;
+  batchEntries?: CustomEventsBatchRuntimeEntry[];
+};
 
 // Descriptor runtime
 //
@@ -50,59 +63,43 @@ export class CustomEventsRuntime {
     EventTarget,
     DispatchTargetRegistration
   >();
-  #ownedEvents = new WeakSet<Event>();
-  #productEvents = new WeakSet<Event>();
-  #processedProductEvents = new WeakSet<Event>();
-  #bridgedEvents = new WeakMap<Event, BridgedEvent>();
-  #originTargets = new WeakMap<Event, EventTarget>();
-  #eventKeys = new WeakMap<Event, PropertyKey>();
-  #productBatchEntries = new WeakMap<
-    Event,
-    CustomEventsBatchRuntimeEntry[]
-  >();
-  #transactions = new WeakMap<Event, CustomEventsTransaction>();
+  #eventMetadata = new WeakMap<Event, CustomEventsEventMetadata>();
+  #subscriptions = new Set<CustomEventsSubscription>();
   #notificationPending = false;
 
   ownsEvent(event: Event) {
-    return this.#ownedEvents.has(event);
+    return this.#eventMetadata.has(event);
   }
 
   isProductEvent(event: Event) {
-    return this.#productEvents.has(event);
+    return this.#eventMetadata.get(event)?.product === true;
   }
 
   claimProductEvent(event: Event) {
-    if (!this.#productEvents.has(event)) return false;
-    if (this.#processedProductEvents.has(event)) return false;
-    this.#processedProductEvents.add(event);
+    let metadata = this.#eventMetadata.get(event);
+    if (!metadata?.product || metadata.processed) return false;
+    metadata.processed = true;
     return true;
   }
 
-  isBridgedEvent(event: Event) {
-    return this.#bridgedEvents.has(event);
-  }
-
-  getBridgedEvent(event: Event) {
-    return this.#bridgedEvents.get(event);
-  }
-
   getOriginTarget(event: Event) {
-    return this.#originTargets.get(event);
+    return this.#eventMetadata.get(event)?.origin;
   }
 
   getEventKey(event: Event) {
-    return this.#eventKeys.get(event);
+    return this.#eventMetadata.get(event)?.key;
   }
 
   markProductBatchEntries(
     event: Event,
     entries: CustomEventsBatchRuntimeEntry[],
   ) {
-    this.#productBatchEntries.set(event, entries);
+    let metadata = this.#eventMetadata.get(event);
+    if (metadata) metadata.batchEntries = entries;
   }
 
   getProductBatchEntries(event: Event) {
-    return this.#productBatchEntries.get(event);
+    return this.#eventMetadata.get(event)?.batchEntries;
   }
 
   createCustomEvent(
@@ -116,35 +113,140 @@ export class CustomEventsRuntime {
     },
   ) {
     let event = new CustomEvent(type, { ...init, detail });
-    this.#ownedEvents.add(event);
-
-    if (metadata?.product) this.#productEvents.add(event);
+    let eventMetadata: CustomEventsEventMetadata = {
+      ...(metadata?.product ? { product: true } : {}),
+      ...(metadata?.origin ? { origin: metadata.origin } : {}),
+      ...(metadata?.key === undefined ? {} : { key: metadata.key }),
+    };
+    this.#eventMetadata.set(event, eventMetadata);
 
     if (metadata?.origin) {
-      this.#originTargets.set(event, metadata.origin);
       defineEventValue(event, "originTarget", metadata.origin, {
         enumerable: true,
       });
     }
 
     if (metadata?.key !== undefined) {
-      this.#eventKeys.set(event, metadata.key);
       defineEventValue(event, "key", metadata.key, { enumerable: true });
     }
 
     return event;
   }
 
-  markBridgedEvent(event: Event, bridgedEvent: BridgedEvent) {
-    this.#bridgedEvents.set(event, bridgedEvent);
+  registerSubscription(subscription: CustomEventsSubscription) {
+    this.#subscriptions.add(subscription);
+    return () => {
+      this.#subscriptions.delete(subscription);
+    };
   }
 
-  getTransaction(event: Event) {
-    return this.#transactions.get(event);
+  #subscriptionScope(element: Element) {
+    return this.getDefaultTarget(element);
   }
 
-  markTransaction(event: Event, transaction: CustomEventsTransaction) {
-    this.#transactions.set(event, transaction);
+  #isInScope(
+    subscription: CustomEventsSubscription,
+    originScope: EventTarget,
+    event: CustomEvent,
+  ) {
+    let subscriptionScope = this.#subscriptionScope(subscription.element);
+    if (subscriptionScope === originScope) return true;
+    if (!event.composed) return false;
+    if (typeof window !== "undefined" && subscriptionScope === window) {
+      return true;
+    }
+    return (
+      subscriptionScope instanceof Element &&
+      originScope instanceof Element &&
+      subscriptionScope.contains(originScope)
+    );
+  }
+
+  #matchesSubscription(
+    subscription: CustomEventsSubscription,
+    originScope: EventTarget,
+    originTarget: EventTarget,
+    event: CustomEvent,
+  ) {
+    if (!subscription.eventNames.has(event.type)) return false;
+    if (
+      !event.bubbles &&
+      originTarget instanceof Element &&
+      subscription.element !== originTarget
+    ) {
+      return false;
+    }
+    if (!this.#isInScope(subscription, originScope, event)) return false;
+
+    let key = this.getEventKey(event);
+    return (
+      key === undefined ||
+      subscription.element.id === "" ||
+      subscription.element.id === String(key)
+    );
+  }
+
+  notifyTransaction(
+    transaction: CustomEventsTransaction,
+    originScope: EventTarget,
+    originTarget: EventTarget,
+  ) {
+    let events = [...transaction.events.values()];
+    let projections = [...this.#subscriptions].filter(
+      (subscription) => subscription.phase === "projection",
+    );
+    let pending = 0;
+    let initializing = true;
+    let effectsRun = false;
+
+    let runEffects = () => {
+      if (effectsRun || initializing || pending > 0) return;
+      effectsRun = true;
+      let effects = [...this.#subscriptions].filter(
+        (subscription) => subscription.phase === "effect",
+      );
+      for (let event of events) {
+        for (let subscription of effects) {
+          if (
+            this.#matchesSubscription(
+              subscription,
+              originScope,
+              originTarget,
+              event,
+            )
+          ) {
+            subscription.notify(event);
+          }
+        }
+      }
+    };
+
+    for (let event of events) {
+      for (let subscription of projections) {
+        if (
+          !this.#matchesSubscription(
+            subscription,
+            originScope,
+            originTarget,
+            event,
+          )
+        ) {
+          continue;
+        }
+        pending++;
+        let committed = false;
+        let commit = () => {
+          if (committed) return;
+          committed = true;
+          pending--;
+          runEffects();
+        };
+        if (subscription.notify(event, commit) !== true) commit();
+      }
+    }
+
+    initializing = false;
+    runEffects();
   }
 
   addRegisteredHost(target: EventTarget) {
@@ -227,11 +329,14 @@ export class CustomEventsRuntime {
   }
 
   getDefaultTarget(element: Element | undefined) {
-    return (
-      this.findHost(element) ??
-      this.getSoleRegisteredHost() ??
-      (typeof window === "undefined" ? undefined : window)
-    );
+    let host = this.findHost(element);
+    if (host) return host;
+
+    let soleRegisteredHost = this.getSoleRegisteredHost();
+    if (soleRegisteredHost && !(soleRegisteredHost instanceof Element)) {
+      return soleRegisteredHost;
+    }
+    return typeof window === "undefined" ? undefined : window;
   }
 
   notifyHostsSoon() {
@@ -275,7 +380,13 @@ export class CustomEventsRuntime {
           if (options?.hosted && event.composed !== true) {
             event.stopPropagation();
           }
-          processCustomEventsEvent(event, this);
+          processCustomEventsEvent(
+            event,
+            this,
+            this.getDefaultTarget(
+              event.target instanceof Element ? event.target : undefined,
+            ) ?? target,
+          );
         },
       } as never);
     };
@@ -342,7 +453,7 @@ class WindowBridge {
           return;
         }
 
-        processCustomEventsEvent(event, descriptor);
+        processCustomEventsEvent(event, descriptor, window);
       },
     } as never);
   }

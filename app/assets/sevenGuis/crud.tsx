@@ -25,7 +25,10 @@ function visiblePeople(people: Array<Person>, prefix: string) {
 export const SevenGuisCrud = clientEntry(
   import.meta.url,
   function SevenGuisCrud(handle) {
-    let events = new CustomEvents<"filterApplied" | "draftEdited">();
+    let events = new CustomEvents<
+      "filterApplied" | "personSelected" | "draftEdited"
+    >();
+    let peopleViewEvents = events.on(["filterApplied", "personSelected"]);
     let model: CrudModel = {
       people: [
         { id: 1, name: "Hans", surname: "Emil" },
@@ -65,7 +68,7 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <events.on.filterApplied.select
+          <peopleViewEvents.select
             size={7}
             aria-label="People"
             value={() => model.selectedId ?? ""}
@@ -79,7 +82,9 @@ export const SevenGuisCrud = clientEntry(
                 model.selectedId = selected.id;
                 model.draft.name = selected.name;
                 model.draft.surname = selected.surname;
-                handle.update();
+                currentTarget.dispatchEvent(
+                  events(["personSelected", "draftEdited"]),
+                );
               }),
             ]}
             child={() =>

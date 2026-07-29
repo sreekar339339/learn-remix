@@ -1,8 +1,6 @@
 import {
-  addEventListeners,
   createElement,
   createMixin,
-  on as remixOn,
   ref,
   type Handle,
   type RemixNode,
@@ -10,15 +8,11 @@ import {
 import {
   addEventType,
   getEventName,
-  subscribeEventTypes,
+  getEventType,
 } from "./protocol.ts";
 import { defineEventValue } from "./dom.ts";
+import type { CustomEventsRuntime } from "./runtime.ts";
 import type {
-  CustomEventsRuntime,
-  CustomEventsTransaction,
-} from "./runtime.ts";
-import type {
-  AnyCustomEventsName,
   CustomEventWithMetadata,
   CustomEventsEvent,
   CustomEventsEventElement,
@@ -26,27 +20,19 @@ import type {
   CustomEventsEventElementProps,
   CustomEventsEventType,
   CustomEventsRenderDetail,
-  CustomEventsRenderEvent,
   EventDetails,
 } from "./types.ts";
 
-type RenderScope = {
-  descriptor: CustomEventsRuntime;
-  eventName: string;
-  transaction: CustomEventsTransaction | null;
-  version: number;
-};
-
-// Bridged events are non-bubbling clones dispatched on a mixin host so Remix
-// on(...) listeners see the host as currentTarget.
-function createBridgedEvent(
+function createListenerEvent(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
-  options?: { replay?: boolean },
+  currentTarget: Element,
 ) {
   let origin = descriptor.getOriginTarget(event);
-  let bridgedEvent = descriptor.createCustomEvent(
-    event.type,
+  let key = descriptor.getEventKey(event);
+  let localType = getEventType(descriptor, event.type) ?? event.type;
+  let listenerEvent = descriptor.createCustomEvent(
+    localType,
     {
       bubbles: false,
       cancelable: event.cancelable,
@@ -55,267 +41,72 @@ function createBridgedEvent(
     event.detail,
     {
       ...(origin ? { origin } : {}),
-      ...(descriptor.getEventKey(event) === undefined
-        ? {}
-        : { key: descriptor.getEventKey(event) }),
+      ...(key === undefined ? {} : { key }),
     },
   );
-  descriptor.markBridgedEvent(bridgedEvent, {
-    source: event,
-    ...(options?.replay ? { replay: true } : {}),
-  });
-  return bridgedEvent;
+  defineEventValue(listenerEvent, "target", event.target);
+  defineEventValue(listenerEvent, "currentTarget", currentTarget);
+  return listenerEvent;
 }
 
-function createProjectionEvent(
-  event: CustomEvent,
+function registerElementSubscription(
+  element: Element,
+  signal: AbortSignal,
   descriptor: CustomEventsRuntime,
-  currentTarget: Element,
+  eventNames: ReadonlySet<string>,
+  phase: "projection" | "effect",
+  notify: (event: CustomEvent, committed?: () => void) => boolean | void,
 ) {
-  let projectionEvent = createBridgedEvent(event, descriptor);
-  defineEventValue(projectionEvent, "target", event.target);
-  defineEventValue(projectionEvent, "currentTarget", currentTarget);
-  return projectionEvent;
-}
-
-function CustomEventsRenderScopeProvider(
-  handle: Handle<
-    {
-      scope: RenderScope;
-      children: RemixNode;
-    },
-    RenderScope
-  >,
-) {
-  return () => {
-    handle.context.set(handle.props.scope);
-    return handle.props.children;
-  };
-}
-
-function shouldDeferScopedListener(
-  descriptor: CustomEventsRuntime,
-  scope: RenderScope | undefined,
-  event: Event,
-) {
-  if (scope?.descriptor !== descriptor) return false;
-  return descriptor.getTransaction(event)?.events.has(scope.eventName) ?? false;
-}
-
-function shouldBridgeEventToElement(
-  event: Event,
-  element: Element | undefined,
-): element is Element {
-  if (!element) return false;
-  if (event.target === element) return false;
-  if (
-    typeof Node !== "undefined" &&
-    event.target instanceof Node &&
-    element.contains(event.target)
-  ) {
-    return false;
-  }
-  if (event.composedPath().includes(element)) return false;
-  return true;
-}
-
-// Descriptor-owned on() bridges events from the nearest host/window to the
-// element that owns the mixin. It depends on host discovery for default
-// targeting and on event-type subscriptions so newly discovered product events
-// are bridged without remounting user elements.
-const forwardEventsMixin = createMixin<
-  Element,
-  [descriptor: CustomEventsRuntime]
->((handle) => {
-  let currentElement: Element | undefined;
-  let currentState: CustomEventsRuntime | undefined;
-  let controller: AbortController | undefined;
-  let registeredElement: Element | undefined;
-  let registeredTarget: EventTarget | undefined;
-  let registeredState: CustomEventsRuntime | undefined;
-  let registeredTypes = new Set<string>();
-  let unsubscribeHost: (() => void) | undefined;
-  let unsubscribeEventTypes: (() => void) | undefined;
-
-  function syncHostSubscription() {
-    unsubscribeHost?.();
-    unsubscribeHost = undefined;
-
-    if (currentState) {
-      unsubscribeHost = currentState.subscribeHosts(listen);
-    }
-  }
-
-  function syncEventTypeSubscription() {
-    unsubscribeEventTypes?.();
-    unsubscribeEventTypes = undefined;
-    if (currentState) {
-      unsubscribeEventTypes = subscribeEventTypes(currentState, listenType);
-    }
-  }
-
-  function listenType(type: string) {
-    if (registeredTypes.has(type)) return;
-
-    let target = currentState
-      ? currentState.getDefaultTarget(currentElement)
-      : undefined;
-    if (!currentElement || !target || !currentState || !controller) return;
-
-    registeredTypes.add(type);
-    let descriptor = currentState;
-    addEventListeners(target, controller.signal, {
-      [getEventName(descriptor, type)]: (event: Event) => {
-        if (!(event instanceof CustomEvent)) return;
-        if (descriptor.isProductEvent(event)) return;
-        if (!descriptor.ownsEvent(event)) return;
-        if (descriptor.isBridgedEvent(event)) return;
-        let element = currentElement;
-        if (!shouldBridgeEventToElement(event, element)) return;
-        element.dispatchEvent(createBridgedEvent(event, descriptor));
-      },
-    } as never);
-  }
-
-  function listen() {
-    let target = currentState
-      ? currentState.getDefaultTarget(currentElement)
-      : undefined;
-
-    if (
-      controller &&
-      registeredElement === currentElement &&
-      registeredTarget === target &&
-      registeredState === currentState
-    ) {
-      return;
-    }
-
-    controller?.abort();
-    controller = undefined;
-    registeredElement = undefined;
-    registeredTarget = undefined;
-    registeredState = undefined;
-    registeredTypes.clear();
-    if (!currentElement || !currentState || !target) return;
-
-    controller = new AbortController();
-    registeredElement = currentElement;
-    registeredTarget = target;
-    registeredState = currentState;
-
-    for (let type of currentState.eventTypes) {
-      listenType(type);
-    }
-  }
-
-  function mount(element: Element) {
-    currentElement = element;
-    syncHostSubscription();
-    syncEventTypeSubscription();
-    listen();
-    queueMicrotask(() => {
-      if (currentElement === element) listen();
-    });
-  }
-
-  handle.addEventListener("insert", (event) => mount(event.node));
-  handle.addEventListener("reclaimed", (event) => mount(event.node));
-  handle.addEventListener("remove", () => {
-    unsubscribeHost?.();
-    unsubscribeHost = undefined;
-    unsubscribeEventTypes?.();
-    unsubscribeEventTypes = undefined;
-    controller?.abort();
-    controller = undefined;
-    registeredElement = undefined;
-    registeredTarget = undefined;
-    registeredState = undefined;
-    currentElement = undefined;
+  let unregisterTarget = descriptor.registerDispatchTarget(element);
+  let unregisterSubscription = descriptor.registerSubscription({
+    element,
+    eventNames,
+    phase,
+    notify,
   });
-
-  return (descriptor) => {
-    let needsListen = currentState !== descriptor;
-
-    currentState = descriptor;
-
-    if (needsListen) {
-      syncHostSubscription();
-      syncEventTypeSubscription();
-      listen();
-    }
-
-    return handle.element;
-  };
-});
+  signal.addEventListener("abort", () => {
+    unregisterSubscription();
+    unregisterTarget();
+  }, { once: true });
+}
 
 export const customEventsOnMixin = createMixin<
   Element,
   [
     descriptor: CustomEventsRuntime,
-    type: string,
+    types: string | readonly string[],
     listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
   ]
 >((handle) => {
-  return (descriptor, type, listener) => {
-    addEventType(descriptor, type);
-    let eventName = getEventName(descriptor, type);
-    let renderScope = handle.context.get(CustomEventsRenderScopeProvider);
-    if (renderScope?.descriptor === descriptor) {
-      let pendingEvent = renderScope.transaction?.events.get(eventName);
-      let pendingScope = renderScope;
-      let pendingVersion = renderScope.version;
-      if (pendingEvent) {
-        handle.queueTask((node, signal) => {
-          if (signal.aborted) return;
-          if (pendingScope.version !== pendingVersion) return;
-
-          let replayEvent = createBridgedEvent(
-            pendingEvent as CustomEvent,
-            descriptor,
-            { replay: true },
-          );
-          node.dispatchEvent(replayEvent);
-        });
-      }
-    }
-
-    let wrappedListener = (
-      event: CustomEventWithMetadata<any>,
-      signal: AbortSignal,
-    ) => {
-      if (descriptor.isProductEvent(event)) return;
-
-      let bridgedEvent = descriptor.getBridgedEvent(event);
-      let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
-      let scope = handle.context.get(CustomEventsRenderScopeProvider);
-
-      let eventKey = descriptor.getEventKey(sourceEvent);
-      if (
-        eventKey !== undefined &&
-        event.currentTarget instanceof Element &&
-        event.currentTarget.id !== "" &&
-        String(eventKey) !== event.currentTarget.id
-      ) {
-        return;
-      }
-
-      if (
-        !bridgedEvent?.replay &&
-        shouldDeferScopedListener(descriptor, scope, sourceEvent)
-      ) {
-        return;
-      }
-
-      return listener(event, signal);
-    };
-
+  return (descriptor, types, listener) => {
+    let eventTypes = typeof types === "string" ? [types] : [...types];
+    for (let type of eventTypes) addEventType(descriptor, type);
+    let eventNames = new Set(
+      eventTypes.map((type) => getEventName(descriptor, type)),
+    );
     return (
       <handle.element
-        mix={[
-          forwardEventsMixin(descriptor),
-          remixOn(eventName as AnyCustomEventsName, wrappedListener),
-        ]}
+        mix={ref((element, signal) => {
+          let reentry: AbortController | undefined;
+          registerElementSubscription(
+            element,
+            signal,
+            descriptor,
+            eventNames,
+            "effect",
+            (event) => {
+              reentry?.abort();
+              reentry = new AbortController();
+              void listener(
+                createListenerEvent(event, descriptor, element),
+                reentry.signal,
+              );
+            },
+          );
+          signal.addEventListener("abort", () => reentry?.abort(), {
+            once: true,
+          });
+        })}
       />
     );
   };
@@ -360,94 +151,67 @@ function createCustomEventsEventElement<
   Type extends CustomEventsEventType<Events>,
   Tag extends keyof JSX.IntrinsicElements,
 >(
-  type: Type,
+  types: readonly Type[],
   tag: Tag,
   descriptor: CustomEventsRuntime,
 ): CustomEventsEventElement<Events, Type, Tag> {
-  addEventType(descriptor, type);
+  for (let type of types) addEventType(descriptor, type);
+  let eventNames = new Set(
+    types.map((type) => getEventName(descriptor, type)),
+  );
+
   return function CustomEventsEventElement(
     handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
   ) {
-    let eventName = getEventName(descriptor, type);
     let currentEvent: Event | undefined;
-    let renderScope: RenderScope = {
-      descriptor,
-      eventName,
-      transaction: null,
-      version: 0,
-    };
-
-    let projectionMix = [
-      ref((element, signal) => {
-        let cleanup = descriptor.registerDispatchTarget(element);
-        signal.addEventListener("abort", cleanup, { once: true });
-      }),
-      forwardEventsMixin(descriptor),
-      remixOn(eventName as AnyCustomEventsName, (event) => {
-        if (descriptor.isProductEvent(event)) return;
-        if (!descriptor.ownsEvent(event)) return;
-        if (descriptor.getBridgedEvent(event)?.replay) return;
-
-        let customEvent = event as unknown as CustomEventsEvent<Events, Type>;
-        let detail = (event as CustomEvent).detail as CustomEventsRenderDetail<
-          Events,
-          Type
-        >;
-        let when = (
-          handle.props as CustomEventsEventElementProps<Events, Type, Tag>
-        ).when;
-        if (when && !when(detail, customEvent)) return;
-        let elementId = (
-          handle.props as CustomEventsEventElementProps<Events, Type, Tag>
-        ).id;
-        let eventKey = descriptor.getEventKey(event);
-        if (
-          eventKey !== undefined &&
-          typeof elementId === "string" &&
-          String(eventKey) !== elementId
-        ) {
-          return;
-        }
-
-        currentEvent = createProjectionEvent(
-          event as CustomEvent,
-          descriptor,
-          event.currentTarget,
-        );
-        let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
-        renderScope.transaction = descriptor.getTransaction(sourceEvent) ?? null;
-        let version = ++renderScope.version;
-        void handle.update().then(() => {
-          if (renderScope.version === version) {
-            renderScope.transaction = null;
-          }
-        });
-      }),
-    ];
+    let projectionMix = ref((element, signal) => {
+      registerElementSubscription(
+        element,
+        signal,
+        descriptor,
+        eventNames,
+        "projection",
+        (event, committed) => {
+          let projectedEvent = createListenerEvent(
+            event,
+            descriptor,
+            element,
+          ) as unknown as CustomEventsEvent<Events, Type>;
+          let detail = (projectedEvent as unknown as CustomEvent)
+            .detail as CustomEventsRenderDetail<
+            Events,
+            Type
+          >;
+          let when = handle.props.when;
+          if (when && !when(detail, projectedEvent)) return;
+          currentEvent = projectedEvent;
+          handle.update();
+          handle.queueTask(() => committed?.());
+          return true;
+        },
+      );
+    });
 
     return () => {
       let event =
-        currentEvent?.type === eventName && descriptor.ownsEvent(currentEvent)
+        currentEvent && descriptor.ownsEvent(currentEvent)
           ? (currentEvent as CustomEventsEvent<Events, Type>)
           : undefined;
       let detail = (event
         ? (event as unknown as CustomEvent).detail
         : undefined) as CustomEventsRenderDetail<Events, Type>;
-      let props = handle.props as CustomEventsEventElementProps<
-        Events,
-        Type,
-        Tag
-      >;
       let {
         children,
         mix,
         child,
         when: _when,
         ...elementProps
-      } = props as Record<
-        string,
-        unknown
-      >;
+      } = handle.props as CustomEventsEventElementProps<
+        Events,
+        Type,
+        Tag
+      > & Record<string, unknown>;
+
       if (child !== undefined && children !== undefined) {
         throw new Error(
           "CustomEvents event elements accept either static children or child(), not both.",
@@ -457,20 +221,18 @@ function createCustomEventsEventElement<
       let content = typeof child === "function"
         ? child(detail, event, handle)
         : children;
-      let resolvedProps = resolveEventElementProps(elementProps, detail, event);
-      let element = createElement(
+      let resolvedProps = resolveEventElementProps(
+        elementProps,
+        detail,
+        event,
+      );
+      return createElement(
         tag,
         {
           ...resolvedProps,
-          mix: prependMixins(mix, projectionMix),
+          mix: prependMixins(mix, [projectionMix]),
         },
         content,
-      );
-
-      return (
-        <CustomEventsRenderScopeProvider scope={renderScope}>
-          {element}
-        </CustomEventsRenderScopeProvider>
       );
     };
   } as CustomEventsEventElement<Events, Type, Tag>;
@@ -480,21 +242,19 @@ export function createCustomEventsEventElements<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 >(
-  type: Type,
+  types: readonly Type[],
   descriptor: CustomEventsRuntime,
 ): CustomEventsEventElements<Events, Type> {
   let elements = new Map<string, CustomEventsEventElement<Events, Type, any>>();
 
   return new Proxy({}, {
     get(_, property) {
-      if (typeof property !== "string") {
-        return undefined;
-      }
+      if (typeof property !== "string") return undefined;
 
       let element = elements.get(property);
       if (!element) {
         element = createCustomEventsEventElement(
-          type,
+          types,
           property as keyof JSX.IntrinsicElements,
           descriptor,
         );

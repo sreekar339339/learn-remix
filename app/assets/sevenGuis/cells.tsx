@@ -90,6 +90,10 @@ export const SevenGuisCells = clientEntry(
       | "cellFocusRequested"
       | { cellDraftSet: string }
     >();
+    let cellValueEvents = events.on([
+      "sheetRecalculated",
+      "cellDraftSet",
+    ]);
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
 
@@ -125,13 +129,13 @@ export const SevenGuisCells = clientEntry(
                   <th>{row}</th>
                   {columns.map((column, __, _, id = cellId(column, row)) => (
                     <td key={id}>
-                      <events.on.change.input
+                      <cellValueEvents.input
                         aria-label={id}
                         id={id}
                         type='text'
-                        value={(det) => {
-                          if (det?.event?.type === "cellDraftSet") {
-                            return det.event.detail;
+                        value={(detail, event) => {
+                          if (event?.type === "cellDraftSet") {
+                            return detail as string;
                           }
                           return sheet.values[id];
                         }}

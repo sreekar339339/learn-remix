@@ -331,6 +331,62 @@ describe("CustomEvents", () => {
     assert.equal(document.activeElement, result.$('[data-testid="second"]'));
   });
 
+  it("subscribes projections and effects to explicit event groups", async (t) => {
+    let events = new CustomEvents<
+      "filterApplied" | { personSelected: number } | "draftSet"
+    >();
+
+    function EventGroup() {
+      let selectionEvents = events.on([
+        "filterApplied",
+        "personSelected",
+      ]);
+      return () => (
+        <section>
+          <button
+            data-testid="select-person"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(events("personSelected", 2));
+            })}
+          />
+          <button
+            data-testid="set-draft"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(events("draftSet"));
+            })}
+          />
+          <selectionEvents.output
+            data-testid="selection"
+            child={(detail, event) =>
+              event ? `${event.type}:${String(detail)}` : "idle"
+            }
+            mix={events.on(
+              ["filterApplied", "personSelected"],
+              ({ currentTarget, type }) => {
+                currentTarget.dataset.effectType = type;
+              },
+            )}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<EventGroup />);
+    t.after(() => result.cleanup());
+
+    await result.act(() =>
+      (result.$('[data-testid="select-person"]') as HTMLButtonElement).click(),
+    );
+    let selection = result.$('[data-testid="selection"]') as HTMLOutputElement;
+    assert.equal(selection.textContent, "personSelected:2");
+    assert.equal(selection.dataset.effectType, "personSelected");
+
+    await result.act(() =>
+      (result.$('[data-testid="set-draft"]') as HTMLButtonElement).click(),
+    );
+    assert.equal(selection.textContent, "personSelected:2");
+  });
+
   it("processes a non-bubbling event dispatched on its event-aware element", async (t) => {
     let events = new CustomEvents<"activated">();
 

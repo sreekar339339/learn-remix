@@ -52,36 +52,39 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     return new Event(CUSTOM_EVENTS_ABORTED);
   }
 
-  function createBatchChangeEvent(
-    events:
-      | Partial<Events>
-      | readonly string[],
-    init?: CustomEventsInit,
+  function createBatchEvent(
+    entries: Array<{
+      type: string;
+      detail: unknown;
+      init: EventInit;
+      key?: PropertyKey;
+    }>,
+    aggregateOptions?: CustomEventsInit,
   ) {
-    if (init?.signal?.aborted) {
+    if (aggregateOptions?.signal?.aborted) {
       return createAbortedEvent();
     }
 
-    let entries = Array.isArray(events)
-      ? [...new Set(events)].map((type) => [type, null] as [string, unknown])
-      : getCustomEventsDispatchEntries(events as Partial<Events>);
-    for (let [type] of entries) addDescriptorEventType(type);
-    let detail = createCustomEventChangeDetail(entries);
+    for (let { type } of entries) addDescriptorEventType(type);
     enableDescriptorEventType(CHANGE_EVENT_NAME);
-    return createProductCustomEvent(
+    let event = createProductCustomEvent(
       state,
       CHANGE_EVENT_NAME,
-      getEventInit(init),
-      detail,
-      init?.key,
+      getEventInit(aggregateOptions),
+      createCustomEventChangeDetail(
+        entries.map(({ type, detail }) => [type, detail]),
+      ),
+      aggregateOptions?.key,
     );
+    state.markProductBatchEntries(event, entries);
+    return event;
   }
 
-  function createConfiguredBatchChangeEvent(
+  function normalizeConfiguredBatch(
     configuredEvents: readonly CustomEventsBatchItem<Events>[],
   ) {
     let seen = new Set<string>();
-    let entries = configuredEvents.map((configuredEvent) => {
+    return configuredEvents.map((configuredEvent) => {
       if (typeof configuredEvent === "string") {
         if (seen.has(configuredEvent)) {
           throw new TypeError(
@@ -89,7 +92,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
           );
         }
         seen.add(configuredEvent);
-        addDescriptorEventType(configuredEvent);
         return {
           type: configuredEvent,
           detail: null,
@@ -120,7 +122,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         options?: CustomEventsInit;
       };
       if (config.options?.signal?.aborted) return null;
-      addDescriptorEventType(type);
       return {
         type,
         detail: Object.hasOwn(config, "detail") ? config.detail : null,
@@ -130,23 +131,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
           : { key: config.options.key }),
       };
     });
-
-    if (entries.some((entry) => entry === null)) {
-      return createAbortedEvent();
-    }
-
-    let batchEntries = entries.filter((entry) => entry !== null);
-    enableDescriptorEventType(CHANGE_EVENT_NAME);
-    let event = createProductCustomEvent(
-      state,
-      CHANGE_EVENT_NAME,
-      getEventInit(undefined),
-      createCustomEventChangeDetail(
-        batchEntries.map(({ type, detail }) => [type, detail]),
-      ),
-    );
-    state.markProductBatchEntries(event, batchEntries);
-    return event;
   }
 
   function createGranularEvent(
@@ -245,10 +229,28 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     if (elements) return elements;
 
     elements = createCustomEventsEventElements(
-      property as CustomEventsEventType<Events>,
+      [property as CustomEventsEventType<Events>],
       state,
     );
     eventElements.set(property, elements);
+    return elements;
+  }
+
+  let eventElementGroups = new Map<
+    string,
+    CustomEventsEventElements<Events, CustomEventsEventType<Events>>
+  >();
+
+  function getEventElementGroup(types: readonly string[]) {
+    let key = [...new Set(types)].sort().join("\u0000");
+    let elements = eventElementGroups.get(key);
+    if (elements) return elements;
+    for (let type of types) addDescriptorEventType(type);
+    elements = createCustomEventsEventElements(
+      types as readonly CustomEventsEventType<Events>[],
+      state,
+    );
+    eventElementGroups.set(key, elements);
     return elements;
   }
 
@@ -264,14 +266,23 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   ) as CustomEventsTypes<Events>;
 
   let onFunction = ((
-    type: CustomEventsEventType<Events>,
-    listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
-  ) =>
-    customEventsOnMixin(
+    typeOrTypes:
+      | CustomEventsEventType<Events>
+      | readonly CustomEventsEventType<Events>[],
+    listener?: (event: Event, signal: AbortSignal) => void | Promise<void>,
+  ) => {
+    if (Array.isArray(typeOrTypes) && listener === undefined) {
+      return getEventElementGroup(typeOrTypes);
+    }
+    if (!listener) {
+      throw new TypeError("CustomEvents on() requires an event listener.");
+    }
+    return customEventsOnMixin(
       state,
-      type,
+      typeOrTypes as string | readonly string[],
       listener,
-    )) as CustomEventsOnFunction<Events>;
+    );
+  }) as CustomEventsOnFunction<Events>;
   let on = new Proxy(onFunction, {
     get(target, property, receiver) {
       if (Reflect.has(target, property)) {
@@ -309,16 +320,27 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       Array.isArray(typeOrEvents) &&
       typeOrEvents.some((entry) => typeof entry !== "string")
     ) {
-      return createConfiguredBatchChangeEvent(
+      let entries = normalizeConfiguredBatch(
         typeOrEvents as readonly CustomEventsBatchItem<Events>[],
       );
+      if (entries.some((entry) => entry === null)) return createAbortedEvent();
+      return createBatchEvent(entries.filter((entry) => entry !== null));
     }
 
-    return createBatchChangeEvent(
-      typeOrEvents as
-        | Partial<Events>
-        | readonly string[],
-      detailOrInit as CustomEventsInit | undefined,
+    let options = detailOrInit as CustomEventsInit | undefined;
+    let details = Array.isArray(typeOrEvents)
+      ? [...new Set(typeOrEvents)].map((type) =>
+        [type, null] as [string, unknown]
+      )
+      : getCustomEventsDispatchEntries(typeOrEvents as Partial<Events>);
+    return createBatchEvent(
+      details.map(([type, detail]) => ({
+        type,
+        detail,
+        init: getEventInit(options),
+        ...(options?.key === undefined ? {} : { key: options.key }),
+      })),
+      options,
     );
   }) as CustomEventsFactory<Events>;
 

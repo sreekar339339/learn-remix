@@ -462,6 +462,38 @@ export type CustomEventsListenerEvent<
 };
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
+  /** Creates event-aware elements driven by any listed event. */
+  <
+    const Types extends readonly [
+      CustomEventsEventType<Events>,
+      ...CustomEventsEventType<Events>[],
+    ],
+  >(
+    types: Types,
+  ): CustomEventsEventElements<Events, Types[number]>;
+
+  /** Reacts to any listed event on the element that owns this mixin. */
+  <
+    HostElement extends Element = Element,
+    const Types extends readonly [
+      CustomEventsEventType<Events>,
+      ...CustomEventsEventType<Events>[],
+    ] = readonly [
+      CustomEventsEventType<Events>,
+      ...CustomEventsEventType<Events>[],
+    ],
+  >(
+    types: Types,
+    listener: (
+      event: CustomEventsListenerEvent<
+        Events,
+        Types[number],
+        HostElement
+      >,
+      signal: AbortSignal,
+    ) => void | Promise<void>,
+  ): MixinDescriptor<HostElement, any>;
+
   /**
    * Reacts to one custom event on the element that owns this mixin.
    *
