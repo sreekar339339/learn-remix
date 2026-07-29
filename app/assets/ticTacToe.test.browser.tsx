@@ -13,12 +13,23 @@ describe("TicTacToeCustomEvents", () => {
       () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
     );
 
-    let firstCell = result.$("button[value='0']") as HTMLButtonElement;
+    let firstCell = result.$("button[id='0']") as HTMLButtonElement;
     let status = result.$("p") as HTMLParagraphElement;
 
     assert.equal(firstCell.textContent, "");
     assert.equal(status.textContent, "Game in progress");
     assert.equal(document.activeElement, firstCell);
+
+    await result.act(() =>
+      firstCell.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    assert.equal(document.activeElement, result.$("button[id='1']"));
   });
 
   it("focuses the reset button when the game ends", async (t) => {
@@ -30,7 +41,7 @@ describe("TicTacToeCustomEvents", () => {
     );
 
     let clickCell = async (cellId: number) => {
-      let cell = result.$(`button[value='${cellId}']`) as HTMLButtonElement;
+      let cell = result.$(`button[id='${cellId}']`) as HTMLButtonElement;
       await result.act(() => cell.click());
     };
 
@@ -39,28 +50,29 @@ describe("TicTacToeCustomEvents", () => {
     await clickCell(1);
     await clickCell(4);
     await clickCell(2);
+    await result.act(
+      () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    );
 
     let reset = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Reset",
     )!;
     let status = result.$("p") as HTMLParagraphElement;
 
-    assert.equal(status.textContent, "X has won!");
+    let statusText = status.textContent;
+    assert.equal(statusText, "X has won!");
     assert.equal(document.activeElement?.textContent, reset.textContent);
-    assert.equal(document.activeElement?.getAttribute("value"), null);
+    assert.equal(document.activeElement?.id, "");
 
     await result.act(() => reset.click());
     await result.act(
       () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
     );
 
-    let firstCell = result.$("button[value='0']") as HTMLButtonElement;
+    let firstCell = result.$("button[id='0']") as HTMLButtonElement;
     status = result.$("p") as HTMLParagraphElement;
 
     assert.equal(status.textContent, "Game in progress");
-    assert.equal(
-      document.activeElement?.getAttribute("value"),
-      firstCell.value,
-    );
+    assert.equal(document.activeElement, firstCell);
   });
 });

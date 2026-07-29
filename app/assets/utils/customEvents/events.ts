@@ -174,6 +174,44 @@ function commitProductEvent(
   emitExpandedGranularEvents(target, descriptor, entries, init, key, transaction);
 }
 
+function commitConfiguredBatchEvent(
+  target: EventTarget,
+  descriptor: CustomEventsRuntime,
+  entries: NonNullable<
+    ReturnType<CustomEventsRuntime["getProductBatchEntries"]>
+  >,
+  aggregateInit: EventInit,
+) {
+  let transaction = createCustomEventsTransaction();
+  let details = entries.map(({ type, detail }) => [type, detail] as [
+    string,
+    unknown,
+  ]);
+  emitDerivedChangeEvent(
+    target,
+    descriptor,
+    details,
+    aggregateInit,
+    undefined,
+    transaction,
+  );
+
+  for (let { type, detail, init, key } of entries) {
+    target.dispatchEvent(
+      createDescriptorEvent(
+        descriptor,
+        type,
+        init,
+        detail,
+        target,
+        key,
+        transaction,
+      ),
+    );
+    dispatchLocalTypedEvent(target, descriptor, type, init, detail, key);
+  }
+}
+
 function getProductEventEntries(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
@@ -202,6 +240,19 @@ export function processCustomEventsEvent(
   if (!origin) return;
 
   let init = getEventInit(event);
+  let configuredBatchEntries = descriptor.getProductBatchEntries(event);
+  if (configuredBatchEntries) {
+    queueMicrotask(() => {
+      commitConfiguredBatchEvent(
+        origin,
+        descriptor,
+        configuredBatchEntries,
+        init,
+      );
+    });
+    return;
+  }
+
   let key = descriptor.getEventKey(event);
   let entries = getProductEventEntries(event, descriptor);
   if (!entries?.length) return;

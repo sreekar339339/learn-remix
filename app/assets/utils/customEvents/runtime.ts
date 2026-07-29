@@ -14,6 +14,13 @@ type BridgedEvent = { source: Event; replay?: boolean };
 
 type DispatchTargetRegistration = { count: number; cleanup: () => void };
 
+export type CustomEventsBatchRuntimeEntry = {
+  type: string;
+  detail: unknown;
+  init: EventInit;
+  key?: PropertyKey;
+};
+
 export type CustomEventsTransaction = {
   events: Map<string, CustomEvent>;
 };
@@ -49,6 +56,10 @@ export class CustomEventsRuntime {
   #bridgedEvents = new WeakMap<Event, BridgedEvent>();
   #originTargets = new WeakMap<Event, EventTarget>();
   #eventKeys = new WeakMap<Event, PropertyKey>();
+  #productBatchEntries = new WeakMap<
+    Event,
+    CustomEventsBatchRuntimeEntry[]
+  >();
   #transactions = new WeakMap<Event, CustomEventsTransaction>();
   #notificationPending = false;
 
@@ -81,6 +92,17 @@ export class CustomEventsRuntime {
 
   getEventKey(event: Event) {
     return this.#eventKeys.get(event);
+  }
+
+  markProductBatchEntries(
+    event: Event,
+    entries: CustomEventsBatchRuntimeEntry[],
+  ) {
+    this.#productBatchEntries.set(event, entries);
+  }
+
+  getProductBatchEntries(event: Event) {
+    return this.#productBatchEntries.get(event);
   }
 
   createCustomEvent(

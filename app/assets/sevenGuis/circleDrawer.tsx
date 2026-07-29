@@ -80,7 +80,7 @@ export const SevenGuisCircleDrawer = clientEntry(
     return () => (
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
-        <events.on.editSessionSet.div mix={rowCss}>
+        <div mix={rowCss}>
           <button
             type="button"
             disabled={!drawing.undo.length}
@@ -129,7 +129,7 @@ export const SevenGuisCircleDrawer = clientEntry(
           >
             Redo
           </button>
-        </events.on.editSessionSet.div>
+        </div>
         <svg
           viewBox="0 0 420 220"
           aria-label="Circle canvas"

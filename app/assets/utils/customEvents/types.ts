@@ -331,6 +331,28 @@ type UniqueEventTypes<
       : Types
   : Types;
 
+type CustomEventsBatchEntryConfiguration<Detail> = [Detail] extends [null]
+  ? {
+      detail?: null;
+      options?: CustomEventsInit;
+    }
+  : {
+      detail: Detail;
+      options?: CustomEventsInit;
+    };
+
+/** One independently configured entry in a shared event transaction. */
+export type CustomEventsBatchEntry<Events extends EventDetails> = {
+  [Type in keyof Events & string]: {
+    [EntryType in Type]: CustomEventsBatchEntryConfiguration<Events[Type]>;
+  };
+}[keyof Events & string];
+
+/** A signal shorthand or an independently configured transaction entry. */
+export type CustomEventsBatchItem<Events extends EventDetails> =
+  | NullDetailEventTypes<Events>
+  | CustomEventsBatchEntry<Events>;
+
 /** Callable factory surface of a custom-events descriptor. */
 export type CustomEventsFactory<Events extends EventDetails> = {
   /** Creates a batch from non-payload event names. */
@@ -340,6 +362,30 @@ export type CustomEventsFactory<Events extends EventDetails> = {
   ]>(
     types: Types & UniqueEventTypes<Types>,
     init?: CustomEventsInit,
+  ): CustomEventsEvent<
+    Events,
+    typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
+  >;
+
+  /**
+   * Creates one transaction whose entries have independent detail and options.
+   *
+   * @example
+   * events([
+   *   "modelChanged",
+   *   { focusRequested: { options: { key: itemId } } },
+   *   { draftSet: { detail: value, options: { key: itemId } } },
+   * ])
+   */
+  <const Entries extends readonly [
+    CustomEventsBatchItem<Events>,
+    ...CustomEventsBatchItem<Events>[],
+  ]>(
+    entries: Entries & (
+      Extract<Entries[number], CustomEventsBatchEntry<Events>> extends never
+        ? never
+        : unknown
+    ),
   ): CustomEventsEvent<
     Events,
     typeof CHANGE_EVENT_NAME & CustomEventsEventType<Events>
@@ -422,7 +468,9 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
    * Events are observed from the nearest `host()` boundary when one exists, or
    * from the page fallback otherwise. The callback receives the same
    * `currentTarget` shape as Remix `on(...)`, so DOM effects can stay local to
-   * the element.
+   * the element. For keyed events, a non-empty `currentTarget.id` is its routing
+   * address; mismatched listeners are skipped, while listeners without an `id`
+   * continue to observe every key.
    *
    * When this mixin is rendered inside an event-aware element such as
    * `<events.on.someEvent.form ...>`,

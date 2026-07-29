@@ -16,6 +16,7 @@ import {
 import { createCustomEventsEventElements, customEventsOnMixin } from "./remix.tsx";
 import type {
   CustomEventsConstructorOptions,
+  CustomEventsBatchItem,
   CustomEventsFactory,
   CustomEventsDescriptor,
   CustomEventsEventElements,
@@ -74,6 +75,78 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       detail,
       init?.key,
     );
+  }
+
+  function createConfiguredBatchChangeEvent(
+    configuredEvents: readonly CustomEventsBatchItem<Events>[],
+  ) {
+    let seen = new Set<string>();
+    let entries = configuredEvents.map((configuredEvent) => {
+      if (typeof configuredEvent === "string") {
+        if (seen.has(configuredEvent)) {
+          throw new TypeError(
+            `CustomEvents batch event "${configuredEvent}" must be unique.`,
+          );
+        }
+        seen.add(configuredEvent);
+        addDescriptorEventType(configuredEvent);
+        return {
+          type: configuredEvent,
+          detail: null,
+          init: getEventInit(undefined),
+        };
+      }
+
+      let eventEntries = Object.entries(configuredEvent);
+      if (eventEntries.length !== 1) {
+        throw new TypeError(
+          "Each configured CustomEvents batch entry must contain one event.",
+        );
+      }
+
+      let [[type, configuration]] = eventEntries;
+      if (type === CHANGE_EVENT_NAME) {
+        throw new TypeError('CustomEvents does not dispatch "change" directly.');
+      }
+      if (seen.has(type)) {
+        throw new TypeError(
+          `CustomEvents batch event "${type}" must be unique.`,
+        );
+      }
+      seen.add(type);
+
+      let config = configuration as {
+        detail?: unknown;
+        options?: CustomEventsInit;
+      };
+      if (config.options?.signal?.aborted) return null;
+      addDescriptorEventType(type);
+      return {
+        type,
+        detail: Object.hasOwn(config, "detail") ? config.detail : null,
+        init: getEventInit(config.options),
+        ...(config.options?.key === undefined
+          ? {}
+          : { key: config.options.key }),
+      };
+    });
+
+    if (entries.some((entry) => entry === null)) {
+      return createAbortedEvent();
+    }
+
+    let batchEntries = entries.filter((entry) => entry !== null);
+    enableDescriptorEventType(CHANGE_EVENT_NAME);
+    let event = createProductCustomEvent(
+      state,
+      CHANGE_EVENT_NAME,
+      getEventInit(undefined),
+      createCustomEventChangeDetail(
+        batchEntries.map(({ type, detail }) => [type, detail]),
+      ),
+    );
+    state.markProductBatchEntries(event, batchEntries);
+    return event;
   }
 
   function createGranularEvent(
@@ -215,7 +288,10 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
   let events = ((...args: Array<unknown>) => {
     let [typeOrEvents, detailOrInit, maybeInit] = args as [
-      string | Partial<Events> | readonly string[],
+      | string
+      | Partial<Events>
+      | readonly string[]
+      | readonly CustomEventsBatchItem<Events>[],
       unknown?,
       CustomEventsInit?,
     ];
@@ -226,6 +302,15 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         typeOrEvents,
         args.length === 1 || isOptionsOnly ? null : detailOrInit,
         isOptionsOnly ? (detailOrInit as CustomEventsInit) : maybeInit,
+      );
+    }
+
+    if (
+      Array.isArray(typeOrEvents) &&
+      typeOrEvents.some((entry) => typeof entry !== "string")
+    ) {
+      return createConfiguredBatchChangeEvent(
+        typeOrEvents as readonly CustomEventsBatchItem<Events>[],
       );
     }
 

@@ -290,6 +290,16 @@ export const customEventsOnMixin = createMixin<
       let sourceEvent = descriptor.getBridgedEvent(event)?.source ?? event;
       let scope = handle.context.get(CustomEventsRenderScopeProvider);
 
+      let eventKey = descriptor.getEventKey(sourceEvent);
+      if (
+        eventKey !== undefined &&
+        event.currentTarget instanceof Element &&
+        event.currentTarget.id !== "" &&
+        String(eventKey) !== event.currentTarget.id
+      ) {
+        return;
+      }
+
       if (
         !bridgedEvent?.replay &&
         shouldDeferScopedListener(descriptor, scope, sourceEvent)

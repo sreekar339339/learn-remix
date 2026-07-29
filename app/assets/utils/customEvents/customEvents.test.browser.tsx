@@ -36,12 +36,25 @@ describe("CustomEvents", () => {
     let recalculated = events("sheetRecalculated");
     let edit = events("edit", "=A0+B0");
     let batch = events(["sheetRecalculated", "someOtherEvent"]);
+    let configuredBatch = events([
+      "sheetRecalculated",
+      {
+        edit: {
+          detail: "=B0+C0",
+          options: { key: "formula-editor" },
+        },
+      },
+    ]);
 
     assert.equal(recalculated.detail, null);
     assert.equal(edit.detail, "=A0+B0");
     assert.deepEqual(batch.detail.events, {
       sheetRecalculated: null,
       someOtherEvent: null,
+    });
+    assert.deepEqual(configuredBatch.detail.events, {
+      sheetRecalculated: null,
+      edit: "=B0+C0",
     });
 
     if (false) {
@@ -51,6 +64,10 @@ describe("CustomEvents", () => {
       events("sheetRecalculated", "unexpected");
       // @ts-expect-error - detailed events cannot use the null-detail batch form.
       events(["sheetRecalculated", "edit"]);
+      // @ts-expect-error - configured detailed events require detail.
+      events([{ edit: {} }]);
+      // @ts-expect-error - signal-only configured events accept only null detail.
+      events([{ sheetRecalculated: { detail: "unexpected" } }]);
     }
   });
 
@@ -275,6 +292,43 @@ describe("CustomEvents", () => {
     assert.equal(result.$('[data-testid="first-order"]')?.textContent, "first");
     assert.equal(result.$('[data-testid="second-order"]')?.textContent, "idle");
     assert.equal(result.$('[data-testid="all-orders"]')?.textContent, "first");
+  });
+
+  it("routes keyed events to matching events.on listeners", async (t) => {
+    let events = new CustomEvents<"rendered" | "focusRequested">();
+
+    function FocusTargets() {
+      return () => (
+        <section>
+          <button
+            data-testid="request-focus"
+            mix={on("click", ({ currentTarget }) => {
+              currentTarget.dispatchEvent(
+                events("focusRequested", { key: "second" }),
+              );
+            })}
+          />
+          {["first", "second"].map((id) => (
+            <events.on.rendered.button
+              id={id}
+              data-testid={id}
+              mix={events.on("focusRequested", ({ currentTarget }) => {
+                currentTarget.focus();
+              })}
+            />
+          ))}
+        </section>
+      );
+    }
+
+    let result = render(<FocusTargets />);
+    t.after(() => result.cleanup());
+
+    await result.act(() =>
+      (result.$('[data-testid="request-focus"]') as HTMLButtonElement).click(),
+    );
+
+    assert.equal(document.activeElement, result.$('[data-testid="second"]'));
   });
 
   it("processes a non-bubbling event dispatched on its event-aware element", async (t) => {

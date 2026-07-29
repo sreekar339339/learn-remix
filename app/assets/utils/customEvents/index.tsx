@@ -51,6 +51,16 @@ import type {
  * // One transition refreshes two independent regions.
  * form.dispatchEvent(events(["listUpdated", "editorUpdated"]));
  * form.dispatchEvent(events({ listUpdated: null, editorUpdated: null }));
+ *
+ * // One transaction with independently routed entries.
+ * form.dispatchEvent(events([
+ *   "listUpdated",
+ *   { editorUpdated: { options: { key: editorId } } },
+ *   { saveSucceeded: {
+ *     detail: { revision },
+ *     options: { key: revision },
+ *   } },
+ * ]));
  * ```
  *
  * A granular event automatically derives `change`. A batch automatically
@@ -85,10 +95,11 @@ import type {
  * handlers. `child` supplies dynamic children, so it cannot be combined with
  * static JSX children.
  * Use `key` in the event options and the matching DOM `id` on repeated
- * event-aware elements to update only the addressed projection. Unkeyed
- * projections continue to receive keyed events for aggregate views. This
- * bridges keyed event routing until the renderer exposes JSX reconciliation
- * keys to component props.
+ * event-aware elements or elements using `events.on(...)`. Only the addressed
+ * projection updates and only the addressed DOM-effect listener runs.
+ * Projections and listeners without an `id` continue to receive keyed events
+ * as aggregate consumers. This bridges keyed event routing until the renderer
+ * exposes JSX reconciliation keys to component props.
  *
  * Child callbacks receive `(detail, event, handle)`. Before the first matching
  * event, `detail` and `event` are `undefined`; a dispatched null-detail event
