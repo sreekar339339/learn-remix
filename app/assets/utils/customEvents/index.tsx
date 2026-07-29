@@ -135,9 +135,16 @@ import type {
  * not a second authoritative store. If other logic later needs the value
  * without the event, promote it to the durable model.
  *
- * Name events after completed state transitions or independently consumed
- * projections, not rendering instructions. Prefer `editSessionSet` or
- * `saveSucceeded` over `openEditor`, `refreshPanel`, or a chain such as
+ * Name events after completed facts, outcomes, or independently consumed
+ * projection transitions. Use a completed suffix such as `Set`, `Changed`, or
+ * `Succeeded` only when that statement is already true at dispatch time.
+ *
+ * Use `Requested` when the producer can express an intent but another owner
+ * must realize it. A request is not a completed fact, and should remain the
+ * exception rather than a disguise for rendering instructions. Avoid
+ * imperative names such as `openEditor`, `focusItem`, or `refreshPanel`.
+ *
+ * Prefer one meaningful transition over a chain such as
  * `fieldEdited -> draftUpdated -> buttonEnabled`. Synchronous consequences
  * should react independently to the original event rather than dispatching
  * more events.

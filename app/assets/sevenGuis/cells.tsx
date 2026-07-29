@@ -15,6 +15,31 @@ function cellId(column: (typeof columns)[number], row: number): CellId {
   return `${column}${row}`;
 }
 
+function adjacentCellId(
+  column: (typeof columns)[number],
+  row: number,
+  key: string,
+): CellId | undefined {
+  let columnIndex = columns.indexOf(column);
+  let nextColumn = columnIndex;
+  let nextRow = row;
+
+  if (key === "ArrowLeft") nextColumn--;
+  else if (key === "ArrowRight") nextColumn++;
+  else if (key === "ArrowUp") nextRow--;
+  else if (key === "ArrowDown") nextRow++;
+  else return;
+
+  let columnAtIndex = columns[nextColumn];
+  if (columnAtIndex === undefined || !rows.includes(nextRow)) return;
+  return cellId(columnAtIndex, nextRow);
+}
+
+function isCellNavigationShortcut(event: KeyboardEvent): boolean {
+  let isMacOS = navigator.platform.startsWith("Mac");
+  return event.shiftKey && (isMacOS ? event.metaKey : event.ctrlKey);
+}
+
 function evaluate(formula: string | undefined, values: Values): string {
   if (!formula) return "";
   if (!formula.startsWith("=")) return formula;
@@ -60,7 +85,11 @@ let localEvtOpts = { bubbles: false };
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = new CustomEvents<"sheetRecalculated" | { edit: string }>();
+    let events = new CustomEvents<
+      | "sheetRecalculated"
+      | { cellEditValueSet: string }
+      | "cellFocusRequested"
+    >();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
 
@@ -98,14 +127,22 @@ export const SevenGuisCells = clientEntry(
                     <td key={id}>
                       <events.on.change.input
                         aria-label={id}
+                        id={id}
+                        type='text'
                         value={(det) => {
-                          if (det?.event?.type === "edit") {
+                          if (det?.event?.type === "cellEditValueSet") {
                             return det.event.detail;
                           }
                           return sheet.values[id];
                         }}
                         mix={[
                           cellCss,
+                          events.on(
+                            "cellFocusRequested",
+                            ({ currentTarget }) => {
+                              currentTarget.focus();
+                            },
+                          ),
                           on("blur", ({ currentTarget }) => {
                             sheet.formulas[id] = currentTarget.value;
                             sheet.values = calculate(sheet.formulas);
@@ -116,15 +153,29 @@ export const SevenGuisCells = clientEntry(
                           on("focus", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
                               events(
-                                "edit",
+                                "cellEditValueSet",
                                 sheet.formulas[id] ?? "",
                                 localEvtOpts,
                               ),
                             );
+                            currentTarget.select()
                           }),
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              events("edit", currentTarget.value, localEvtOpts),
+                              events(
+                                "cellEditValueSet",
+                                currentTarget.value,
+                                localEvtOpts,
+                              ),
+                            );
+                          }),
+                          on("keydown", (event) => {
+                            if (!isCellNavigationShortcut(event)) return;
+                            let nextId = adjacentCellId(column, row, event.key);
+                            if (nextId === undefined) return;
+                            event.preventDefault();
+                            event.currentTarget.dispatchEvent(
+                              events("cellFocusRequested", { key: nextId }),
                             );
                           }),
                         ]}

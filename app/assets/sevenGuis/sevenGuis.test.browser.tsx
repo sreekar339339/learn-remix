@@ -439,6 +439,49 @@ describe("7GUIs custom-event choreography", () => {
     c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
     assert.ok(c0, "C0 should remain rendered after recalculation");
     assert.equal(c0.value, "35");
+
+    await result.act(() => {
+      a0.focus();
+      a0.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    assert.equal(document.activeElement, a0);
+
+    let platformModifier = navigator.platform.startsWith("Mac")
+      ? { metaKey: true }
+      : { ctrlKey: true };
+    await result.act(() =>
+      a0.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          shiftKey: true,
+          ...platformModifier,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    let b0 = result.$('input[aria-label="B0"]') as HTMLInputElement;
+    assert.equal(document.activeElement, b0);
+
+    await result.act(() =>
+      b0.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          shiftKey: true,
+          ...platformModifier,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    let b1 = result.$('input[aria-label="B1"]') as HTMLInputElement;
+    assert.equal(document.activeElement, b1);
   });
 
 });
