@@ -421,7 +421,7 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(c0.value, "30");
 
     await result.act(() => c0.focus());
-    assert.equal(c0.placeholder, "=A0+B0");
+    assert.equal(c0.value, "=A0+B0");
     await result.act(() => c0.blur());
     assert.equal(c0.value, "30");
 

@@ -25,7 +25,35 @@ class PanelEvents extends CustomEvents<
   "listUpdated" | "editorUpdated"
 > {}
 
+class MixedEvents extends CustomEvents<
+  "sheetRecalculated" | { edit: string } | "someOtherEvent"
+> {}
+
 describe("CustomEvents", () => {
+  it("combines detail-less and detailed events in one definition", () => {
+    let events = new MixedEvents();
+
+    let recalculated = events("sheetRecalculated");
+    let edit = events("edit", "=A0+B0");
+    let batch = events(["sheetRecalculated", "someOtherEvent"]);
+
+    assert.equal(recalculated.detail, null);
+    assert.equal(edit.detail, "=A0+B0");
+    assert.deepEqual(batch.detail.events, {
+      sheetRecalculated: null,
+      someOtherEvent: null,
+    });
+
+    if (false) {
+      // @ts-expect-error - detailed events require their declared detail.
+      events("edit");
+      // @ts-expect-error - signal-only events do not accept arbitrary detail.
+      events("sheetRecalculated", "unexpected");
+      // @ts-expect-error - detailed events cannot use the null-detail batch form.
+      events(["sheetRecalculated", "edit"]);
+    }
+  });
+
   it("accepts a string union for null-detail event signals", async (t) => {
     let events = new PanelEvents();
 

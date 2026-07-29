@@ -12,15 +12,37 @@ import {
 // type strings.
 export type EventDetails = Record<string, unknown>;
 
-/** A payload map, or a union of null-detail event names. */
+/** Payload maps and null-detail event names, which may be combined in a union. */
 export type CustomEventsDefinition = EventDetails | string;
 
-/** Normalizes `"saved" | "closed"` to `{ saved: null; closed: null }`. */
+type CustomEventsDefinitionMapKeys<Definition> =
+  Definition extends EventDetails ? keyof Definition & string : never;
+
+type CustomEventsDefinitionKeys<Definition> =
+  | Extract<Definition, string>
+  | CustomEventsDefinitionMapKeys<Definition>;
+
+type CustomEventsDefinitionMapDetail<Definition, Type extends string> =
+  Definition extends EventDetails
+    ? Type extends keyof Definition
+      ? Definition[Type]
+      : never
+    : never;
+
+/**
+ * Normalizes signal names and payload maps into one event-detail map.
+ *
+ * `"saved" | { failed: Error }` becomes
+ * `{ saved: null; failed: Error }`.
+ */
 export type NormalizeCustomEventsDefinition<
   Definition extends CustomEventsDefinition,
-> = [Definition] extends [string]
-  ? Record<Definition, null>
-  : Extract<Definition, EventDetails>;
+> = {
+  [Type in CustomEventsDefinitionKeys<Definition>]:
+    Type extends CustomEventsDefinitionMapKeys<Definition>
+      ? CustomEventsDefinitionMapDetail<Definition, Type>
+      : null;
+};
 
 export type CustomEventWithMetadata<Detail> = CustomEvent<Detail> & {
   /**

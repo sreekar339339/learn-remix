@@ -55,14 +55,14 @@ let cellCss = css({
   font: "inherit",
   boxSizing: "border-box",
 });
+let localEvtOpts = { bubbles: false };
 
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = new CustomEvents<"edit">();
+    let events = new CustomEvents<"sheetRecalculated" | { edit: string }>();
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
-    let localEditEvtOpts = { bubbles: false };
 
     return () => (
       <section mix={taskCss}>
@@ -96,30 +96,35 @@ export const SevenGuisCells = clientEntry(
                   <th>{row}</th>
                   {columns.map((column, __, _, id = cellId(column, row)) => (
                     <td key={`${id}:${sheet.values[id] ?? ""}`}>
-                      <events.on.edit.input
+                      <events.on.change.input
                         aria-label={id}
-                        value={(_, event) => {
-                          if (event?.currentTarget.dataset.editing) return;
+                        value={(det) => {
+                          if (det?.event?.type === "edit") {
+                            return det.event.detail;
+                          }
                           return sheet.values[id];
                         }}
-                        placeholder={() => sheet.formulas[id]}
                         mix={[
                           cellCss,
                           on("blur", ({ currentTarget }) => {
-                            delete currentTarget.dataset.editing;
-                            if (!currentTarget.value) {
-                              return void currentTarget.dispatchEvent(
-                                events("edit", localEditEvtOpts),
-                              );
-                            }
                             sheet.formulas[id] = currentTarget.value;
                             sheet.values = calculate(sheet.formulas);
-                            currentTarget.dispatchEvent(events("edit"));
+                            currentTarget.dispatchEvent(
+                              events("sheetRecalculated"),
+                            );
                           }),
                           on("focus", ({ currentTarget }) => {
-                            currentTarget.dataset.editing = "true";
                             currentTarget.dispatchEvent(
-                              events("edit", localEditEvtOpts),
+                              events(
+                                "edit",
+                                sheet.formulas[id] ?? "",
+                                localEvtOpts,
+                              ),
+                            );
+                          }),
+                          on("input", ({ currentTarget }) => {
+                            currentTarget.dispatchEvent(
+                              events("edit", currentTarget.value, localEvtOpts),
                             );
                           }),
                         ]}

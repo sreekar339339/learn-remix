@@ -27,6 +27,10 @@ import type {
  * let events = new CustomEvents<SaveEventsMap>();
  * // Or, for signal-only events:
  * let signals = new CustomEvents<"listUpdated" | "editorUpdated">();
+ * // Signal-only and detailed events may share one definition:
+ * let mixed = new CustomEvents<
+ *   "sheetRecalculated" | { edit: string } | "selectionCleared"
+ * >();
  * ```
  *
  * An event detail is a consumer contract. Use a detail when a listener needs
