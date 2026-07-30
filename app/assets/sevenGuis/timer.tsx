@@ -13,6 +13,7 @@ export const SevenGuisTimer = clientEntry(
       <section
         mix={[
           taskCss,
+          events.host(),
           ref((section, signal) => {
             let last = performance.now();
             let id = window.setInterval(() => {

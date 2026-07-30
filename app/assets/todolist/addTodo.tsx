@@ -50,24 +50,23 @@ export function AddTodo(handle: Handle<Props<"form">>) {
       mix={[
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
-        events.host({
-          actionSucceeded({ currentTarget }) {
-            currentTarget.reset();
-          },
+        events.host(),
+        events.on("actionSucceeded", ({ currentTarget }) => {
+          currentTarget.reset();
         }),
       ]}
     >
       <label>
         Enter a todo{" "}
-        <events.on.change.input
-          disabled={(detail) => detail?.event?.type === "actionSubmitted"}
-          class={(detail) =>
-            detail?.event?.type === "actionSubmitted" ? "pending" : ""
+        <events.input
+          disabled={(event) => event?.type === "actionSubmitted"}
+          class={(event) =>
+            event?.type === "actionSubmitted" ? "pending" : ""
           }
           mix={[
             inputCss,
-            events.on("change", ({ currentTarget, detail }) => {
-              if (detail.event?.type !== "actionSubmitted") {
+            events.on('*', ({ currentTarget, type }) => {
+              if (type !== "actionSubmitted") {
                 currentTarget.select();
               }
             }),

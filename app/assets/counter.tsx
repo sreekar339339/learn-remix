@@ -8,10 +8,13 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle) {
   return () => (
     <>
       <button
-        mix={on("click", ({ currentTarget }) => {
-          count = count + incrementOffset;
-          currentTarget.dispatchEvent(events("countIncremented"));
-        })}
+        mix={[
+          events.host(),
+          on("click", ({ currentTarget }) => {
+            count = count + incrementOffset;
+            currentTarget.dispatchEvent(events("countIncremented"));
+          }),
+        ]}
       >
         <events.on.countIncremented.span child={() => count} />
       </button>

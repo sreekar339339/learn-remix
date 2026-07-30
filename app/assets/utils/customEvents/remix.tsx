@@ -10,26 +10,22 @@ import {
   getEventName,
   getEventType,
 } from "./protocol.ts";
+import { CUSTOM_EVENTS_ALL } from "./constants.ts";
 import { defineEventValue } from "./dom.ts";
 import type { CustomEventsRuntime } from "./runtime.ts";
 import type {
-  CustomEventWithMetadata,
   CustomEventsEvent,
   CustomEventsEventElement,
   CustomEventsEventElements,
   CustomEventsEventElementProps,
   CustomEventsEventType,
-  CustomEventsRenderDetail,
   EventDetails,
 } from "./types.ts";
 
-function createListenerEvent(
+function createResolvedEvent(
   event: CustomEvent,
   descriptor: CustomEventsRuntime,
-  currentTarget: Element,
 ) {
-  let origin = descriptor.getOriginTarget(event);
-  let key = descriptor.getEventKey(event);
   let localType = getEventType(descriptor, event.type) ?? event.type;
   let listenerEvent = descriptor.createCustomEvent(
     localType,
@@ -39,12 +35,17 @@ function createListenerEvent(
       composed: event.composed,
     },
     event.detail,
-    {
-      ...(origin ? { origin } : {}),
-      ...(key === undefined ? {} : { key }),
-    },
   );
   defineEventValue(listenerEvent, "target", event.target);
+  return listenerEvent;
+}
+
+export function createCustomEventsListenerEvent(
+  event: CustomEvent,
+  descriptor: CustomEventsRuntime,
+  currentTarget: EventTarget,
+) {
+  let listenerEvent = createResolvedEvent(event, descriptor);
   defineEventValue(listenerEvent, "currentTarget", currentTarget);
   return listenerEvent;
 }
@@ -53,9 +54,9 @@ function registerElementSubscription(
   element: Element,
   signal: AbortSignal,
   descriptor: CustomEventsRuntime,
-  eventNames: ReadonlySet<string>,
+  eventNames: ReadonlySet<string> | null,
   phase: "projection" | "effect",
-  notify: (event: CustomEvent, committed?: () => void) => boolean | void,
+  notify: (event: CustomEvent) => Promise<unknown> | void,
 ) {
   let unregisterTarget = descriptor.registerDispatchTarget(element);
   let unregisterSubscription = descriptor.registerSubscription({
@@ -80,10 +81,13 @@ export const customEventsOnMixin = createMixin<
 >((handle) => {
   return (descriptor, types, listener) => {
     let eventTypes = typeof types === "string" ? [types] : [...types];
+    let allEvents = eventTypes.length === 1 &&
+      eventTypes[0] === CUSTOM_EVENTS_ALL;
+    if (allEvents) eventTypes = [];
     for (let type of eventTypes) addEventType(descriptor, type);
-    let eventNames = new Set(
-      eventTypes.map((type) => getEventName(descriptor, type)),
-    );
+    let eventNames = allEvents
+      ? null
+      : new Set(eventTypes.map((type) => getEventName(descriptor, type)));
     return (
       <handle.element
         mix={ref((element, signal) => {
@@ -98,7 +102,7 @@ export const customEventsOnMixin = createMixin<
               reentry?.abort();
               reentry = new AbortController();
               void listener(
-                createListenerEvent(event, descriptor, element),
+                createCustomEventsListenerEvent(event, descriptor, element),
                 reentry.signal,
               );
             },
@@ -133,14 +137,13 @@ function isReactiveElementProp(key: string) {
 
 function resolveEventElementProps(
   props: Record<string, unknown>,
-  detail: unknown,
   event: Event | undefined,
 ) {
   let resolved = { ...props };
   for (let key of Object.keys(props)) {
     let value = props[key];
     if (typeof value === "function" && isReactiveElementProp(key)) {
-      resolved[key] = value(detail, event);
+      resolved[key] = value(event);
     }
   }
   return resolved;
@@ -151,14 +154,18 @@ function createCustomEventsEventElement<
   Type extends CustomEventsEventType<Events>,
   Tag extends keyof JSX.IntrinsicElements,
 >(
-  types: readonly Type[],
+  types: readonly Type[] | typeof CUSTOM_EVENTS_ALL,
   tag: Tag,
   descriptor: CustomEventsRuntime,
 ): CustomEventsEventElement<Events, Type, Tag> {
-  for (let type of types) addEventType(descriptor, type);
-  let eventNames = new Set(
-    types.map((type) => getEventName(descriptor, type)),
-  );
+  let allEvents = types === CUSTOM_EVENTS_ALL;
+  let eventTypes: readonly Type[] = allEvents
+    ? []
+    : types as readonly Type[];
+  for (let type of eventTypes) addEventType(descriptor, type);
+  let eventNames = allEvents
+    ? null
+    : new Set(eventTypes.map((type) => getEventName(descriptor, type)));
 
   return function CustomEventsEventElement(
     handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
@@ -171,23 +178,13 @@ function createCustomEventsEventElement<
         descriptor,
         eventNames,
         "projection",
-        (event, committed) => {
-          let projectedEvent = createListenerEvent(
+        (event) => {
+          let projectedEvent = createResolvedEvent(
             event,
             descriptor,
-            element,
           ) as unknown as CustomEventsEvent<Events, Type>;
-          let detail = (projectedEvent as unknown as CustomEvent)
-            .detail as CustomEventsRenderDetail<
-            Events,
-            Type
-          >;
-          let when = handle.props.when;
-          if (when && !when(detail, projectedEvent)) return;
           currentEvent = projectedEvent;
-          handle.update();
-          handle.queueTask(() => committed?.());
-          return true;
+          return handle.update();
         },
       );
     });
@@ -197,14 +194,10 @@ function createCustomEventsEventElement<
         currentEvent && descriptor.ownsEvent(currentEvent)
           ? (currentEvent as CustomEventsEvent<Events, Type>)
           : undefined;
-      let detail = (event
-        ? (event as unknown as CustomEvent).detail
-        : undefined) as CustomEventsRenderDetail<Events, Type>;
       let {
         children,
         mix,
         child,
-        when: _when,
         ...elementProps
       } = handle.props as CustomEventsEventElementProps<
         Events,
@@ -219,11 +212,10 @@ function createCustomEventsEventElement<
       }
 
       let content = typeof child === "function"
-        ? child(detail, event, handle)
+        ? child(event, handle)
         : children;
       let resolvedProps = resolveEventElementProps(
         elementProps,
-        detail,
         event,
       );
       return createElement(
@@ -242,7 +234,7 @@ export function createCustomEventsEventElements<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 >(
-  types: readonly Type[],
+  types: readonly Type[] | typeof CUSTOM_EVENTS_ALL,
   descriptor: CustomEventsRuntime,
 ): CustomEventsEventElements<Events, Type> {
   let elements = new Map<string, CustomEventsEventElement<Events, Type, any>>();

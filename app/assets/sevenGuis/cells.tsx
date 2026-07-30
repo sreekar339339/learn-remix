@@ -86,19 +86,14 @@ export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
     let events = new CustomEvents<
-      | "sheetRecalculated"
-      | "cellFocusRequested"
-      | { cellDraftSet: string }
+      "sheetRecalculated" | "cellFocusRequested" | { cellDraftSet: string }
     >();
-    let cellValueEvents = events.on([
-      "sheetRecalculated",
-      "cellDraftSet",
-    ]);
+    let cellValueEvents = events.on(["sheetRecalculated", "cellDraftSet"]);
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let sheet: Sheet = { formulas, values: calculate(formulas) };
 
     return () => (
-      <section mix={taskCss}>
+      <section mix={[taskCss, events.host()]}>
         <h2>Cells</h2>
         <div
           mix={css({
@@ -132,13 +127,12 @@ export const SevenGuisCells = clientEntry(
                       <cellValueEvents.input
                         aria-label={id}
                         id={id}
-                        type='text'
-                        value={(detail, event) => {
-                          if (event?.type === "cellDraftSet") {
-                            return detail as string;
-                          }
-                          return sheet.values[id];
-                        }}
+                        type="text"
+                        value={(event) =>
+                          event?.type === "cellDraftSet"
+                            ? event.detail
+                            : sheet.values[id]
+                        }
                         mix={[
                           cellCss,
                           events.on(
@@ -162,7 +156,7 @@ export const SevenGuisCells = clientEntry(
                                 localEvtOpts,
                               ),
                             );
-                            currentTarget.select()
+                            currentTarget.select();
                           }),
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(

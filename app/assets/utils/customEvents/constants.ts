@@ -1,6 +1,7 @@
 export const CUSTOM_EVENTS_EVENT_PREFIX = "rmx:custom-events";
 export const CUSTOM_EVENTS_ABORTED = `${CUSTOM_EVENTS_EVENT_PREFIX}:aborted`;
-export const CHANGE_EVENT_NAME = "change";
+export const CUSTOM_EVENTS_ALL = "*";
+export const CUSTOM_EVENTS_TRANSACTION = "$transaction";
 
 let customEventsOwnerId = 0;
 

@@ -78,7 +78,7 @@ export const SevenGuisCircleDrawer = clientEntry(
     }
 
     return () => (
-      <section mix={taskCss}>
+      <section mix={[taskCss, events.host()]}>
         <h2>Circle Drawer</h2>
         <div mix={rowCss}>
           <button

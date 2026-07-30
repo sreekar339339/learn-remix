@@ -7,12 +7,10 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
-    let initialChangeEvent = query
-      ? events({ querySubmitted: null })
-      : events({ queryEmpty: null });
+    let initialEvent = query ? events("querySubmitted") : events("queryEmpty");
 
     return () => (
-      <>
+      <div mix={events.host()}>
         <form
           action={routes.searchBooks.books.href()}
           mix={[
@@ -22,9 +20,7 @@ export const SearchBooksWithFrame = clientEntry(
                 new FormData(evt.currentTarget).get("q") as string
               ).trim();
               evt.currentTarget.dispatchEvent(
-                query
-                  ? events("querySubmitted")
-                  : events("queryEmpty"),
+                query ? events("querySubmitted") : events("queryEmpty"),
               );
             }),
           ]}
@@ -46,20 +42,17 @@ export const SearchBooksWithFrame = clientEntry(
                     animation: "glimmer 1.15s linear infinite",
                   },
                 }),
-                events.on("change", ({ currentTarget, detail }) => {
-                  if (detail.event?.type !== "querySubmitted") {
-                    currentTarget.select();
-                  }
+                events.on("queryEmpty", ({ currentTarget }) => {
+                  currentTarget.select();
                 }),
               ]}
             />
           </label>
         </form>
-        <events.on.change.div
-          child={(detail = initialChangeEvent.detail) => {
-            switch (detail.event?.type) {
+        <events.div
+          child={(event = initialEvent) => {
+            switch (event.type) {
               case "queryEmpty":
-              case undefined:
                 return <p>Enter the title of any book.</p>;
               case "querySubmitted":
                 return (
@@ -74,7 +67,7 @@ export const SearchBooksWithFrame = clientEntry(
             }
           }}
         />
-      </>
+      </div>
     );
   },
 );

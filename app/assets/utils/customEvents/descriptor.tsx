@@ -1,19 +1,24 @@
-import { addEventListeners, ref } from "remix/ui";
-import { CHANGE_EVENT_NAME, CUSTOM_EVENTS_ABORTED } from "./constants.ts";
-import { isElement } from "./dom.ts";
+import { ref } from "remix/ui";
+import {
+  CUSTOM_EVENTS_ABORTED,
+  CUSTOM_EVENTS_ALL,
+  CUSTOM_EVENTS_TRANSACTION,
+} from "./constants.ts";
+import { defineEventValue, isElement, isEventTarget } from "./dom.ts";
 import { createProductCustomEvent } from "./events.ts";
 import {
   addEventType,
-  createCustomEventChangeDetail,
   getEventInit,
   getEventName,
   getCustomEventsDispatchEntries,
+  subscribeEventTypes,
 } from "./protocol.ts";
+import { CustomEventsRuntime } from "./runtime.ts";
 import {
-  CustomEventsRuntime,
-  windowBridge,
-} from "./runtime.ts";
-import { createCustomEventsEventElements, customEventsOnMixin } from "./remix.tsx";
+  createCustomEventsEventElements,
+  createCustomEventsListenerEvent,
+  customEventsOnMixin,
+} from "./remix.tsx";
 import type {
   CustomEventsConstructorOptions,
   CustomEventsBatchItem,
@@ -21,10 +26,10 @@ import type {
   CustomEventsDescriptor,
   CustomEventsEventElements,
   CustomEventsEventType,
-  CustomEventsHostListeners,
   CustomEventsInit,
   CustomEventsOnFunction,
-  CustomEventsTypes,
+  CustomEventsTargetListenerOptions,
+  CustomEventsTargetListeners,
   EventDetails,
 } from "./types.ts";
 
@@ -41,8 +46,8 @@ function isCustomEventsInit(value: unknown): value is CustomEventsInit {
   return Object.keys(value).every((key) => customEventsInitKeys.has(key));
 }
 
-// `on.someEvent` and `types.someEvent` are proxy-backed so event elements and
-// low-level names remain type-shaped without duplicating runtime keys.
+// Event elements are proxy-backed so their type-shaped API does not require
+// duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsConstructorOptions,
 ): CustomEventsDescriptor<Events> {
@@ -59,23 +64,22 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       init: EventInit;
       key?: PropertyKey;
     }>,
-    aggregateOptions?: CustomEventsInit,
+    transactionOptions?: CustomEventsInit,
   ) {
-    if (aggregateOptions?.signal?.aborted) {
+    if (transactionOptions?.signal?.aborted) {
       return createAbortedEvent();
     }
 
     for (let { type } of entries) addDescriptorEventType(type);
-    enableDescriptorEventType(CHANGE_EVENT_NAME);
+    addDescriptorEventType(CUSTOM_EVENTS_TRANSACTION);
     let event = createProductCustomEvent(
       state,
-      CHANGE_EVENT_NAME,
-      getEventInit(aggregateOptions),
-      createCustomEventChangeDetail(
-        entries.map(({ type, detail }) => [type, detail]),
-      ),
-      aggregateOptions?.key,
+      CUSTOM_EVENTS_TRANSACTION,
+      getEventInit(transactionOptions),
+      undefined,
+      transactionOptions?.key,
     );
+    defineEventValue(event, "detail", undefined);
     state.markProductBatchEntries(event, entries);
     return event;
   }
@@ -107,8 +111,8 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       }
 
       let [[type, configuration]] = eventEntries;
-      if (type === CHANGE_EVENT_NAME) {
-        throw new TypeError('CustomEvents does not dispatch "change" directly.');
+      if (type === CUSTOM_EVENTS_ALL) {
+        throw new TypeError('CustomEvents reserves "*" for subscriptions.');
       }
       if (seen.has(type)) {
         throw new TypeError(
@@ -139,9 +143,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     init?: CustomEventsInit,
   ) {
     if (init?.signal?.aborted) return createAbortedEvent();
+    if (type === CUSTOM_EVENTS_ALL) {
+      throw new TypeError('CustomEvents reserves "*" for subscriptions.');
+    }
 
-    enableDescriptorEventType(type);
-    enableDescriptorEventType(CHANGE_EVENT_NAME);
+    addDescriptorEventType(type);
     return createProductCustomEvent(
       state,
       type,
@@ -153,11 +159,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
   function addDescriptorEventType(type: string) {
     if (!state.eventTypes.has(type)) addEventType(state, type);
-  }
-
-  function enableDescriptorEventType(type: string) {
-    addDescriptorEventType(type);
-    windowBridge.enable(state, type);
   }
 
   let eventElements = new Map<
@@ -196,31 +197,94 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     return cleanup;
   }
 
-  function registerHostListeners(
-    target: Element,
+  type DirectTargetListener = (
+    event: Event,
     signal: AbortSignal,
-    listeners: CustomEventsHostListeners<Events>,
+  ) => void | Promise<void>;
+
+  function registerTargetListeners(
+    target: EventTarget,
+    namedListeners: ReadonlyMap<string, DirectTargetListener>,
+    wildcardListener: DirectTargetListener | undefined,
+    options?: CustomEventsTargetListenerOptions,
   ) {
-    let mappedListeners: Record<
-      string,
-      (event: Event, reentry: AbortSignal) => void
-    > = {};
-    for (let [type, listener] of Object.entries(
-      listeners as unknown as Record<
-        string,
-        (event: Event, signal: AbortSignal) => void | Promise<void>
-      >,
-    )) {
-      if (!listener) continue;
-      addDescriptorEventType(type);
-      mappedListeners[getEventName(state, type)] = (event, reentry) => {
+    if (options?.signal?.aborted) return () => {};
+
+    let lifetime = new AbortController();
+    let reentries = new Set<AbortController>();
+    let cleanupDispatchTarget = state.registerDispatchTarget(target);
+    let usesGeneratedNames = isElement(target) ||
+      (typeof window !== "undefined" && target === window);
+
+    function createInvoker(listener: DirectTargetListener) {
+      let reentry: AbortController | undefined;
+      return (event: Event) => {
         if (!(event instanceof CustomEvent)) return;
-        if (state.isProductEvent(event) || !state.ownsEvent(event)) return;
-        listener(event as never, reentry);
+        if (!state.ownsEvent(event) || state.isProductEvent(event)) return;
+
+        reentry?.abort();
+        if (reentry) reentries.delete(reentry);
+        reentry = new AbortController();
+        reentries.add(reentry);
+
+        let listenerEvent = usesGeneratedNames
+          ? createCustomEventsListenerEvent(event, state, target)
+          : event;
+        void listener(listenerEvent, reentry.signal);
       };
     }
 
-    addEventListeners(target, signal, mappedListeners as never);
+    function listen(type: string, listener: (event: Event) => void) {
+      if (
+        type === CUSTOM_EVENTS_ALL ||
+        type === CUSTOM_EVENTS_TRANSACTION
+      ) {
+        return;
+      }
+      addDescriptorEventType(type);
+      target.addEventListener(
+        usesGeneratedNames ? getEventName(state, type) : type,
+        listener,
+        { signal: lifetime.signal },
+      );
+    }
+
+    for (let [type, listener] of namedListeners) {
+      listen(type, createInvoker(listener));
+    }
+
+    let unsubscribeTypes = () => {};
+    if (wildcardListener) {
+      let listenedTypes = new Set<string>();
+      let invokeWildcard = createInvoker(wildcardListener);
+      let listenWildcard = (type: string) => {
+        if (
+          type === CUSTOM_EVENTS_ALL ||
+          type === CUSTOM_EVENTS_TRANSACTION ||
+          listenedTypes.has(type)
+        ) {
+          return;
+        }
+        listenedTypes.add(type);
+        listen(type, invokeWildcard);
+      };
+      unsubscribeTypes = subscribeEventTypes(state, listenWildcard);
+      for (let type of state.eventTypes) listenWildcard(type);
+    }
+
+    let active = true;
+    let cleanup = () => {
+      if (!active) return;
+      active = false;
+      options?.signal?.removeEventListener("abort", cleanup);
+      unsubscribeTypes();
+      lifetime.abort();
+      for (let reentry of reentries) reentry.abort();
+      reentries.clear();
+      cleanupDispatchTarget();
+    };
+    options?.signal?.addEventListener("abort", cleanup, { once: true });
+    return cleanup;
   }
 
   function getEventElements(property: string) {
@@ -254,23 +318,85 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     return elements;
   }
 
-  let types = new Proxy(
-    {},
-    {
-      get(_, property) {
-        if (typeof property !== "string") return undefined;
-        addDescriptorEventType(property);
-        return getEventName(state, property);
-      },
-    },
-  ) as CustomEventsTypes<Events>;
+  let onFunction = ((...args: unknown[]) => {
+    let explicitTarget = isEventTarget(args[0]);
+    let usesConstructorHost = !explicitTarget && options?.host &&
+      (
+        (
+          args[0] !== null &&
+          typeof args[0] === "object" &&
+          !Array.isArray(args[0])
+        ) ||
+        args.length >= 3
+      );
 
-  let onFunction = ((
-    typeOrTypes:
+    if (explicitTarget || usesConstructorHost) {
+      let target = explicitTarget ? args[0] as EventTarget : options!.host!;
+      let argumentOffset = explicitTarget ? 1 : 0;
+      let selectorOrListeners = args[argumentOffset];
+      let namedListeners = new Map<string, DirectTargetListener>();
+      let wildcardListener: DirectTargetListener | undefined;
+      let listenerOptions: CustomEventsTargetListenerOptions | undefined;
+
+      if (
+        selectorOrListeners &&
+        typeof selectorOrListeners === "object" &&
+        !Array.isArray(selectorOrListeners)
+      ) {
+        let listeners = selectorOrListeners as CustomEventsTargetListeners<
+          Events,
+          EventTarget
+        >;
+        for (let [type, listener] of Object.entries(listeners)) {
+          if (!listener) continue;
+          if (type === CUSTOM_EVENTS_ALL) {
+            wildcardListener = listener as DirectTargetListener;
+          } else {
+            namedListeners.set(type, listener as DirectTargetListener);
+          }
+        }
+        listenerOptions = args[argumentOffset + 1] as
+          | CustomEventsTargetListenerOptions
+          | undefined;
+      } else {
+        let listener = args[argumentOffset + 1] as
+          | DirectTargetListener
+          | undefined;
+        if (!listener) {
+          throw new TypeError(
+            "CustomEvents direct on() requires an event listener.",
+          );
+        }
+        if (selectorOrListeners === CUSTOM_EVENTS_ALL) {
+          wildcardListener = listener;
+        } else {
+          let selectedTypes = Array.isArray(selectorOrListeners)
+            ? selectorOrListeners
+            : [selectorOrListeners];
+          for (let type of selectedTypes) {
+            if (typeof type === "string") namedListeners.set(type, listener);
+          }
+        }
+        listenerOptions = args[argumentOffset + 2] as
+          | CustomEventsTargetListenerOptions
+          | undefined;
+      }
+
+      return registerTargetListeners(
+        target,
+        namedListeners,
+        wildcardListener,
+        listenerOptions,
+      );
+    }
+
+    let typeOrTypes = args[0] as
+      | typeof CUSTOM_EVENTS_ALL
       | CustomEventsEventType<Events>
-      | readonly CustomEventsEventType<Events>[],
-    listener?: (event: Event, signal: AbortSignal) => void | Promise<void>,
-  ) => {
+      | readonly CustomEventsEventType<Events>[];
+    let listener = args[1] as
+      | ((event: Event, signal: AbortSignal) => void | Promise<void>)
+      | undefined;
     if (Array.isArray(typeOrTypes) && listener === undefined) {
       return getEventElementGroup(typeOrTypes);
     }
@@ -344,14 +470,16 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     );
   }) as CustomEventsFactory<Events>;
 
-  let descriptor = Object.assign(events, {
+  let allEventElements = createCustomEventsEventElements<
+    Events,
+    CustomEventsEventType<Events>
+  >(CUSTOM_EVENTS_ALL, state);
+  let descriptorTarget = Object.assign(events, {
     map: undefined,
     on,
-    types,
-    host(listeners = {}) {
+    host() {
       return ref((target, signal) => {
         registerHost(target, signal);
-        registerHostListeners(target, signal, listeners);
       });
     },
   });
@@ -359,5 +487,13 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     registerHost(options.host, options.signal);
   }
 
-  return descriptor as unknown as CustomEventsDescriptor<Events>;
+  return new Proxy(descriptorTarget, {
+    get(target, property, receiver) {
+      if (Reflect.has(target, property)) {
+        return Reflect.get(target, property, receiver);
+      }
+      if (typeof property !== "string") return undefined;
+      return allEventElements[property as keyof JSX.IntrinsicElements];
+    },
+  }) as unknown as CustomEventsDescriptor<Events>;
 }

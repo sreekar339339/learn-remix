@@ -42,7 +42,7 @@ export const SevenGuisCrud = clientEntry(
     };
 
     return () => (
-      <section mix={taskCss}>
+      <section mix={[taskCss, events.host()]}>
         <h2>CRUD</h2>
         <label>
           Filter prefix{" "}

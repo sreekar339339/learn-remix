@@ -38,7 +38,8 @@ async function fetchBooks(
     let json = await response.json();
     if (!("docs" in json)) {
       return input.dispatchEvent(
-        events("booksNotFound",
+        events(
+          "booksNotFound",
           { reason: { other: json.detail[0].msg } },
           opts,
         ),
@@ -59,19 +60,19 @@ export const SearchBooksWithoutFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithoutFrame(handle: Handle<{ initialQuery: string }>) {
     let initialQuery = handle.props.initialQuery.trim();
-    let initialChangeEvent = initialQuery
-      ? events({ querySubmitted: { query: initialQuery } })
-      : events({ queryEmpty: null });
+    let initialEvent = initialQuery
+      ? events("querySubmitted", { query: initialQuery })
+      : events("queryEmpty");
 
     return () => (
-      <>
+      <div mix={events.host()}>
         <label>
           Search{" "}
-          <events.on.change.input
+          <events.input
             type="text"
             defaultValue={initialQuery}
-            class={(detail = initialChangeEvent.detail) =>
-              detail.event?.type === "querySubmitted" ? "pending" : ""
+            class={(event = initialEvent) =>
+              event.type === "querySubmitted" ? "pending" : ""
             }
             mix={[
               inputCss,
@@ -84,21 +85,17 @@ export const SearchBooksWithoutFrame = clientEntry(
                 );
                 fetchBooks(query, currentTarget, signal);
               }),
-              events.on("change", ({ detail, currentTarget }) => {
-                if (detail.event?.type !== "querySubmitted") {
-                  currentTarget.select();
-                }
+              events.on("*", ({ currentTarget }) => {
+                currentTarget.select();
               }),
               ref((input) => input.dispatchEvent(new InputEvent("input"))),
             ]}
           />
         </label>
-        <events.on.change.div
-          child={(detail = initialChangeEvent.detail) => {
-            let event = detail.event;
-            switch (event?.type) {
+        <events.div
+          child={(event = initialEvent) => {
+            switch (event.type) {
               case "queryEmpty":
-              case undefined:
                 return <p>Enter the title of any book.</p>;
               case "querySubmitted":
                 return (
@@ -136,7 +133,7 @@ export const SearchBooksWithoutFrame = clientEntry(
             }
           }}
         />
-      </>
+      </div>
     );
   },
 );

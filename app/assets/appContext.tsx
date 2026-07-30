@@ -1,12 +1,7 @@
-import {
-  addEventListeners,
-  TypedEventTarget,
-  type Handle,
-  type RemixNode,
-} from "remix/ui";
+import { TypedEventTarget, type Handle, type RemixNode } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents/index.tsx";
 
-type AppContextValue = {
+export type AppContextValue = {
   user: { name: string; age: number } | null;
   settings: {
     theme: "dark" | "light" | "system";
@@ -14,28 +9,27 @@ type AppContextValue = {
   };
 };
 
-class AppContext extends TypedEventTarget<
+export class AppContext extends TypedEventTarget<
   CustomEvents<AppContextValue>["map"]
 > {
-  events = new CustomEvents<AppContextValue>({host: this});
-  #value: AppContextValue;
+  #events = new CustomEvents<AppContextValue>({ host: this });
+  on = this.#events.on;
+  readonly value: AppContextValue;
 
-  constructor(initial: Partial<AppContextValue>) {
+  constructor(initial: AppContextValue) {
     super();
-    this.#value = initial as AppContextValue;
-  }
-
-  get value() {
-    return this.#value;
+    this.value = initial;
   }
 
   patch(value: Partial<AppContextValue>) {
-    Object.assign(this.#value, value);
-    this.dispatchEvent(this.events(value));
+    Object.assign(this.value, value);
+    this.dispatchEvent(this.#events(value));
   }
 }
 
-function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
+export function AppProvider(
+  handle: Handle<{ children?: RemixNode }, AppContext>,
+) {
   let appContext = new AppContext({
     user: null,
     settings: { layout: "normal", theme: "system" },
@@ -54,37 +48,41 @@ function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
 }
 
 // Components can subscribe to only the events they care about
-function UserDisplay(handle: Handle) {
+export function UserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(appContext, handle.signal, {
-    user() {
-      handle.update();
+  appContext.on(
+    "user",
+    () => {
+      void handle.update();
     },
-  });
+    { signal: handle.signal },
+  );
 
   return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
 }
 
 // Event-aware elements can display context values without calling handle.update().
-function EventUserDisplay(handle: Handle) {
+export function EventUserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.user.div
-      child={(detail) => detail?.name ?? "Not logged in"}
+    <appContext.on.user.div
+      child={(event) => event?.detail?.name ?? "Not logged in"}
     />
   );
 }
 
-function SettingsDisplay(handle: Handle) {
+export function SettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  addEventListeners(appContext, handle.signal, {
-    settings() {
-      handle.update();
+  appContext.on(
+    "settings",
+    () => {
+      void handle.update();
     },
-  });
+    { signal: handle.signal },
+  );
 
   return () => (
     <div>
@@ -96,13 +94,13 @@ function SettingsDisplay(handle: Handle) {
   );
 }
 
-function EventSettingsDisplay(handle: Handle) {
+export function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.settings.pre
-      child={(detail) =>
-        `Layout: ${detail?.layout}, Theme: ${detail?.theme}`
+    <appContext.on.settings.pre
+      child={(event) =>
+        `Layout: ${event?.detail.layout}, Theme: ${event?.detail.theme}`
       }
     />
   );

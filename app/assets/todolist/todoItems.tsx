@@ -144,28 +144,27 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             action={routes.todolist.todos.action.href()}
             mix={events.host()}
           >
-            <events.on.change.button
+            <events.button
               mix={[todoActionButtonCss, deleteTodoButtonCss]}
               name="intent"
               value="delete"
-              disabled={(detail) => detail?.event?.type === "actionSubmitted"}
-              class={(detail) =>
-                detail?.event?.type === "actionSubmitted" ? "pending" : ""
+              disabled={(event) => event?.type === "actionSubmitted"}
+              class={(event) =>
+                event?.type === "actionSubmitted" ? "pending" : ""
               }
             >
               🗑️
-            </events.on.change.button>
+            </events.button>
             <input hidden name="id" value={id} />
           </form>
           <form
             mix={[
-              events.host({
-                actionErrored({ currentTarget }) {
+              events.host(),
+              events.on("*", ({ currentTarget, type }) => {
+                latestAction.set(id, type);
+                if (type === "actionErrored") {
                   currentTarget.reset();
-                },
-                change({ detail }) {
-                  latestAction.set(id, detail.event?.type);
-                },
+                }
               }),
               on("focusout", ({ currentTarget }) => {
                 if (latestAction.get(id) === "actionSubmitted") return;
@@ -177,13 +176,13 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           >
             <button hidden name="intent" value="update" />
             <input hidden name="id" value={id} />
-            <events.on.change.input
+            <events.input
               mix={[editTodoInputCss]}
               defaultValue={text}
               name="text"
-              disabled={(detail) => detail?.event?.type === "actionSubmitted"}
-              class={(detail) =>
-                detail?.event?.type === "actionSubmitted" ? "pending" : ""
+              disabled={(event) => event?.type === "actionSubmitted"}
+              class={(event) =>
+                event?.type === "actionSubmitted" ? "pending" : ""
               }
             />
           </form>
@@ -194,19 +193,19 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />
-            <events.on.change.button
-              disabled={(detail) => detail?.event?.type === "actionSubmitted"}
-              class={(detail) =>
-                detail?.event?.type === "actionSubmitted" ? "pending" : ""
+            <events.button
+              disabled={(event) => event?.type === "actionSubmitted"}
+              class={(event) =>
+                event?.type === "actionSubmitted" ? "pending" : ""
               }
               mix={[todoActionButtonCss, completeTodoButtonCss]}
               name="intent"
               value="update"
-              child={(detail) =>
+              child={(event) =>
                 (
-                  detail?.event?.type === "actionSubmitted" ||
-                  detail?.event?.type === "actionSucceeded"
-                    ? (detail?.event.detail?.completed ?? completed)
+                  event?.type === "actionSubmitted" ||
+                  event?.type === "actionSucceeded"
+                    ? (event.detail?.completed ?? completed)
                     : completed
                 )
                   ? "✓"

@@ -2,7 +2,6 @@ import {
   createCustomEventsOwnerId,
   CUSTOM_EVENTS_EVENT_PREFIX,
 } from "./constants.ts";
-import { defineEventValue } from "./dom.ts";
 import { processCustomEventsEvent } from "./events.ts";
 import { addEventListeners } from "remix/ui";
 import {
@@ -14,9 +13,9 @@ type DispatchTargetRegistration = { count: number; cleanup: () => void };
 
 type CustomEventsSubscription = {
   element: Element;
-  eventNames: ReadonlySet<string>;
+  eventNames: ReadonlySet<string> | null;
   phase: "projection" | "effect";
-  notify(event: CustomEvent, committed?: () => void): boolean | void;
+  notify(event: CustomEvent): Promise<unknown> | void;
 };
 
 export type CustomEventsBatchRuntimeEntry = {
@@ -37,7 +36,6 @@ export function createCustomEventsTransaction(): CustomEventsTransaction {
 type CustomEventsEventMetadata = {
   product?: boolean;
   processed?: boolean;
-  origin?: EventTarget;
   key?: PropertyKey;
   batchEntries?: CustomEventsBatchRuntimeEntry[];
 };
@@ -82,10 +80,6 @@ export class CustomEventsRuntime {
     return true;
   }
 
-  getOriginTarget(event: Event) {
-    return this.#eventMetadata.get(event)?.origin;
-  }
-
   getEventKey(event: Event) {
     return this.#eventMetadata.get(event)?.key;
   }
@@ -108,27 +102,15 @@ export class CustomEventsRuntime {
     detail: unknown,
     metadata?: {
       product?: boolean;
-      origin?: EventTarget;
       key?: PropertyKey;
     },
   ) {
     let event = new CustomEvent(type, { ...init, detail });
     let eventMetadata: CustomEventsEventMetadata = {
       ...(metadata?.product ? { product: true } : {}),
-      ...(metadata?.origin ? { origin: metadata.origin } : {}),
       ...(metadata?.key === undefined ? {} : { key: metadata.key }),
     };
     this.#eventMetadata.set(event, eventMetadata);
-
-    if (metadata?.origin) {
-      defineEventValue(event, "originTarget", metadata.origin, {
-        enumerable: true,
-      });
-    }
-
-    if (metadata?.key !== undefined) {
-      defineEventValue(event, "key", metadata.key, { enumerable: true });
-    }
 
     return event;
   }
@@ -141,7 +123,7 @@ export class CustomEventsRuntime {
   }
 
   #subscriptionScope(element: Element) {
-    return this.getDefaultTarget(element);
+    return this.getDefaultTarget(element) ?? element;
   }
 
   #isInScope(
@@ -152,9 +134,6 @@ export class CustomEventsRuntime {
     let subscriptionScope = this.#subscriptionScope(subscription.element);
     if (subscriptionScope === originScope) return true;
     if (!event.composed) return false;
-    if (typeof window !== "undefined" && subscriptionScope === window) {
-      return true;
-    }
     return (
       subscriptionScope instanceof Element &&
       originScope instanceof Element &&
@@ -168,7 +147,9 @@ export class CustomEventsRuntime {
     originTarget: EventTarget,
     event: CustomEvent,
   ) {
-    if (!subscription.eventNames.has(event.type)) return false;
+    if (subscription.eventNames && !subscription.eventNames.has(event.type)) {
+      return false;
+    }
     if (
       !event.bubbles &&
       originTarget instanceof Element &&
@@ -192,16 +173,26 @@ export class CustomEventsRuntime {
     originTarget: EventTarget,
   ) {
     let events = [...transaction.events.values()];
-    let projections = [...this.#subscriptions].filter(
-      (subscription) => subscription.phase === "projection",
-    );
-    let pending = 0;
-    let initializing = true;
-    let effectsRun = false;
+    let subscriptions = [...this.#subscriptions];
+    let projectionUpdates: Promise<unknown>[] = [];
 
-    let runEffects = () => {
-      if (effectsRun || initializing || pending > 0) return;
-      effectsRun = true;
+    for (let subscription of subscriptions) {
+      if (subscription.phase !== "projection") continue;
+      let event = events.findLast((event) =>
+        this.#matchesSubscription(
+          subscription,
+          originScope,
+          originTarget,
+          event,
+        )
+      );
+      if (event) {
+        let update = subscription.notify(event);
+        if (update) projectionUpdates.push(update);
+      }
+    }
+
+    void Promise.all(projectionUpdates).then(() => {
       let effects = [...this.#subscriptions].filter(
         (subscription) => subscription.phase === "effect",
       );
@@ -219,34 +210,7 @@ export class CustomEventsRuntime {
           }
         }
       }
-    };
-
-    for (let event of events) {
-      for (let subscription of projections) {
-        if (
-          !this.#matchesSubscription(
-            subscription,
-            originScope,
-            originTarget,
-            event,
-          )
-        ) {
-          continue;
-        }
-        pending++;
-        let committed = false;
-        let commit = () => {
-          if (committed) return;
-          committed = true;
-          pending--;
-          runEffects();
-        };
-        if (subscription.notify(event, commit) !== true) commit();
-      }
-    }
-
-    initializing = false;
-    runEffects();
+    });
   }
 
   addRegisteredHost(target: EventTarget) {
@@ -336,7 +300,7 @@ export class CustomEventsRuntime {
     if (soleRegisteredHost && !(soleRegisteredHost instanceof Element)) {
       return soleRegisteredHost;
     }
-    return typeof window === "undefined" ? undefined : window;
+    return undefined;
   }
 
   notifyHostsSoon() {
@@ -411,91 +375,3 @@ export class CustomEventsRuntime {
     };
   }
 }
-
-// Product events often bubble to window so sibling branches can react without a
-// shared EventTarget. Window listeners must not keep descriptor instances alive.
-type CustomEventsWindowListener = {
-  controller: AbortController;
-  descriptor: WeakRef<CustomEventsRuntime>;
-};
-
-class WindowBridge {
-  #windowListeners = new Map<string, CustomEventsWindowListener>();
-  #finalizer =
-    typeof FinalizationRegistry === "undefined"
-      ? undefined
-      : new FinalizationRegistry<string>((eventName) => {
-          this.remove(eventName);
-        });
-
-  enable(descriptor: CustomEventsRuntime, type: string) {
-    if (typeof window === "undefined") return;
-
-    let eventName = getEventName(descriptor, type);
-    if (this.#windowListeners.has(eventName)) return;
-
-    let controller = new AbortController();
-    let descriptorRef = new WeakRef(descriptor);
-    this.#windowListeners.set(eventName, {
-      controller,
-      descriptor: descriptorRef,
-    });
-    this.#finalizer?.register(descriptor, eventName);
-
-    addEventListeners(window, controller.signal, {
-      [eventName]: (event: Event) => {
-        if (!(event instanceof CustomEvent)) return;
-
-        let listener = this.#windowListeners.get(eventName);
-        let descriptor = listener?.descriptor.deref();
-        if (!descriptor) {
-          this.remove(eventName);
-          return;
-        }
-
-        processCustomEventsEvent(event, descriptor, window);
-      },
-    } as never);
-  }
-
-  remove(eventName: string) {
-    let listener = this.#windowListeners.get(eventName);
-    if (!listener) return;
-    listener.controller.abort();
-    this.#windowListeners.delete(eventName);
-  }
-
-  has(eventName: string) {
-    return this.#windowListeners.has(eventName);
-  }
-
-  expire(eventName: string) {
-    let listener = this.#windowListeners.get(eventName);
-    if (!listener) return false;
-    listener.descriptor = {
-      deref: () => undefined,
-    } as WeakRef<CustomEventsRuntime>;
-    return true;
-  }
-
-  count() {
-    return this.#windowListeners.size;
-  }
-}
-
-export const windowBridge = new WindowBridge();
-
-export const __customEventsTest = {
-  hasWindowListener(eventName: string) {
-    return windowBridge.has(eventName);
-  },
-  expireWindowListener(eventName: string) {
-    return windowBridge.expire(eventName);
-  },
-  removeWindowListener(eventName: string) {
-    windowBridge.remove(eventName);
-  },
-  windowListenerCount() {
-    return windowBridge.count();
-  },
-};

@@ -1,5 +1,4 @@
 import { createCustomEventsDescriptor } from "./descriptor.tsx";
-import { __customEventsTest } from "./runtime.ts";
 import type {
   CustomEventMap,
   CustomEventsConstructor,
@@ -63,78 +62,105 @@ import type {
  * ]));
  * ```
  *
- * A granular event automatically derives `change`. A batch automatically
- * expands into its granular events. `change` is listener-facing and cannot be
- * dispatched directly.
+ * A batch is one internal transaction that expands into its listed granular
+ * events. Consumers always receive those declared events; the descriptor does
+ * not invent an aggregate `change` event or an envelope detail.
  *
  * ## Consume
  *
  * Use `events.on(...)` for a post-render DOM effect such as focus, selection,
  * or measurement on the element hosting the mixin. Keep attributes and child
  * content declarative in JSX. Use an event-aware intrinsic element such as
- * `<events.on.name.form>` or `<events.on.name.output>` for dynamic regions:
+ * `<events.on.name.form>` for one event, or `<events.form>` when the projection
+ * observes every declared event:
  *
  * ```tsx
  * <input mix={events.on("saveFailed", ({ currentTarget }) => {
  *   currentTarget.focus();
  * })} />
  *
- * <events.on.change.form
- *   class={(detail) => detail?.event?.type === "saveStarted" ? "pending" : ""}
- *   aria-busy={(detail) => detail?.event?.type === "saveStarted"}
- *   child={(detail) => detail?.event?.type === "saveSucceeded"
- *     ? <p>Saved revision {detail.event.detail.revision}</p>
+ * <events.form
+ *   class={(event) => event?.type === "saveStarted" ? "pending" : ""}
+ *   aria-busy={(event) => event?.type === "saveStarted"}
+ *   child={(event) => event?.type === "saveSucceeded"
+ *     ? <p>Saved revision {event.detail.revision}</p>
  *     : <p>Not saved yet.</p>
  *   }
  * />
  *
+ * // Observe every event for an imperative post-render effect.
+ * <input mix={events.on("*", (_, signal) => {
+ *   // Runs once for each matching granular event, in transaction order.
+ * })} />
+ *
+ * // Subscribe directly to a domain EventTarget.
+ * events.on(model, {
+ *   saveFailed(event) {
+ *     console.error(event.detail.error);
+ *   },
+ *   "*"(event) {
+ *     console.log(event.type);
+ *   },
+ * }, { signal });
+ *
+ * // A constructor host is the default direct-listener target.
+ * let modelEvents = new CustomEvents<SaveEventsMap>({ host: model });
+ * modelEvents.on("saveSucceeded", listener, { signal });
+ * modelEvents.on({ saveFailed: reportFailure }, { signal });
+ *
  * // Subscribe one projection to a precise subset of the event vocabulary.
  * let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
  * <saveOutcome.output
- *   child={(_, event) => event?.type === "saveSucceeded"
+ *   child={(event) => event?.type === "saveSucceeded"
  *     ? "Saved"
  *     : "Save failed"}
  * />
  * ```
 
  * On event-aware elements, ordinary attributes accept either a static value or
- * `(detail, event) => value`. `mix`, `ref`, and JSX children retain their
- * ordinary Remix meaning. Use Remix's `on(...)` inside `mix` for native DOM
- * handlers. `child` supplies dynamic children, so it cannot be combined with
- * static JSX children.
+ * `(event) => value`. Read payloads from `event.detail`. `mix`, `ref`, and JSX
+ * children retain their ordinary Remix meaning. Use Remix's `on(...)` inside
+ * `mix` for native DOM handlers. `child` supplies dynamic children, so it
+ * cannot be combined with static JSX children.
  * Use `key` in the event options and the matching DOM `id` on repeated
  * event-aware elements or elements using `events.on(...)`. Only the addressed
  * projection updates and only the addressed DOM-effect listener runs.
  * Projections and listeners without an `id` continue to receive keyed events
- * as aggregate consumers. The DOM `id` is the explicit runtime address because
- * JSX reconciliation keys are not exposed to component props.
+ * as broad consumers. The DOM `id` is the explicit runtime address because
+ * JSX reconciliation keys are not exposed to component props. Routing metadata
+ * stays private: callback events do not expose `key` or `originTarget`.
  *
  * Use `events.on(["eventA", "eventB"])` when a projection or effect depends on
  * a known subset of events. Its callback receives the matching granular detail,
- * and `event.type` identifies which member triggered it. Use `events.on.change`
- * only for a true aggregate consumer that must observe every event produced by
- * the descriptor. `change` carries the transaction envelope rather than a
- * granular detail.
+ * and `event.type` identifies which member triggered it. Use `<events.tag>` for
+ * a projection that observes the complete vocabulary and `events.on("*", ...)`
+ * for an effect that observes it. `*` is a subscription selector, not a
+ * dispatchable event name.
+ * Direct `EventTarget` subscriptions also accept one name, a name group, `*`,
+ * or an `addEventListeners()`-style object. Named object callbacks receive
+ * their narrowed event; `"*"` receives the full discriminated event union. If
+ * both match, the named callback runs before the wildcard callback. The
+ * options signal owns the subscription, while each callback receives a reentry
+ * signal as its second argument.
  *
- * Child callbacks receive `(detail, event, handle)`. Before the first matching
- * event, `detail` and `event` are `undefined`; a dispatched null-detail event
- * passes `null`. Use `detail === undefined` when that distinction matters. The
- * native event is available only when metadata is useful. Projection callbacks
- * receive a snapshot whose `currentTarget` is the event-aware element; the
- * original event remains untouched during DOM propagation. Handle the empty
- * branch or use a JavaScript default parameter for a local initial projection.
- * Use `when={(detail, event) => boolean}` to decide whether an incoming event
- * should update that event-aware element. A false result skips the projection
- * update before the event is stored or rendered.
- * Within one dispatch transaction, all matching event-aware projections commit
- * before any matching `events.on(...)` DOM effects run.
+ * Child callbacks receive `(event, handle)`. Before the first matching event,
+ * `event` is `undefined`; a dispatched signal event has `event.detail === null`.
+ * Projection callbacks receive a resolved event snapshot but do not synthesize
+ * `currentTarget`; handle the empty branch or use a local event as the default
+ * parameter. `events.on(...)` remains listener-like, so its event identifies
+ * the listener element through `currentTarget`.
+ * Within one dispatch transaction, each matching event-aware projection
+ * commits once using its final matching event. After all projection updates
+ * settle, matching `events.on(...)` effects run once per granular event in
+ * transaction order.
  * An event-aware element also processes product events dispatched directly on
  * itself, so `{ bubbles: false }` can be used for a strictly local update.
  *
- * Events reach sibling branches through the page fallback. Add
- * `mix={events.host(...)}` only when a widget root needs a local boundary or
- * host-level listeners that update a private model. Non-composed events stay
- * inside that host; `{ composed: true }` allows them to leave it.
+ * An event stays local to its event-aware element unless the component declares
+ * `mix={events.host()}` on a shared ancestor. Use that explicit host when
+ * sibling branches coordinate; there is no implicit page or window route.
+ * Non-composed events stay inside that host; `{ composed: true }` allows them
+ * to leave it.
  *
  * ## Design guidance
  *
@@ -164,7 +190,7 @@ import type {
  * Native DOM events form recognizable families, but historical names such as
  * `submit`, `focus`, and `change` do not share one tense or reveal their full
  * semantics. Do not copy that ambiguity into a new event vocabulary. An event
- * contract includes its timing, target, detail, routing key, propagation,
+ * contract includes its timing, target, detail, routing semantics, propagation,
  * cancelability, and default consequence; its name should summarize the
  * transition, not carry the whole contract.
  *
@@ -201,13 +227,12 @@ import type {
  * - Use a keyed event when one repeated entity changes. The key addresses the
  *   consumer; detail carries only additional transition data it needs.
  *
- * If many instances need `when` predicates, or one handler dispatches several
- * UI-oriented events, reconsider ownership. A smaller projection, keyed
- * routing, or a different representation (for example, one selection overlay
- * instead of updating every item) usually expresses the transition more
- * clearly. Split events only when their consumers truly update independently;
- * if events are always dispatched and consumed together, they describe one
- * transition.
+ * If one handler dispatches several UI-oriented events, reconsider ownership.
+ * A smaller projection, keyed routing, or a different representation (for
+ * example, one selection overlay instead of updating every item) usually
+ * expresses the transition more clearly. Split events only when their
+ * consumers truly update independently; if events are always dispatched and
+ * consumed together, they describe one transition.
  */
 class CustomEventsBase<Definition extends CustomEventsDefinition> {
   declare readonly map: CustomEventMap<
@@ -227,5 +252,3 @@ export type CustomEvents<Definition extends CustomEventsDefinition> =
 
 export const CustomEvents: CustomEventsConstructor =
   CustomEventsBase as unknown as CustomEventsConstructor;
-
-export { __customEventsTest };

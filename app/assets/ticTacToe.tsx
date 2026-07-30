@@ -56,6 +56,7 @@ export const TicTacToeCustomEvents = clientEntry(
     return () => (
       <div
         mix={[
+          events.host(),
           css({
             display: "grid",
             gap: 16,
@@ -165,11 +166,15 @@ export const TicTacToeCustomEvents = clientEntry(
                 ]),
               );
             }),
-            ref((reset) =>
-              reset.dispatchEvent(
-                events("cellFocusRequested", { key: 0 }),
-              )
-            ),
+            ref((reset, signal) => {
+              queueMicrotask(() => {
+                if (!signal.aborted) {
+                  reset.dispatchEvent(
+                    events("cellFocusRequested", { key: 0 }),
+                  );
+                }
+              });
+            }),
           ]}
         >
           Reset

@@ -50,7 +50,7 @@ export const SevenGuisFlightBooker = clientEntry(
     };
 
     return () => (
-      <section mix={taskCss}>
+      <section mix={[taskCss, events.host()]}>
         <h2>Flight Booker</h2>
         <select
           aria-label="Flight type"
@@ -106,7 +106,7 @@ export const SevenGuisFlightBooker = clientEntry(
           Book
         </button>
         <events.on.bookingConfirmed.output
-          child={(_, event) =>
+          child={(event) =>
             event
               ? flight.kind === "one-way flight"
                 ? `You have booked a one-way flight on ${flight.startDate}.`

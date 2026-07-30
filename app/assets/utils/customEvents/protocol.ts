@@ -1,4 +1,4 @@
-import { CHANGE_EVENT_NAME } from "./constants.ts";
+import { CUSTOM_EVENTS_ALL } from "./constants.ts";
 import type { CustomEventsRuntime } from "./runtime.ts";
 import type { EventDetails } from "./types.ts";
 
@@ -42,47 +42,14 @@ export function subscribeEventTypes(
   return () => descriptor.typeListeners.delete(listener);
 }
 
-// Change detail helpers
-//
-// Every granular product event derives a change event. A product change event
-// behaves as a batch: it contains all provided details and expands into granular
-// events.
-export function createCustomEventChangeDetail(
-  entries: Array<[string, unknown]>,
-) {
-  if (entries.length === 1) {
-    let [[type, detail]] = entries;
-    return {
-      event: {
-        type,
-        detail,
-      },
-      events: null,
-    };
-  }
-
-  return {
-    event: null,
-    events: getEntriesObject(entries),
-  };
-}
-
-function getEntriesObject(entries: Array<[string, unknown]>) {
-  let object: Partial<EventDetails> = {};
-  for (let [type, detail] of entries) {
-    object[type] = detail;
-  }
-  return object;
-}
-
 export function getCustomEventsDispatchEntries(
   events: Partial<EventDetails>,
 ) {
   let entries: Array<[string, unknown]> = [];
 
   for (let [type, detail] of Object.entries(events)) {
-    if (type === CHANGE_EVENT_NAME) {
-      throw new TypeError('CustomEvents does not dispatch "change" directly.');
+    if (type === CUSTOM_EVENTS_ALL) {
+      throw new TypeError('CustomEvents reserves "*" for subscriptions.');
     }
     entries.push([type, detail]);
   }
