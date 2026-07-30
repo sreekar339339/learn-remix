@@ -40,6 +40,12 @@ import type {
  *
  * The descriptor is callable and returns an ordinary `CustomEvent`, so native
  * `dispatchEvent(...)` remains the only dispatch API:
+ * An already-aborted options signal throws its abort reason during event
+ * creation; no inert substitute is returned.
+ * The declared event name is also its raw DOM `event.type`, so ordinary
+ * `addEventListener(...)` consumers can observe it. Known native DOM event
+ * names are rejected at the type level; private event-object ownership keeps
+ * descriptors that declare the same custom name isolated from one another.
  *
  * ```tsx
  * form.dispatchEvent(events("saveStarted"));
@@ -149,9 +155,11 @@ import type {
  * parameter. `events.on(...)` remains listener-like, so its event identifies
  * the listener element through `currentTarget`.
  * Within one dispatch transaction, each matching event-aware projection
- * commits once using its final matching event. After all projection updates
- * settle, matching `events.on(...)` effects run once per matching entry in
- * transaction order.
+ * commits once using its final matching event. A projection on the dispatch
+ * target commits first, so its state is coherent before downstream projections
+ * can trigger reentrant native events. Remaining projections have no defined
+ * order and commit concurrently. After every projection settles, matching
+ * `events.on(...)` effects run once per matching entry in transaction order.
  * An event-aware element also processes events dispatched directly on
  * itself, so `{ bubbles: false }` can be used for a strictly local update.
  *

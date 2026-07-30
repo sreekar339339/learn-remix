@@ -1,7 +1,3 @@
-import {
-  createCustomEventsOwnerId,
-  CUSTOM_EVENTS_EVENT_PREFIX,
-} from "./constants.ts";
 import { defineEventValue, isElement, isEventTarget } from "./dom.ts";
 
 type DispatchTargetRegistration = {
@@ -73,9 +69,6 @@ type TransactionEvent = {
  * in-memory snapshots and notifies matching projections and effects.
  */
 export class CustomEventsRuntime {
-  readonly eventPrefix =
-    `${CUSTOM_EVENTS_EVENT_PREFIX}:${createCustomEventsOwnerId()}:`;
-
   #eventTypes = new Set<string>();
   #eventTypeListeners = new Set<(type: string) => void>();
   #eventMetadata = new WeakMap<Event, ProductEventMetadata>();
@@ -91,10 +84,6 @@ export class CustomEventsRuntime {
     for (let listener of this.#eventTypeListeners) listener(type);
   }
 
-  getEventName(type: string) {
-    return `${this.eventPrefix}${type}`;
-  }
-
   createProductEvent(
     carrierType: string,
     detail: unknown,
@@ -102,7 +91,7 @@ export class CustomEventsRuntime {
     entries: CustomEventsBatchRuntimeEntry[],
   ) {
     this.addEventType(carrierType);
-    let event = new CustomEvent(this.getEventName(carrierType), {
+    let event = new CustomEvent(carrierType, {
       ...init,
       detail,
     });
@@ -204,19 +193,38 @@ export class CustomEventsRuntime {
       for (let { event } of events) subscription.notify(event);
     }
 
-    let subscriptions = [...this.#elementSubscriptions];
-    let updates: Promise<unknown>[] = [];
-    for (let subscription of subscriptions) {
+    let projections: Array<{
+      subscription: ElementSubscription;
+      match: TransactionEvent;
+    }> = [];
+    for (let subscription of [...this.#elementSubscriptions]) {
       if (subscription.phase !== "projection") continue;
       let match = events.findLast((event) =>
         this.#matches(subscription, event, originScope, originTarget)
       );
       if (!match) continue;
-      let update = subscription.notify(match.event);
-      if (update) updates.push(update);
+      projections.push({ subscription, match });
     }
 
-    void Promise.all(updates).then(() => {
+    let sourceProjections = projections.filter(
+      ({ subscription }) => subscription.element === originTarget,
+    );
+    let remainingProjections = projections.filter(
+      ({ subscription }) => subscription.element !== originTarget,
+    );
+    let commit = (
+      selected: typeof projections,
+    ) =>
+      Promise.all(
+        selected.map(({ subscription, match }) =>
+          subscription.notify(match.event)
+        ),
+      );
+    let projectionsCommitted = sourceProjections.length
+      ? commit(sourceProjections).then(() => commit(remainingProjections))
+      : commit(remainingProjections);
+
+    void projectionsCommitted.then(() => {
       let effects = [...this.#elementSubscriptions].filter(
         (subscription) => subscription.phase === "effect",
       );
@@ -237,13 +245,14 @@ export class CustomEventsRuntime {
     });
   }
 
-  #process(event: Event, fallbackScope: EventTarget) {
+  #process(event: Event, fallbackScope: EventTarget, hosted: boolean) {
     if (!(event instanceof CustomEvent)) return;
     let metadata = this.#eventMetadata.get(event);
     if (!metadata || metadata.processed) return;
     let originTarget = isEventTarget(event.target) ? event.target : undefined;
     if (!originTarget) return;
 
+    if (hosted && event.composed !== true) event.stopPropagation();
     metadata.processed = true;
     let originScope = this.#scopeFor(
       isElement(originTarget) ? originTarget : undefined,
@@ -269,10 +278,9 @@ export class CustomEventsRuntime {
       if (listenedTypes.has(type)) return;
       listenedTypes.add(type);
       target.addEventListener(
-        this.getEventName(type),
+        type,
         (event) => {
-          if (hosted && event.composed !== true) event.stopPropagation();
-          this.#process(event, target);
+          this.#process(event, target, hosted);
         },
         { signal: controller.signal },
       );

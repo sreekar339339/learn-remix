@@ -7,7 +7,7 @@ export const SearchBooksWithFrame = clientEntry(
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
     let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
-    let initialEvent = query ? events("querySubmitted") : events("queryEmpty");
+    let initialEvent = events(query ? "querySubmitted" : "queryEmpty");
 
     return () => (
       <div mix={events.host()}>
@@ -31,7 +31,6 @@ export const SearchBooksWithFrame = clientEntry(
               name="q"
               type="text"
               defaultValue={query}
-              autofocus
               mix={[
                 css({
                   padding: 4,

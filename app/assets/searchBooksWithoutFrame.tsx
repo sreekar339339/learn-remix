@@ -53,6 +53,7 @@ async function fetchBooks(
     );
   } catch (error) {
     input.dispatchEvent(events("errorOccurred", error as Error, opts));
+  } finally {
   }
 }
 
@@ -63,6 +64,7 @@ export const SearchBooksWithoutFrame = clientEntry(
     let initialEvent = initialQuery
       ? events("querySubmitted", { query: initialQuery })
       : events("queryEmpty");
+    let interacted = false;
 
     return () => (
       <div mix={events.host()}>
@@ -77,6 +79,7 @@ export const SearchBooksWithoutFrame = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }, signal) => {
+                interacted = true;
                 let query = currentTarget.value.trim();
                 if (!query)
                   return void currentTarget.dispatchEvent(events("queryEmpty"));
@@ -85,10 +88,16 @@ export const SearchBooksWithoutFrame = clientEntry(
                 );
                 fetchBooks(query, currentTarget, signal);
               }),
-              events.on("*", ({ currentTarget }) => {
-                currentTarget.select();
+              events.on("*", ({ currentTarget, type }) => {
+                if (type !== "querySubmitted") currentTarget.select();
               }),
-              ref((input) => input.dispatchEvent(new InputEvent("input"))),
+              ref((input, signal) => {
+                queueMicrotask(() => {
+                  if (!signal.aborted && !interacted) {
+                    input.dispatchEvent(new InputEvent("input"));
+                  }
+                });
+              }),
             ]}
           />
         </label>

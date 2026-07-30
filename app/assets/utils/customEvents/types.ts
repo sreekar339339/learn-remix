@@ -18,6 +18,31 @@ type CustomEventsDefinitionKeys<Definition> =
   | Extract<Definition, string>
   | CustomEventsDefinitionMapKeys<Definition>;
 
+type NativeDOMEventName = Extract<
+  | keyof GlobalEventHandlersEventMap
+  | keyof HTMLElementEventMap
+  | keyof SVGElementEventMap
+  | keyof DocumentEventMap
+  | keyof WindowEventMap,
+  string
+>;
+
+type NativeNamesIn<Definition> = Extract<
+  CustomEventsDefinitionKeys<Definition>,
+  NativeDOMEventName
+>;
+
+type NativeEventNameError<Names extends string> = {
+  readonly __customEventsNativeEventNameError:
+    "CustomEvents names cannot overlap native DOM event names.";
+  readonly nativeEventNames: Names;
+};
+
+type CustomEventsConstructorArgs<Definition> =
+  [NativeNamesIn<Definition>] extends [never]
+    ? [options?: CustomEventsConstructorOptions]
+    : [error: NativeEventNameError<NativeNamesIn<Definition>>];
+
 type CustomEventsDefinitionMapDetail<Definition, Type extends string> =
   Definition extends EventDetails
     ? Type extends keyof Definition
@@ -43,11 +68,11 @@ export type NormalizeCustomEventsDefinition<
 /**
  * Options for events created by `CustomEvents`.
  *
- * These include standard `EventInit` flags. Pass `signal` when async work may
- * be aborted before dispatch.
+ * These include standard `EventInit` flags. An already-aborted `signal`
+ * synchronously throws its abort reason instead of creating an event.
  */
 export type CustomEventsInit = EventInit & {
-  /** When already aborted, the factory returns an inert event. */
+  /** Throws the signal's abort reason when it is already aborted. */
   signal?: AbortSignal;
   /** Routes the event to event-aware elements with the same DOM `id`. */
   key?: PropertyKey;
@@ -69,12 +94,12 @@ export type CustomEventsConstructorOptions = {
 
 export interface CustomEventsConstructor {
   new <Definition extends CustomEventsDefinition>(
-    options?: CustomEventsConstructorOptions,
+    ...args: CustomEventsConstructorArgs<Definition>
   ): CustomEventsDescriptor<NormalizeCustomEventsDefinition<Definition>>;
 }
 
 export type CustomEventsEventType<Events extends EventDetails> = Extract<
-  Exclude<keyof Events, typeof CUSTOM_EVENTS_ALL>,
+  Exclude<keyof Events, typeof CUSTOM_EVENTS_ALL | NativeDOMEventName>,
   string
 >;
 

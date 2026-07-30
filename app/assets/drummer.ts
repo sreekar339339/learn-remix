@@ -2,16 +2,14 @@ import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type TempoBpm = number;
 
-class DrummerEvents extends CustomEvents<{
-  play: TempoBpm;
-  stop: TempoBpm;
-  tempo: TempoBpm;
-}> {}
-
 export class Drummer extends EventTarget {
   #isPlaying = false;
   #tempoBpm = 90;
-  events = new DrummerEvents({ host: this });
+  events = new CustomEvents<{
+    playbackStarted: TempoBpm;
+    playbackStopped: TempoBpm;
+    tempoSet: TempoBpm;
+  }>({ host: this });
 
   constructor() {
     super();
@@ -27,19 +25,19 @@ export class Drummer extends EventTarget {
 
   setTempo(bpm: number) {
     this.#tempoBpm = Math.max(30, Math.min(300, Math.floor(bpm || 90)));
-    this.dispatchEvent(this.events("tempo", this.#tempoBpm));
+    this.dispatchEvent(this.events("tempoSet", this.#tempoBpm));
   }
 
   play(bpm = this.#tempoBpm) {
     this.setTempo(bpm);
     if (this.#isPlaying) return;
     this.#isPlaying = true;
-    this.dispatchEvent(this.events("play", this.#tempoBpm));
+    this.dispatchEvent(this.events("playbackStarted", this.#tempoBpm));
   }
 
   stop() {
     if (!this.#isPlaying) return;
     this.#isPlaying = false;
-    this.dispatchEvent(this.events("stop", this.#tempoBpm));
+    this.dispatchEvent(this.events("playbackStopped", this.#tempoBpm));
   }
 }

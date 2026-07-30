@@ -1,6 +1,5 @@
 import { ref } from "remix/ui";
 import {
-  CUSTOM_EVENTS_ABORTED,
   CUSTOM_EVENTS_ALL,
   CUSTOM_EVENTS_TRANSACTION,
 } from "./constants.ts";
@@ -64,10 +63,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 ): CustomEventsDescriptor<Events> {
   let state = new CustomEventsRuntime();
 
-  function createAbortedEvent() {
-    return new Event(CUSTOM_EVENTS_ABORTED);
-  }
-
   function createBatchEvent(
     entries: Array<{
       type: string;
@@ -77,9 +72,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     }>,
     transactionOptions?: CustomEventsInit,
   ) {
-    if (transactionOptions?.signal?.aborted) {
-      return createAbortedEvent();
-    }
+    transactionOptions?.signal?.throwIfAborted();
 
     for (let { type } of entries) state.addEventType(type);
     return state.createProductEvent(
@@ -131,7 +124,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         detail?: unknown;
         options?: CustomEventsInit;
       };
-      if (config.options?.signal?.aborted) return null;
+      config.options?.signal?.throwIfAborted();
       return {
         type,
         detail: Object.hasOwn(config, "detail") ? config.detail : null,
@@ -148,7 +141,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     detail: unknown,
     init?: CustomEventsInit,
   ) {
-    if (init?.signal?.aborted) return createAbortedEvent();
+    init?.signal?.throwIfAborted();
     if (type === CUSTOM_EVENTS_ALL) {
       throw new TypeError('CustomEvents reserves "*" for subscriptions.');
     }
@@ -427,8 +420,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       let entries = normalizeConfiguredBatch(
         typeOrEvents as readonly CustomEventsBatchItem<Events>[],
       );
-      if (entries.some((entry) => entry === null)) return createAbortedEvent();
-      return createBatchEvent(entries.filter((entry) => entry !== null));
+      return createBatchEvent(entries);
     }
 
     let options = detailOrInit as CustomEventsInit | undefined;

@@ -421,21 +421,26 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(c0.value, "30");
 
     await result.act(() => c0.focus());
+    await settle(result);
     assert.equal(c0.value, "=A0+B0");
     await result.act(() => c0.blur());
+    await settle(result);
     assert.equal(c0.value, "30");
 
     await result.act(() => a0.focus());
+    await settle(result);
     await result.act(() => {
       a0.value = "15";
       a0.dispatchEvent(new InputEvent("input", { bubbles: true }));
     });
+    await settle(result);
 
     c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
     assert.ok(c0, "C0 should remain rendered while A0 is edited");
     assert.equal(c0.value, "30");
 
     await result.act(() => a0.blur());
+    await settle(result);
     c0 = result.$('input[aria-label="C0"]') as HTMLInputElement;
     assert.ok(c0, "C0 should remain rendered after recalculation");
     assert.equal(c0.value, "35");
