@@ -1,6 +1,5 @@
 import { createCustomEventsDescriptor } from "./descriptor.tsx";
 import type {
-  CustomEventMap,
   CustomEventsConstructor,
   CustomEventsConstructorOptions,
   CustomEventsDescriptor,
@@ -62,9 +61,9 @@ import type {
  * ]));
  * ```
  *
- * A batch is one internal transaction that expands into its listed granular
- * events. Consumers always receive those declared events; the descriptor does
- * not invent an aggregate `change` event or an envelope detail.
+ * A batch is one dispatch containing several declared entries. Consumers
+ * receive event snapshots for those entries; the descriptor does not dispatch
+ * secondary DOM events or invent an aggregate `change` event.
  *
  * ## Consume
  *
@@ -90,7 +89,7 @@ import type {
  *
  * // Observe every event for an imperative post-render effect.
  * <input mix={events.on("*", (_, signal) => {
- *   // Runs once for each matching granular event, in transaction order.
+ *   // Runs once for each matching batch entry, in transaction order.
  * })} />
  *
  * // Subscribe directly to a domain EventTarget.
@@ -131,8 +130,8 @@ import type {
  * stays private: callback events do not expose `key` or `originTarget`.
  *
  * Use `events.on(["eventA", "eventB"])` when a projection or effect depends on
- * a known subset of events. Its callback receives the matching granular detail,
- * and `event.type` identifies which member triggered it. Use `<events.tag>` for
+ * a known subset of events. Its callback receives the matching event, and
+ * `event.type` identifies which member triggered it. Use `<events.tag>` for
  * a projection that observes the complete vocabulary and `events.on("*", ...)`
  * for an effect that observes it. `*` is a subscription selector, not a
  * dispatchable event name.
@@ -151,9 +150,9 @@ import type {
  * the listener element through `currentTarget`.
  * Within one dispatch transaction, each matching event-aware projection
  * commits once using its final matching event. After all projection updates
- * settle, matching `events.on(...)` effects run once per granular event in
+ * settle, matching `events.on(...)` effects run once per matching entry in
  * transaction order.
- * An event-aware element also processes product events dispatched directly on
+ * An event-aware element also processes events dispatched directly on
  * itself, so `{ bubbles: false }` can be used for a strictly local update.
  *
  * An event stays local to its event-aware element unless the component declares
@@ -235,10 +234,6 @@ import type {
  * consumed together, they describe one transition.
  */
 class CustomEventsBase<Definition extends CustomEventsDefinition> {
-  declare readonly map: CustomEventMap<
-    NormalizeCustomEventsDefinition<Definition>
-  >;
-
   constructor(options?: CustomEventsConstructorOptions) {
     let descriptor = createCustomEventsDescriptor<
       NormalizeCustomEventsDefinition<Definition>

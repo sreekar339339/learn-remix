@@ -40,44 +40,6 @@ export type NormalizeCustomEventsDefinition<
       : null;
 };
 
-type LocalCustomEventTypes<EventMap extends EventDetails> = {
-  [K in keyof EventMap & string]: CustomEvent<EventMap[K]> & {
-    readonly type: K;
-  };
-};
-
-type EventMapWildcardKey<EventMap extends EventDetails> = Extract<
-  keyof EventMap,
-  typeof CUSTOM_EVENTS_ALL
->;
-
-type EventMapColonKeys<EventMap extends EventDetails> = Extract<
-  keyof EventMap & string,
-  `${string}:${string}`
->;
-
-type WildcardCustomEventMapKeyError<Keys extends PropertyKey> = {
-  readonly __customEventMapWildcardKeyError: 'CustomEventMap reserves "*" for all-event subscriptions.';
-  readonly wildcardEventKeys: Keys;
-};
-
-type ColonCustomEventMapKeyError<Keys extends PropertyKey> = {
-  readonly __customEventMapColonKeyError: "CustomEventMap event names cannot contain colons.";
-  readonly colonEventKeys: Keys;
-};
-
-type CustomEventMapError<EventMap extends EventDetails> =
-  EventMapWildcardKey<EventMap> extends never
-    ? EventMapColonKeys<EventMap> extends never
-      ? never
-      : ColonCustomEventMapKeyError<EventMapColonKeys<EventMap>>
-    : WildcardCustomEventMapKeyError<EventMapWildcardKey<EventMap>>;
-
-export type CustomEventMap<EventMap extends EventDetails> =
-  CustomEventMapError<EventMap> extends never
-    ? LocalCustomEventTypes<EventMap>
-    : CustomEventMapError<EventMap>;
-
 /**
  * Options for events created by `CustomEvents`.
  *
@@ -95,7 +57,7 @@ export type CustomEventsConstructorOptions = {
   /**
    * Register this target as a host immediately.
    *
-   * This is mainly useful for `EventTarget` and `TypedEventTarget` objects.
+   * This is mainly useful for `EventTarget` domain objects.
    * DOM components usually prefer `mix={events.host()}`.
    */
   host?: EventTarget;
@@ -112,7 +74,7 @@ export interface CustomEventsConstructor {
 }
 
 export type CustomEventsEventType<Events extends EventDetails> = Extract<
-  keyof CustomEventMap<Events>,
+  Exclude<keyof Events, typeof CUSTOM_EVENTS_ALL>,
   string
 >;
 
@@ -120,7 +82,7 @@ export type CustomEventsEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > = Type extends CustomEventsEventType<Events>
-  ? Event & CustomEventMap<Events>[Type]
+  ? CustomEvent<Events[Type]> & { readonly type: Type }
   : never;
 
 /** Internal batch carrier accepted by native `dispatchEvent(...)`. */
@@ -469,7 +431,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
 
-  /** Attaches one listener to every granular descriptor event on a target. */
+  /** Attaches one listener to every descriptor event on a target. */
   <Target extends EventTarget>(
     target: Target,
     type: typeof CUSTOM_EVENTS_ALL,
@@ -506,7 +468,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
 
-  /** Reacts to every granular event on the element that owns this mixin. */
+  /** Reacts to every descriptor event on the element that owns this mixin. */
   <HostElement extends Element = Element>(
     type: typeof CUSTOM_EVENTS_ALL,
     listener: (
@@ -618,21 +580,13 @@ export type CustomEventsDescriptor<Events extends EventDetails> =
      * Selects named events for effects or event-aware elements.
      *
      * Use `events.on("name", listener)` for one post-render effect,
-     * `events.on("*", listener)` for every granular event, and
+     * `events.on("*", listener)` for every event, and
      * `events.on.name.tag` for a projection of one event. Use `<events.tag>`
      * when a projection observes every declared event. Pass an `EventTarget`
      * first to attach direct named, grouped, wildcard, or listener-map
      * subscriptions.
      */
     on: CustomEventsOnFunction<Events>;
-
-    /**
-     * Local event map for `TypedEventTarget` and strongly typed event details.
-     */
-    readonly map: CustomEventMap<Events>;
   } &
   HostableCustomEventsDescriptor<Events> &
-  Omit<
-    CustomEventsEventElements<Events, CustomEventsEventType<Events>>,
-    "map"
-  >;
+  CustomEventsEventElements<Events, CustomEventsEventType<Events>>;

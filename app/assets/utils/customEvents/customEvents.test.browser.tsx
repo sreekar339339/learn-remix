@@ -9,7 +9,6 @@ import {
   type Handle,
   type Props,
   type RemixNode,
-  TypedEventTarget,
 } from "remix/ui";
 import { render } from "remix/ui/test";
 import { CustomEvents } from "./index.tsx";
@@ -1119,7 +1118,7 @@ describe("CustomEvents", () => {
     assert.equal(root.dataset.latestOrder, "composed-order");
   });
 
-  it("expands batch transactions into granular events", async (t) => {
+  it("delivers every batch entry in one transaction", async (t) => {
     let events = new CheckoutEvents();
 
     function CheckoutBatch(handle: Handle) {
@@ -1276,10 +1275,10 @@ describe("CustomEvents", () => {
     ]);
   });
 
-  it("supports TypedEventTarget subclass owners through the same descriptor", async (t) => {
+  it("supports EventTarget subclass owners through the same descriptor", async (t) => {
     class TerminalEvents extends CustomEvents<CheckoutDetails> {}
 
-    class CheckoutTerminal extends TypedEventTarget<TerminalEvents["map"]> {
+    class CheckoutTerminal extends EventTarget {
       events = new TerminalEvents({host: this});
 
       submit() {
@@ -1360,7 +1359,7 @@ type AppContextValue = {
   };
 };
 
-class TestAppContext extends TypedEventTarget<CustomEvents<AppContextValue>["map"]> {
+class TestAppContext extends EventTarget {
   events = new CustomEvents<AppContextValue>({host: this});
   on = this.events.on;
   #value: AppContextValue;
@@ -1431,7 +1430,7 @@ function GesturePad(handle: Handle) {
   );
 }
 
-class TestPlayer extends TypedEventTarget<PlayerEvents["map"]> {
+class TestPlayer extends EventTarget {
   #track: string | null = null;
   events =  new PlayerEvents({host: this});
 
@@ -1849,7 +1848,7 @@ describe("CustomEvents component usage", () => {
     );
   });
 
-  it("supports TypedEventTarget classes dispatching granular events", async (t) => {
+  it("supports EventTarget classes dispatching descriptor events", async (t) => {
     let result = render(<PlayerUI />);
     t.after(() => result.cleanup());
 
@@ -2232,7 +2231,7 @@ describe("CustomEvents component usage", () => {
     );
   });
 
-  it("supports AppContext-style providers with granular and batch events", async (t) => {
+  it("supports AppContext-style providers with single and batch events", async (t) => {
     let result = render(
       <TestAppProvider>
         <UserDisplay />

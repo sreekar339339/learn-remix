@@ -5,14 +5,11 @@ import {
   type Handle,
   type RemixNode,
 } from "remix/ui";
-import {
-  addEventType,
-  getEventName,
-  getEventType,
-} from "./protocol.ts";
 import { CUSTOM_EVENTS_ALL } from "./constants.ts";
-import { defineEventValue } from "./dom.ts";
-import type { CustomEventsRuntime } from "./runtime.ts";
+import {
+  createListenerEvent,
+  type CustomEventsRuntime,
+} from "./runtime.ts";
 import type {
   CustomEventsEvent,
   CustomEventsEventElement,
@@ -22,46 +19,18 @@ import type {
   EventDetails,
 } from "./types.ts";
 
-function createResolvedEvent(
-  event: CustomEvent,
-  descriptor: CustomEventsRuntime,
-) {
-  let localType = getEventType(descriptor, event.type) ?? event.type;
-  let listenerEvent = descriptor.createCustomEvent(
-    localType,
-    {
-      bubbles: false,
-      cancelable: event.cancelable,
-      composed: event.composed,
-    },
-    event.detail,
-  );
-  defineEventValue(listenerEvent, "target", event.target);
-  return listenerEvent;
-}
-
-export function createCustomEventsListenerEvent(
-  event: CustomEvent,
-  descriptor: CustomEventsRuntime,
-  currentTarget: EventTarget,
-) {
-  let listenerEvent = createResolvedEvent(event, descriptor);
-  defineEventValue(listenerEvent, "currentTarget", currentTarget);
-  return listenerEvent;
-}
-
 function registerElementSubscription(
   element: Element,
   signal: AbortSignal,
   descriptor: CustomEventsRuntime,
-  eventNames: ReadonlySet<string> | null,
+  eventTypes: ReadonlySet<string> | null,
   phase: "projection" | "effect",
   notify: (event: CustomEvent) => Promise<unknown> | void,
 ) {
   let unregisterTarget = descriptor.registerDispatchTarget(element);
-  let unregisterSubscription = descriptor.registerSubscription({
+  let unregisterSubscription = descriptor.registerElementSubscription({
     element,
-    eventNames,
+    eventTypes,
     phase,
     notify,
   });
@@ -84,10 +53,10 @@ export const customEventsOnMixin = createMixin<
     let allEvents = eventTypes.length === 1 &&
       eventTypes[0] === CUSTOM_EVENTS_ALL;
     if (allEvents) eventTypes = [];
-    for (let type of eventTypes) addEventType(descriptor, type);
-    let eventNames = allEvents
+    for (let type of eventTypes) descriptor.addEventType(type);
+    let selectedTypes = allEvents
       ? null
-      : new Set(eventTypes.map((type) => getEventName(descriptor, type)));
+      : new Set(eventTypes);
     return (
       <handle.element
         mix={ref((element, signal) => {
@@ -96,13 +65,13 @@ export const customEventsOnMixin = createMixin<
             element,
             signal,
             descriptor,
-            eventNames,
+            selectedTypes,
             "effect",
             (event) => {
               reentry?.abort();
               reentry = new AbortController();
               void listener(
-                createCustomEventsListenerEvent(event, descriptor, element),
+                createListenerEvent(event, element),
                 reentry.signal,
               );
             },
@@ -162,10 +131,10 @@ function createCustomEventsEventElement<
   let eventTypes: readonly Type[] = allEvents
     ? []
     : types as readonly Type[];
-  for (let type of eventTypes) addEventType(descriptor, type);
-  let eventNames = allEvents
+  for (let type of eventTypes) descriptor.addEventType(type);
+  let selectedTypes = allEvents
     ? null
-    : new Set(eventTypes.map((type) => getEventName(descriptor, type)));
+    : new Set(eventTypes);
 
   return function CustomEventsEventElement(
     handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
@@ -176,24 +145,17 @@ function createCustomEventsEventElement<
         element,
         signal,
         descriptor,
-        eventNames,
+        selectedTypes,
         "projection",
         (event) => {
-          let projectedEvent = createResolvedEvent(
-            event,
-            descriptor,
-          ) as unknown as CustomEventsEvent<Events, Type>;
-          currentEvent = projectedEvent;
+          currentEvent = event as unknown as CustomEventsEvent<Events, Type>;
           return handle.update();
         },
       );
     });
 
     return () => {
-      let event =
-        currentEvent && descriptor.ownsEvent(currentEvent)
-          ? (currentEvent as CustomEventsEvent<Events, Type>)
-          : undefined;
+      let event = currentEvent as CustomEventsEvent<Events, Type> | undefined;
       let {
         children,
         mix,

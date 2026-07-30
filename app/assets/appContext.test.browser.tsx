@@ -17,7 +17,7 @@ async function settleEvents() {
 }
 
 describe("AppContext", () => {
-  it("patches its model and emits only the affected granular events", () => {
+  it("patches its model and emits only the affected events", () => {
     let context = new AppContext({
       user: null,
       settings: { layout: "normal", theme: "system" },

@@ -2,20 +2,23 @@ import {
   createCustomEventsOwnerId,
   CUSTOM_EVENTS_EVENT_PREFIX,
 } from "./constants.ts";
-import { processCustomEventsEvent } from "./events.ts";
-import { addEventListeners } from "remix/ui";
-import {
-  getEventName,
-  subscribeEventTypes,
-} from "./protocol.ts";
+import { defineEventValue, isElement, isEventTarget } from "./dom.ts";
 
-type DispatchTargetRegistration = { count: number; cleanup: () => void };
+type DispatchTargetRegistration = {
+  count: number;
+  cleanup(): void;
+};
 
-type CustomEventsSubscription = {
+type ElementSubscription = {
   element: Element;
-  eventNames: ReadonlySet<string> | null;
+  eventTypes: ReadonlySet<string> | null;
   phase: "projection" | "effect";
   notify(event: CustomEvent): Promise<unknown> | void;
+};
+
+type TargetSubscription = {
+  target: EventTarget;
+  notify(event: CustomEvent): void;
 };
 
 export type CustomEventsBatchRuntimeEntry = {
@@ -25,263 +28,114 @@ export type CustomEventsBatchRuntimeEntry = {
   key?: PropertyKey;
 };
 
-export type CustomEventsTransaction = {
-  events: Map<string, CustomEvent>;
-};
-
-export function createCustomEventsTransaction(): CustomEventsTransaction {
-  return { events: new Map() };
+function createEventSnapshot(
+  entry: CustomEventsBatchRuntimeEntry,
+  target: EventTarget,
+) {
+  let event = new CustomEvent(entry.type, {
+    ...entry.init,
+    detail: entry.detail,
+  });
+  defineEventValue(event, "target", target);
+  return event;
 }
 
-type CustomEventsEventMetadata = {
-  product?: boolean;
-  processed?: boolean;
-  key?: PropertyKey;
-  batchEntries?: CustomEventsBatchRuntimeEntry[];
+export function createListenerEvent(
+  event: CustomEvent,
+  currentTarget: EventTarget,
+) {
+  let listenerEvent = new CustomEvent(event.type, {
+    bubbles: false,
+    cancelable: event.cancelable,
+    composed: event.composed,
+    detail: event.detail,
+  });
+  defineEventValue(listenerEvent, "target", event.target);
+  defineEventValue(listenerEvent, "currentTarget", currentTarget);
+  return listenerEvent;
+}
+
+type ProductEventMetadata = {
+  entries: CustomEventsBatchRuntimeEntry[];
+  processed: boolean;
 };
 
-// Descriptor runtime
-//
-// Each descriptor instance owns its host registry, event metadata,
-// dispatch-target registrations, and listener notifications. Keeping
-// this state local means descriptors do not need an owner key inside every data
-// structure.
+type TransactionEvent = {
+  event: CustomEvent;
+  key?: PropertyKey;
+};
+
+/**
+ * Private mechanics owned by one descriptor.
+ *
+ * Product events are the only events dispatched through the DOM. Once one
+ * reaches a local listener or explicit host, the runtime turns its entries into
+ * in-memory snapshots and notifies matching projections and effects.
+ */
 export class CustomEventsRuntime {
-  readonly ownerId = createCustomEventsOwnerId();
-  readonly eventPrefix = `${CUSTOM_EVENTS_EVENT_PREFIX}:${this.ownerId}:`;
-  readonly eventTypes = new Set<string>();
-  readonly eventNames = new Map<string, string>();
-  readonly typeListeners = new Set<(type: string) => void>();
+  readonly eventPrefix =
+    `${CUSTOM_EVENTS_EVENT_PREFIX}:${createCustomEventsOwnerId()}:`;
 
+  #eventTypes = new Set<string>();
+  #eventTypeListeners = new Set<(type: string) => void>();
+  #eventMetadata = new WeakMap<Event, ProductEventMetadata>();
+  #elementSubscriptions = new Set<ElementSubscription>();
+  #targetSubscriptions = new Set<TargetSubscription>();
+  #dispatchTargets = new WeakMap<EventTarget, DispatchTargetRegistration>();
   #hosts = new WeakMap<Element, number>();
-  #registeredHosts = new Set<WeakRef<EventTarget>>();
-  #registeredHostCounts = new WeakMap<EventTarget, number>();
-  #hostSubscribers = new Set<() => void>();
-  #dispatchTargetRegistrations = new WeakMap<
-    EventTarget,
-    DispatchTargetRegistration
-  >();
-  #eventMetadata = new WeakMap<Event, CustomEventsEventMetadata>();
-  #subscriptions = new Set<CustomEventsSubscription>();
-  #notificationPending = false;
+  #constructorHost: EventTarget | undefined;
 
-  ownsEvent(event: Event) {
-    return this.#eventMetadata.has(event);
+  addEventType(type: string) {
+    if (this.#eventTypes.has(type)) return;
+    this.#eventTypes.add(type);
+    for (let listener of this.#eventTypeListeners) listener(type);
   }
 
-  isProductEvent(event: Event) {
-    return this.#eventMetadata.get(event)?.product === true;
+  getEventName(type: string) {
+    return `${this.eventPrefix}${type}`;
   }
 
-  claimProductEvent(event: Event) {
-    let metadata = this.#eventMetadata.get(event);
-    if (!metadata?.product || metadata.processed) return false;
-    metadata.processed = true;
-    return true;
-  }
-
-  getEventKey(event: Event) {
-    return this.#eventMetadata.get(event)?.key;
-  }
-
-  markProductBatchEntries(
-    event: Event,
+  createProductEvent(
+    carrierType: string,
+    detail: unknown,
+    init: EventInit,
     entries: CustomEventsBatchRuntimeEntry[],
   ) {
-    let metadata = this.#eventMetadata.get(event);
-    if (metadata) metadata.batchEntries = entries;
-  }
-
-  getProductBatchEntries(event: Event) {
-    return this.#eventMetadata.get(event)?.batchEntries;
-  }
-
-  createCustomEvent(
-    type: string,
-    init: EventInit,
-    detail: unknown,
-    metadata?: {
-      product?: boolean;
-      key?: PropertyKey;
-    },
-  ) {
-    let event = new CustomEvent(type, { ...init, detail });
-    let eventMetadata: CustomEventsEventMetadata = {
-      ...(metadata?.product ? { product: true } : {}),
-      ...(metadata?.key === undefined ? {} : { key: metadata.key }),
-    };
-    this.#eventMetadata.set(event, eventMetadata);
-
+    this.addEventType(carrierType);
+    let event = new CustomEvent(this.getEventName(carrierType), {
+      ...init,
+      detail,
+    });
+    if (detail === undefined) defineEventValue(event, "detail", undefined);
+    this.#eventMetadata.set(event, { entries, processed: false });
     return event;
   }
 
-  registerSubscription(subscription: CustomEventsSubscription) {
-    this.#subscriptions.add(subscription);
-    return () => {
-      this.#subscriptions.delete(subscription);
-    };
+  registerElementSubscription(subscription: ElementSubscription) {
+    this.#elementSubscriptions.add(subscription);
+    return () => this.#elementSubscriptions.delete(subscription);
   }
 
-  #subscriptionScope(element: Element) {
-    return this.getDefaultTarget(element) ?? element;
-  }
-
-  #isInScope(
-    subscription: CustomEventsSubscription,
-    originScope: EventTarget,
-    event: CustomEvent,
-  ) {
-    let subscriptionScope = this.#subscriptionScope(subscription.element);
-    if (subscriptionScope === originScope) return true;
-    if (!event.composed) return false;
-    return (
-      subscriptionScope instanceof Element &&
-      originScope instanceof Element &&
-      subscriptionScope.contains(originScope)
-    );
-  }
-
-  #matchesSubscription(
-    subscription: CustomEventsSubscription,
-    originScope: EventTarget,
-    originTarget: EventTarget,
-    event: CustomEvent,
-  ) {
-    if (subscription.eventNames && !subscription.eventNames.has(event.type)) {
-      return false;
-    }
-    if (
-      !event.bubbles &&
-      originTarget instanceof Element &&
-      subscription.element !== originTarget
-    ) {
-      return false;
-    }
-    if (!this.#isInScope(subscription, originScope, event)) return false;
-
-    let key = this.getEventKey(event);
-    return (
-      key === undefined ||
-      subscription.element.id === "" ||
-      subscription.element.id === String(key)
-    );
-  }
-
-  notifyTransaction(
-    transaction: CustomEventsTransaction,
-    originScope: EventTarget,
-    originTarget: EventTarget,
-  ) {
-    let events = [...transaction.events.values()];
-    let subscriptions = [...this.#subscriptions];
-    let projectionUpdates: Promise<unknown>[] = [];
-
-    for (let subscription of subscriptions) {
-      if (subscription.phase !== "projection") continue;
-      let event = events.findLast((event) =>
-        this.#matchesSubscription(
-          subscription,
-          originScope,
-          originTarget,
-          event,
-        )
-      );
-      if (event) {
-        let update = subscription.notify(event);
-        if (update) projectionUpdates.push(update);
-      }
-    }
-
-    void Promise.all(projectionUpdates).then(() => {
-      let effects = [...this.#subscriptions].filter(
-        (subscription) => subscription.phase === "effect",
-      );
-      for (let event of events) {
-        for (let subscription of effects) {
-          if (
-            this.#matchesSubscription(
-              subscription,
-              originScope,
-              originTarget,
-              event,
-            )
-          ) {
-            subscription.notify(event);
-          }
-        }
-      }
-    });
-  }
-
-  addRegisteredHost(target: EventTarget) {
-    let count = this.#registeredHostCounts.get(target) ?? 0;
-    this.#registeredHostCounts.set(target, count + 1);
-    if (count > 0) return;
-
-    let hosts = this.#registeredHosts;
-    hosts.add(new WeakRef(target));
-    this.notifyHostsSoon();
-  }
-
-  removeRegisteredHost(target: EventTarget) {
-    let count = this.#registeredHostCounts.get(target) ?? 0;
-    if (count > 1) {
-      this.#registeredHostCounts.set(target, count - 1);
-      return;
-    }
-
-    this.#registeredHostCounts.delete(target);
-    let hosts = this.#registeredHosts;
-
-    for (let host of hosts) {
-      let registeredTarget = host.deref();
-      if (!registeredTarget || registeredTarget === target) {
-        hosts.delete(host);
-        if (registeredTarget === target) break;
-      }
-    }
-    this.notifyHostsSoon();
-  }
-
-  getSoleRegisteredHost() {
-    let hosts = this.#registeredHosts;
-
-    let soleTarget: EventTarget | undefined;
-    for (let host of hosts) {
-      let target = host.deref();
-      if (!target) {
-        hosts.delete(host);
-        continue;
-      }
-      if (!soleTarget) {
-        soleTarget = target;
-        continue;
-      }
-      if (soleTarget !== target) {
-        return undefined;
-      }
-    }
-
-    return soleTarget;
+  registerTargetSubscription(subscription: TargetSubscription) {
+    this.#targetSubscriptions.add(subscription);
+    return () => this.#targetSubscriptions.delete(subscription);
   }
 
   addHost(element: Element) {
-    let count = this.#hosts.get(element) ?? 0;
-    this.#hosts.set(element, count + 1);
-    if (count === 0) this.addRegisteredHost(element);
+    this.#hosts.set(element, (this.#hosts.get(element) ?? 0) + 1);
   }
 
   removeHost(element: Element) {
     let count = this.#hosts.get(element) ?? 0;
-    if (count <= 1) {
-      this.#hosts.delete(element);
-      this.removeRegisteredHost(element);
-    } else {
-      this.#hosts.set(element, count - 1);
-    }
+    if (count <= 1) this.#hosts.delete(element);
+    else this.#hosts.set(element, count - 1);
   }
 
-  findHost(element: Element | undefined) {
+  setConstructorHost(target: EventTarget | undefined) {
+    this.#constructorHost = target;
+  }
+
+  #findHost(element: Element | undefined) {
     for (
       let current = element;
       current;
@@ -289,89 +143,157 @@ export class CustomEventsRuntime {
     ) {
       if (this.#hosts.has(current)) return current;
     }
-    return undefined;
   }
 
-  getDefaultTarget(element: Element | undefined) {
-    let host = this.findHost(element);
-    if (host) return host;
+  #scopeFor(element: Element | undefined) {
+    return this.#findHost(element) ??
+      (!isElement(this.#constructorHost) ? this.#constructorHost : undefined);
+  }
 
-    let soleRegisteredHost = this.getSoleRegisteredHost();
-    if (soleRegisteredHost && !(soleRegisteredHost instanceof Element)) {
-      return soleRegisteredHost;
+  #matches(
+    subscription: ElementSubscription,
+    transactionEvent: TransactionEvent,
+    originScope: EventTarget,
+    originTarget: EventTarget,
+  ) {
+    let { event, key } = transactionEvent;
+    if (
+      subscription.eventTypes &&
+      !subscription.eventTypes.has(event.type)
+    ) {
+      return false;
     }
-    return undefined;
+    if (
+      !event.bubbles &&
+      isElement(originTarget) &&
+      subscription.element !== originTarget
+    ) {
+      return false;
+    }
+
+    let subscriptionScope =
+      this.#scopeFor(subscription.element) ?? subscription.element;
+    let inScope = subscriptionScope === originScope ||
+      (
+        event.composed &&
+        isElement(subscriptionScope) &&
+        isElement(originScope) &&
+        subscriptionScope.contains(originScope)
+      );
+    if (!inScope) return false;
+
+    return key === undefined ||
+      subscription.element.id === "" ||
+      subscription.element.id === String(key);
   }
 
-  notifyHostsSoon() {
-    if (this.#notificationPending) return;
-    this.#notificationPending = true;
-    queueMicrotask(() => {
-      this.#notificationPending = false;
-      for (let subscriber of this.#hostSubscribers) subscriber();
+  #notify(
+    entries: CustomEventsBatchRuntimeEntry[],
+    originScope: EventTarget,
+    originTarget: EventTarget,
+  ) {
+    let events: TransactionEvent[] = entries.map((entry) => ({
+      event: createEventSnapshot(entry, originTarget),
+      ...(entry.key === undefined ? {} : { key: entry.key }),
+    }));
+
+    // Direct EventTarget subscriptions retain native synchronous listener
+    // timing. Element effects still wait for projection commits.
+    for (let subscription of [...this.#targetSubscriptions]) {
+      if (subscription.target !== originTarget) continue;
+      for (let { event } of events) subscription.notify(event);
+    }
+
+    let subscriptions = [...this.#elementSubscriptions];
+    let updates: Promise<unknown>[] = [];
+    for (let subscription of subscriptions) {
+      if (subscription.phase !== "projection") continue;
+      let match = events.findLast((event) =>
+        this.#matches(subscription, event, originScope, originTarget)
+      );
+      if (!match) continue;
+      let update = subscription.notify(match.event);
+      if (update) updates.push(update);
+    }
+
+    void Promise.all(updates).then(() => {
+      let effects = [...this.#elementSubscriptions].filter(
+        (subscription) => subscription.phase === "effect",
+      );
+      for (let transactionEvent of events) {
+        for (let subscription of effects) {
+          if (
+            this.#matches(
+              subscription,
+              transactionEvent,
+              originScope,
+              originTarget,
+            )
+          ) {
+            subscription.notify(transactionEvent.event);
+          }
+        }
+      }
     });
   }
 
-  subscribeHosts(subscriber: () => void) {
-    this.#hostSubscribers.add(subscriber);
-    return () => {
-      this.#hostSubscribers.delete(subscriber);
-    };
+  #process(event: Event, fallbackScope: EventTarget) {
+    if (!(event instanceof CustomEvent)) return;
+    let metadata = this.#eventMetadata.get(event);
+    if (!metadata || metadata.processed) return;
+    let originTarget = isEventTarget(event.target) ? event.target : undefined;
+    if (!originTarget) return;
+
+    metadata.processed = true;
+    let originScope = this.#scopeFor(
+      isElement(originTarget) ? originTarget : undefined,
+    ) ?? fallbackScope;
+    this.#notify(metadata.entries, originScope, originTarget);
   }
 
-  registerDispatchTarget(target: EventTarget, options?: { hosted?: boolean }) {
-    let registration = this.#dispatchTargetRegistrations.get(target);
-    if (registration) {
-      registration.count += 1;
-      let activeRegistration = registration;
+  registerDispatchTarget(target: EventTarget, hosted = false) {
+    let existing = this.#dispatchTargets.get(target);
+    if (existing) {
+      existing.count += 1;
       return () => {
-        activeRegistration.count -= 1;
-        if (activeRegistration.count > 0) return;
-        activeRegistration.cleanup();
-        this.#dispatchTargetRegistrations.delete(target);
+        existing.count -= 1;
+        if (existing.count > 0) return;
+        existing.cleanup();
+        this.#dispatchTargets.delete(target);
       };
     }
 
     let controller = new AbortController();
-    let registeredTypes = new Set<string>();
-
-    let listenType = (type: string) => {
-      if (registeredTypes.has(type)) return;
-      registeredTypes.add(type);
-      addEventListeners(target, controller.signal, {
-        [getEventName(this, type)]: (event: Event) => {
-          if (!(event instanceof CustomEvent)) return;
-          if (options?.hosted && event.composed !== true) {
-            event.stopPropagation();
-          }
-          processCustomEventsEvent(
-            event,
-            this,
-            this.getDefaultTarget(
-              event.target instanceof Element ? event.target : undefined,
-            ) ?? target,
-          );
+    let listenedTypes = new Set<string>();
+    let listen = (type: string) => {
+      if (listenedTypes.has(type)) return;
+      listenedTypes.add(type);
+      target.addEventListener(
+        this.getEventName(type),
+        (event) => {
+          if (hosted && event.composed !== true) event.stopPropagation();
+          this.#process(event, target);
         },
-      } as never);
+        { signal: controller.signal },
+      );
     };
+    this.#eventTypeListeners.add(listen);
+    for (let type of this.#eventTypes) listen(type);
 
-    let unsubscribeEventTypes = subscribeEventTypes(this, listenType);
-    for (let type of this.eventTypes) listenType(type);
-
-    registration = {
+    let registration: DispatchTargetRegistration = {
       count: 1,
-      cleanup() {
-        unsubscribeEventTypes();
-        controller?.abort();
+      cleanup: () => {
+        this.#eventTypeListeners.delete(listen);
+        controller.abort();
       },
     };
-    this.#dispatchTargetRegistrations.set(target, registration);
+    this.#dispatchTargets.set(target, registration);
 
     return () => {
       registration.count -= 1;
       if (registration.count > 0) return;
       registration.cleanup();
-      this.#dispatchTargetRegistrations.delete(target);
+      this.#dispatchTargets.delete(target);
     };
   }
 }

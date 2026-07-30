@@ -1,4 +1,3 @@
-import { TypedEventTarget } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 type TempoBpm = number;
@@ -9,7 +8,7 @@ class DrummerEvents extends CustomEvents<{
   tempo: TempoBpm;
 }> {}
 
-export class Drummer extends TypedEventTarget<DrummerEvents["map"]> {
+export class Drummer extends EventTarget {
   #isPlaying = false;
   #tempoBpm = 90;
   events = new DrummerEvents({ host: this });

@@ -1,4 +1,4 @@
-import { TypedEventTarget, type Handle, type RemixNode } from "remix/ui";
+import { type Handle, type RemixNode } from "remix/ui";
 import { CustomEvents } from "./utils/customEvents/index.tsx";
 
 export type AppContextValue = {
@@ -9,9 +9,7 @@ export type AppContextValue = {
   };
 };
 
-export class AppContext extends TypedEventTarget<
-  CustomEvents<AppContextValue>["map"]
-> {
+export class AppContext extends EventTarget {
   #events = new CustomEvents<AppContextValue>({ host: this });
   on = this.#events.on;
   readonly value: AppContextValue;
