@@ -1,11 +1,11 @@
-import { CustomEvents } from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 type TempoBpm = number;
 
 export class Drummer extends EventTarget {
   #isPlaying = false;
   #tempoBpm = 90;
-  events = new CustomEvents<{
+  events = customEvents<{
     playbackStarted: TempoBpm;
     playbackStopped: TempoBpm;
     tempoSet: TempoBpm;

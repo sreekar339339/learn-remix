@@ -3,9 +3,9 @@ import { AddTodo } from "./addTodo.tsx";
 import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
+import { customEvents } from "../utils/customEvents/index.tsx";
 
-export const events = new CustomEvents<{
+export const events = customEvents<{
   actionSubmitted: TodoActionDetail | null;
   actionSucceeded: TodoActionDetail | null;
   actionErrored: { error: Error };

@@ -1,5 +1,5 @@
 import { type Handle, type RemixNode } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 export type AppContextValue = {
   user: { name: string; age: number } | null;
@@ -10,7 +10,7 @@ export type AppContextValue = {
 };
 
 export class AppContext extends EventTarget {
-  #events = new CustomEvents<AppContextValue>({ host: this });
+  #events = customEvents<AppContextValue>({ host: this });
   on = this.#events.on;
   readonly value: AppContextValue;
 

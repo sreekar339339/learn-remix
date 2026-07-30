@@ -1,5 +1,5 @@
 import { clientEntry, css, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
+import { customEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type Person = {
@@ -25,7 +25,7 @@ function visiblePeople(people: Array<Person>, prefix: string) {
 export const SevenGuisCrud = clientEntry(
   import.meta.url,
   function SevenGuisCrud(handle) {
-    let events = new CustomEvents<
+    let events = customEvents<
       "filterApplied" | "personSelected" | "draftEdited"
     >();
     let peopleViewEvents = events.on(["filterApplied", "personSelected"]);

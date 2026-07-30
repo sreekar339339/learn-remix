@@ -34,13 +34,13 @@ type NativeNamesIn<Definition> = Extract<
 
 type NativeEventNameError<Names extends string> = {
   readonly __customEventsNativeEventNameError:
-    "CustomEvents names cannot overlap native DOM event names.";
+    "customEvents names cannot overlap native DOM event names.";
   readonly nativeEventNames: Names;
 };
 
-type CustomEventsConstructorArgs<Definition> =
+export type CustomEventsFactoryArgs<Definition> =
   [NativeNamesIn<Definition>] extends [never]
-    ? [options?: CustomEventsConstructorOptions]
+    ? [options?: CustomEventsOptions]
     : [error: NativeEventNameError<NativeNamesIn<Definition>>];
 
 type CustomEventsDefinitionMapDetail<Definition, Type extends string> =
@@ -66,7 +66,7 @@ export type NormalizeCustomEventsDefinition<
 };
 
 /**
- * Options for events created by `CustomEvents`.
+ * Options for events created by `customEvents`.
  *
  * These include standard `EventInit` flags. An already-aborted `signal`
  * synchronously throws its abort reason instead of creating an event.
@@ -78,7 +78,7 @@ export type CustomEventsInit = EventInit & {
   key?: PropertyKey;
 };
 
-export type CustomEventsConstructorOptions = {
+export type CustomEventsOptions = {
   /**
    * Register this target as a host immediately.
    *
@@ -86,17 +86,7 @@ export type CustomEventsConstructorOptions = {
    * DOM components usually prefer `mix={events.host()}`.
    */
   host?: EventTarget;
-  /**
-   * Removes the constructor host registration when aborted.
-   */
-  signal?: AbortSignal;
 };
-
-export interface CustomEventsConstructor {
-  new <Definition extends CustomEventsDefinition>(
-    ...args: CustomEventsConstructorArgs<Definition>
-  ): CustomEventsDescriptor<NormalizeCustomEventsDefinition<Definition>>;
-}
 
 export type CustomEventsEventType<Events extends EventDetails> = Extract<
   Exclude<keyof Events, typeof CUSTOM_EVENTS_ALL | NativeDOMEventName>,
@@ -398,9 +388,9 @@ export type CustomEventsTargetListeners<
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
   /**
-   * Attaches a listener map directly to the constructor host.
+   * Attaches a listener map directly to the configured host.
    *
-   * Requires `new CustomEvents({ host })` at runtime.
+   * Requires `customEvents({ host })` at runtime.
    */
   (
     listeners: CustomEventsTargetListeners<Events, EventTarget>,
@@ -408,7 +398,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): () => void;
 
   /**
-   * Attaches a wildcard listener directly to the constructor host.
+   * Attaches a wildcard listener directly to the configured host.
    *
    * The options argument distinguishes this from the element-mixin form.
    */
@@ -423,7 +413,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): () => void;
 
   /**
-   * Attaches a selected event group directly to the constructor host.
+   * Attaches a selected event group directly to the configured host.
    *
    * The options argument distinguishes this from the element-mixin form.
    */
@@ -439,7 +429,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): () => void;
 
   /**
-   * Attaches one listener directly to the constructor host.
+   * Attaches one listener directly to the configured host.
    *
    * The options argument distinguishes this from the element-mixin form.
    */

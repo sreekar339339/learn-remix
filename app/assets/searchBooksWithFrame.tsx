@@ -1,11 +1,11 @@
 import { clientEntry, css, Frame, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { CustomEvents } from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 export const SearchBooksWithFrame = clientEntry(
   import.meta.url,
   function SearchBooksWithFrame(handle: Handle<{ initialQuery?: string }>) {
-    let events = new CustomEvents<"queryEmpty" | "querySubmitted">();
+    let events = customEvents<"queryEmpty" | "querySubmitted">();
     let query = handle.props.initialQuery?.trim() ?? "";
     let initialEvent = events(query ? "querySubmitted" : "queryEmpty");
 

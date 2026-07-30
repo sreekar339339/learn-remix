@@ -1,5 +1,5 @@
 import { clientEntry, css, on, ref } from "remix/ui";
-import { CustomEvents } from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 type Player = "X" | "O";
 type Result = Player | "Draw";
@@ -44,7 +44,7 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
-    let events = new CustomEvents<
+    let events = customEvents<
       "gameStateChanged" | "cellFocusRequested"
     >();
     let game = {

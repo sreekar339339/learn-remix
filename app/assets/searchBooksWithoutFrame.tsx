@@ -1,12 +1,12 @@
 import { clientEntry, css, on, ref, type Handle } from "remix/ui";
 import { routes } from "../routes.ts";
-import { CustomEvents } from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 type Book = {
   title: string;
 };
 
-let events = new CustomEvents<{
+let events = customEvents<{
   booksFound: Array<Book>;
   booksNotFound: { reason: "emptyList" | { other: string } };
   errorOccurred: Error;

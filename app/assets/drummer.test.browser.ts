@@ -3,7 +3,7 @@ import { describe, it } from "remix/test";
 import { Drummer } from "./drummer.ts";
 
 describe("Drummer", () => {
-  it("publishes domain events through its constructor host", () => {
+  it("publishes domain events through its configured host", () => {
     let drummer = new Drummer();
     let events: string[] = [];
 

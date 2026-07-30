@@ -1,9 +1,9 @@
 import { createCustomEventsDescriptor } from "./descriptor.tsx";
 import type {
-  CustomEventsConstructor,
-  CustomEventsConstructorOptions,
   CustomEventsDescriptor,
   CustomEventsDefinition,
+  CustomEventsFactoryArgs,
+  CustomEventsOptions,
   NormalizeCustomEventsDefinition,
 } from "./types.ts";
 
@@ -22,11 +22,11 @@ import type {
  *   saveFailed: { error: Error };
  * };
  *
- * let events = new CustomEvents<SaveEventsMap>();
+ * let events = customEvents<SaveEventsMap>();
  * // Or, for signal-only events:
- * let signals = new CustomEvents<"listUpdated" | "editorUpdated">();
+ * let signals = customEvents<"listUpdated" | "editorUpdated">();
  * // Signal-only and detailed events may share one definition:
- * let mixed = new CustomEvents<
+ * let mixed = customEvents<
  *   "operationStarted" | { valueProposed: string } | "operationCompleted"
  * >();
  * ```
@@ -108,8 +108,8 @@ import type {
  *   },
  * }, { signal });
  *
- * // A constructor host is the default direct-listener target.
- * let modelEvents = new CustomEvents<SaveEventsMap>({ host: model });
+ * // A configured host is the default direct-listener target.
+ * let modelEvents = customEvents<SaveEventsMap>({ host: model });
  * modelEvents.on("saveSucceeded", listener, { signal });
  * modelEvents.on({ saveFailed: reportFailure }, { signal });
  *
@@ -241,17 +241,14 @@ import type {
  * consumers truly update independently; if events are always dispatched and
  * consumed together, they describe one transition.
  */
-class CustomEventsBase<Definition extends CustomEventsDefinition> {
-  constructor(options?: CustomEventsConstructorOptions) {
-    let descriptor = createCustomEventsDescriptor<
-      NormalizeCustomEventsDefinition<Definition>
-    >(options);
-    return descriptor as unknown as this;
-  }
-}
-
 export type CustomEvents<Definition extends CustomEventsDefinition> =
   CustomEventsDescriptor<NormalizeCustomEventsDefinition<Definition>>;
 
-export const CustomEvents: CustomEventsConstructor =
-  CustomEventsBase as unknown as CustomEventsConstructor;
+export function customEvents<Definition extends CustomEventsDefinition>(
+  ...args: CustomEventsFactoryArgs<Definition>
+): CustomEvents<Definition>;
+export function customEvents(options?: unknown) {
+  return createCustomEventsDescriptor(
+    options as CustomEventsOptions | undefined,
+  );
+}

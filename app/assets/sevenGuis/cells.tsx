@@ -1,5 +1,5 @@
 import { clientEntry, css, on, ref } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
+import { customEvents } from "../utils/customEvents/index.tsx";
 import { taskCss } from "./styles.ts";
 
 const columns = ["A", "B", "C", "D", "E", "F"] as const;
@@ -85,7 +85,7 @@ let localEvtOpts = { bubbles: false };
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = new CustomEvents<
+    let events = customEvents<
       "sheetRecalculated" | "cellFocusRequested" | { cellDraftSet: string }
     >();
     let cellValueEvents = events.on(["sheetRecalculated", "cellDraftSet"]);

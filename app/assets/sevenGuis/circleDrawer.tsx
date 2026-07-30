@@ -1,5 +1,5 @@
 import { clientEntry, css, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
+import { customEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type Circle = {
@@ -57,7 +57,7 @@ function getCanvasPoint(
 export const SevenGuisCircleDrawer = clientEntry(
   import.meta.url,
   function SevenGuisCircleDrawer(handle) {
-    let events = new CustomEvents<{
+    let events = customEvents<{
       editSessionSet: { circleId: number | null };
       circleResized: null;
     }>();

@@ -13,7 +13,7 @@ import {
   customEventsOnMixin,
 } from "./remix.tsx";
 import type {
-  CustomEventsConstructorOptions,
+  CustomEventsOptions,
   CustomEventsBatchItem,
   CustomEventsFactory,
   CustomEventsDescriptor,
@@ -50,7 +50,7 @@ function getEventInit(init: EventInit | undefined): EventInit {
 function getDispatchEntries(events: Partial<EventDetails>) {
   return Object.entries(events).map(([type, detail]) => {
     if (type === CUSTOM_EVENTS_ALL) {
-      throw new TypeError('CustomEvents reserves "*" for subscriptions.');
+      throw new TypeError('customEvents reserves "*" for subscriptions.');
     }
     return [type, detail] as [string, unknown];
   });
@@ -59,7 +59,7 @@ function getDispatchEntries(events: Partial<EventDetails>) {
 // Event elements are proxy-backed so their type-shaped API does not require
 // duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
-  options?: CustomEventsConstructorOptions,
+  options?: CustomEventsOptions,
 ): CustomEventsDescriptor<Events> {
   let state = new CustomEventsRuntime();
 
@@ -91,7 +91,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       if (typeof configuredEvent === "string") {
         if (seen.has(configuredEvent)) {
           throw new TypeError(
-            `CustomEvents batch event "${configuredEvent}" must be unique.`,
+            `customEvents batch event "${configuredEvent}" must be unique.`,
           );
         }
         seen.add(configuredEvent);
@@ -105,17 +105,17 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       let eventEntries = Object.entries(configuredEvent);
       if (eventEntries.length !== 1) {
         throw new TypeError(
-          "Each configured CustomEvents batch entry must contain one event.",
+          "Each configured customEvents batch entry must contain one event.",
         );
       }
 
       let [[type, configuration]] = eventEntries;
       if (type === CUSTOM_EVENTS_ALL) {
-        throw new TypeError('CustomEvents reserves "*" for subscriptions.');
+        throw new TypeError('customEvents reserves "*" for subscriptions.');
       }
       if (seen.has(type)) {
         throw new TypeError(
-          `CustomEvents batch event "${type}" must be unique.`,
+          `customEvents batch event "${type}" must be unique.`,
         );
       }
       seen.add(type);
@@ -143,7 +143,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   ) {
     init?.signal?.throwIfAborted();
     if (type === CUSTOM_EVENTS_ALL) {
-      throw new TypeError('CustomEvents reserves "*" for subscriptions.');
+      throw new TypeError('customEvents reserves "*" for subscriptions.');
     }
 
     let eventInit = getEventInit(init);
@@ -179,9 +179,9 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         state.removeHost(target);
       };
     } else {
-      state.setConstructorHost(target);
+      state.setDefaultHost(target);
       cleanupHost = () => {
-        state.setConstructorHost(undefined);
+        state.setDefaultHost(undefined);
       };
     }
 
@@ -291,7 +291,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
   let onFunction = ((...args: unknown[]) => {
     let explicitTarget = isEventTarget(args[0]);
-    let usesConstructorHost = !explicitTarget && options?.host &&
+    let usesDefaultHost = !explicitTarget && options?.host &&
       (
         (
           args[0] !== null &&
@@ -301,7 +301,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         args.length >= 3
       );
 
-    if (explicitTarget || usesConstructorHost) {
+    if (explicitTarget || usesDefaultHost) {
       let target = explicitTarget ? args[0] as EventTarget : options!.host!;
       let argumentOffset = explicitTarget ? 1 : 0;
       let selectorOrListeners = args[argumentOffset];
@@ -335,7 +335,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
           | undefined;
         if (!listener) {
           throw new TypeError(
-            "CustomEvents direct on() requires an event listener.",
+            "customEvents direct on() requires an event listener.",
           );
         }
         if (selectorOrListeners === CUSTOM_EVENTS_ALL) {
@@ -372,7 +372,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       return getEventElementGroup(typeOrTypes);
     }
     if (!listener) {
-      throw new TypeError("CustomEvents on() requires an event listener.");
+      throw new TypeError("customEvents on() requires an event listener.");
     }
     return customEventsOnMixin(
       state,
@@ -453,7 +453,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     },
   });
   if (options?.host) {
-    registerHost(options.host, options.signal);
+    registerHost(options.host);
   }
 
   return new Proxy(descriptorTarget, {

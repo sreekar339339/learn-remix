@@ -1,5 +1,5 @@
 import { clientEntry, on } from "remix/ui";
-import { CustomEvents } from "../utils/customEvents/index.tsx";
+import { customEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type FlightKind = "one-way flight" | "return flight";
@@ -41,7 +41,7 @@ function presentValidation(flight: FlightState) {
 export const SevenGuisFlightBooker = clientEntry(
   import.meta.url,
   function SevenGuisFlightBooker(handle) {
-    let events = new CustomEvents<"bookingConfirmed">();
+    let events = customEvents<"bookingConfirmed">();
     let today = new Date().toISOString().slice(0, 10);
     let flight: FlightState = {
       kind: "one-way flight" as const,

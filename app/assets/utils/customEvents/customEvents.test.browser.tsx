@@ -2,7 +2,8 @@ import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { on, ref } from "remix/ui";
 import { render } from "remix/ui/test";
-import { CustomEvents } from "./index.tsx";
+import { customEvents } from "./index.tsx";
+import type { CustomEventsOptions } from "./types.ts";
 
 type TestEvents = {
   submitted: { id: string };
@@ -10,7 +11,9 @@ type TestEvents = {
   focusRequested: null;
 };
 
-class Events extends CustomEvents<TestEvents> {}
+function createEvents(options?: CustomEventsOptions) {
+  return customEvents<TestEvents>(options);
+}
 
 async function settleEffects() {
   await Promise.resolve();
@@ -18,10 +21,10 @@ async function settleEffects() {
   await Promise.resolve();
 }
 
-describe("CustomEvents", () => {
+describe("customEvents", () => {
   it("creates typed local-name single and batch events", () => {
-    let events = new Events();
-    let otherEvents = new Events();
+    let events = createEvents();
+    let otherEvents = createEvents();
     let first = events("submitted", { id: "first" });
     let second = events("submitted", { id: "second" });
     let signal = events("paid");
@@ -63,12 +66,17 @@ describe("CustomEvents", () => {
       // @ts-expect-error - `*` is reserved for subscriptions.
       events("*");
       // @ts-expect-error - native DOM event names are reserved.
-      new CustomEvents<"click">();
+      customEvents<"click">();
+      customEvents<TestEvents>({
+        host: new EventTarget(),
+        // @ts-expect-error - factory host registration has no abort lifecycle.
+        signal: new AbortController().signal,
+      });
     }
   });
 
   it("throws an already-aborted signal's exact reason", () => {
-    let events = new Events();
+    let events = createEvents();
     let controller = new AbortController();
     let reason = new Error("stale transition");
     controller.abort(reason);
@@ -99,7 +107,7 @@ describe("CustomEvents", () => {
   });
 
   it("updates reactive props and children before running DOM effects", async (t) => {
-    let events = new Events();
+    let events = createEvents();
 
     function Checkout() {
       return () => (
@@ -151,7 +159,7 @@ describe("CustomEvents", () => {
   });
 
   it("commits the source projection before downstream projections", async (t) => {
-    let events = new Events();
+    let events = createEvents();
 
     function Form() {
       return () => (
@@ -191,7 +199,7 @@ describe("CustomEvents", () => {
   });
 
   it("supports named groups, wildcards, and keyed routing", async (t) => {
-    let events = new Events();
+    let events = createEvents();
     let outcomes = events.on(["submitted", "paid"]);
 
     function Orders() {
@@ -241,7 +249,7 @@ describe("CustomEvents", () => {
   });
 
   it("keeps unhosted events local and routes siblings through explicit hosts", async (t) => {
-    let events = new Events();
+    let events = createEvents();
 
     function Scopes() {
       return () => (
@@ -325,7 +333,7 @@ describe("CustomEvents", () => {
   });
 
   it("contains non-composed events and lets composed events cross nested hosts", async (t) => {
-    let events = new Events();
+    let events = createEvents();
 
     function NestedHosts() {
       return () => (
@@ -379,7 +387,7 @@ describe("CustomEvents", () => {
   });
 
   it("commits transaction projections once before ordered effects", async (t) => {
-    let events = new Events();
+    let events = createEvents();
     let projectionUpdates = 0;
     let effects: string[] = [];
 
@@ -431,12 +439,12 @@ describe("CustomEvents", () => {
     ]);
   });
 
-  it("subscribes directly to explicit and constructor EventTarget hosts", () => {
+  it("subscribes directly to explicit and default EventTarget hosts", () => {
     let explicitTarget = new EventTarget();
-    let constructorTarget = new EventTarget();
-    let explicitEvents = new Events();
-    let otherEvents = new Events();
-    let hostedEvents = new Events({ host: constructorTarget });
+    let defaultTarget = new EventTarget();
+    let explicitEvents = createEvents();
+    let otherEvents = createEvents();
+    let hostedEvents = createEvents({ host: defaultTarget });
     let controller = new AbortController();
     let calls: string[] = [];
 
@@ -451,7 +459,7 @@ describe("CustomEvents", () => {
     }, { signal: controller.signal });
 
     hostedEvents.on("paid", (event) => {
-      assert.equal(event.currentTarget, constructorTarget);
+      assert.equal(event.currentTarget, defaultTarget);
       calls.push(`hosted:${event.type}`);
     }, {});
     otherEvents.on(explicitTarget, "submitted", () => {
@@ -461,7 +469,7 @@ describe("CustomEvents", () => {
     explicitTarget.dispatchEvent(
       explicitEvents("submitted", { id: "direct" }),
     );
-    constructorTarget.dispatchEvent(hostedEvents("paid"));
+    defaultTarget.dispatchEvent(hostedEvents("paid"));
     assert.deepEqual(calls, [
       "named:direct",
       "all:submitted",
@@ -476,7 +484,7 @@ describe("CustomEvents", () => {
   });
 
   it("catches a mount-time event after listener setup", async (t) => {
-    let events = new Events();
+    let events = createEvents();
 
     function MountedInput() {
       return () => (

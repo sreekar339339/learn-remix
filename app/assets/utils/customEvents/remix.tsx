@@ -169,7 +169,7 @@ function createCustomEventsEventElement<
 
       if (child !== undefined && children !== undefined) {
         throw new Error(
-          "CustomEvents event elements accept either static children or child(), not both.",
+          "customEvents event elements accept either static children or child(), not both.",
         );
       }
 

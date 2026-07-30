@@ -76,7 +76,7 @@ export class CustomEventsRuntime {
   #targetSubscriptions = new Set<TargetSubscription>();
   #dispatchTargets = new WeakMap<EventTarget, DispatchTargetRegistration>();
   #hosts = new WeakMap<Element, number>();
-  #constructorHost: EventTarget | undefined;
+  #defaultHost: EventTarget | undefined;
 
   addEventType(type: string) {
     if (this.#eventTypes.has(type)) return;
@@ -120,8 +120,8 @@ export class CustomEventsRuntime {
     else this.#hosts.set(element, count - 1);
   }
 
-  setConstructorHost(target: EventTarget | undefined) {
-    this.#constructorHost = target;
+  setDefaultHost(target: EventTarget | undefined) {
+    this.#defaultHost = target;
   }
 
   #findHost(element: Element | undefined) {
@@ -136,7 +136,7 @@ export class CustomEventsRuntime {
 
   #scopeFor(element: Element | undefined) {
     return this.#findHost(element) ??
-      (!isElement(this.#constructorHost) ? this.#constructorHost : undefined);
+      (!isElement(this.#defaultHost) ? this.#defaultHost : undefined);
   }
 
   #matches(
