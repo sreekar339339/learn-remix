@@ -344,7 +344,7 @@ type CustomEventsListener<
   Target extends EventTarget,
 > = (
   event: CustomEventsListenerEvent<Events, Type, Target>,
-) => void | Promise<void>;
+) => void | Promise<unknown>;
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
   <HostElement extends Element = Element>(

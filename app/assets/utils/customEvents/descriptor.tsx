@@ -169,7 +169,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       | CustomEventsEventType<Events>
       | readonly CustomEventsEventType<Events>[];
     let listener = args[1] as
-      | ((event: Event) => void | Promise<void>)
+      | ((event: Event) => void | Promise<unknown>)
       | undefined;
     if (Array.isArray(typeOrTypes) && listener === undefined) {
       return getEventElementGroup(typeOrTypes);
@@ -200,7 +200,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       );
     }
     let offset = explicitTarget ? 1 : 0;
-    let observer = args[offset] as (event: Event) => void | Promise<void>;
+    let observer = args[offset] as (event: Event) => void | Promise<unknown>;
     let observerOptions = args[offset + 1] as
       | CustomEventsObserverOptions
       | undefined;

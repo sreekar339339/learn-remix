@@ -408,3 +408,112 @@ expresses the transition more clearly.
 
 Split events only when their consumers truly update independently. If events
 are always dispatched and consumed together, they describe one transition.
+
+### Centralized component invalidation and projection
+
+When several producers affect the same component render, one element effect
+can own both its latest projection snapshot and its update policy. This is
+especially effective when one event family represents mutually exclusive
+states of the whole component:
+
+```tsx
+type Book = { title: string };
+
+type SearchEvents = {
+  queryEmpty: null;
+  querySubmitted: { query: string };
+  booksFound: Array<Book>;
+  booksNotFound: { reason: "emptyList" | { other: string } };
+  errorOccurred: Error;
+};
+
+type SearchEvent = CustomEventsEventMap<SearchEvents>[keyof SearchEvents];
+
+let events = customEvents<SearchEvents>();
+
+function renderSearch(event: SearchEvent) {
+  switch (event.type) {
+    case "queryEmpty":
+      return <p>Enter the title of any book.</p>;
+    case "querySubmitted":
+      return <p>Fetching books containing “{event.detail.query}”…</p>;
+    case "booksFound":
+      return <ul>{event.detail.map((book) => <li>{book.title}</li>)}</ul>;
+    case "booksNotFound":
+      return event.detail.reason === "emptyList"
+        ? <p>No books were found.</p>
+        : <p>Could not fetch books: {event.detail.reason.other}</p>;
+    case "errorOccurred":
+      return <p>Unexpected error: {event.detail.message}</p>;
+  }
+}
+
+function SearchBooks(handle: Handle<{ initialQuery: string }>) {
+  let initialQuery = handle.props.initialQuery.trim();
+  let currentEvent: SearchEvent = initialQuery
+    ? events("querySubmitted", { query: initialQuery })
+    : events("queryEmpty");
+
+  return () => (
+    <section>
+      <input
+        defaultValue={initialQuery}
+        class={currentEvent.type === "querySubmitted" ? "pending" : ""}
+        mix={[
+          events.on("*", (event) => {
+            currentEvent = event;
+            return handle.update();
+          }),
+          on("input", ({ currentTarget }) => {
+            let query = currentTarget.value.trim();
+            currentTarget.dispatchEvent(
+              query
+                ? events("querySubmitted", { query })
+                : events("queryEmpty"),
+            );
+          }),
+        ]}
+      />
+      <div>{renderSearch(currentEvent)}</div>
+    </section>
+  );
+}
+
+// The asynchronous search publishes its outcome through the same input:
+input.dispatchEvent(events("booksFound", books));
+input.dispatchEvent(events("booksNotFound", { reason: "emptyList" }));
+input.dispatchEvent(events("errorOccurred", error));
+```
+
+This makes the component itself an event-aware projection while retaining only
+ordinary intrinsic elements. It removes repeated `handle.update()` calls from
+producers, the initial event defines the UI without an `undefined` branch, and
+subsequent event type and detail form the immutable render snapshot. Returning
+the update promise makes it part of `events.dispatch()` completion, while Remix
+coalesces multiple requests for the same component into one scheduled render.
+
+Place the effect on the narrowest natural event owner. A shared root is useful
+when transitions originate across a subtree; an input, form, or other source
+element is better when every relevant event originates there. Its
+`currentTarget` can then perform source-local work after the update without a
+stored element reference.
+
+Within a batch, the final matching entry becomes the current component
+projection because the assignments occur in transaction order and Remix
+coalesces the update requests. Use wildcard invalidation only when every event
+defines the component projection. A component mixing structural and granular
+events should subscribe only to its structural invalidators:
+
+```tsx
+events.on(
+  ["itemAdded", "itemRemoved", "itemsReordered"],
+  () => handle.update(),
+);
+```
+
+A broad listener also receives keyed events and would defeat their granular
+rendering benefit. Independent regions that must retain different event states
+belong in separate event-aware intrinsic elements, and sparse repeated updates
+belong in keyed projections. Durable business state remains in the model;
+`currentEvent` should contain only transition-scoped projection state. Do not
+introduce an event solely to replace one direct local `handle.update()` call.

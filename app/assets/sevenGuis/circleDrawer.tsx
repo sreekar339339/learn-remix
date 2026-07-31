@@ -57,10 +57,13 @@ function getCanvasPoint(
 export const SevenGuisCircleDrawer = clientEntry(
   import.meta.url,
   function SevenGuisCircleDrawer(handle) {
-    let events = customEvents<{
-      editSessionSet: { circleId: number | null };
-      circleResized: null;
-    }>();
+    let events = customEvents<
+      | {
+          editSessionSet: { circleId: number | null };
+        }
+      | "circleResized"
+      | "drawingChanged"
+    >();
     let drawing: DrawingModel = {
       circles: [],
       editingCircleId: null,
@@ -78,7 +81,13 @@ export const SevenGuisCircleDrawer = clientEntry(
     }
 
     return () => (
-      <section mix={[taskCss, events.host()]}>
+      <section
+        mix={[
+          taskCss,
+          events.host(),
+          events.on("drawingChanged", () => handle.update()),
+        ]}
+      >
         <h2>Circle Drawer</h2>
         <div mix={rowCss}>
           <button
@@ -86,7 +95,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             disabled={!drawing.undo.length}
             mix={[
               buttonCss,
-              on("click", () => {
+              on("click", ({ currentTarget }) => {
                 let circles = drawing.undo.at(-1);
                 if (!circles) return;
                 drawing.undo.pop();
@@ -99,7 +108,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                 drawing.editingCircleId = null;
                 drawing.adjustmentUndo = null;
                 drawing.diameterAdjusted = false;
-                handle.update();
+                currentTarget.dispatchEvent(events("drawingChanged"));
               }),
             ]}
           >
@@ -110,7 +119,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             disabled={!drawing.redo.length}
             mix={[
               buttonCss,
-              on("click", () => {
+              on("click", ({ currentTarget }) => {
                 let circles = drawing.redo[0];
                 if (!circles) return;
                 drawing.redo.shift();
@@ -123,7 +132,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                 drawing.editingCircleId = null;
                 drawing.adjustmentUndo = null;
                 drawing.diameterAdjusted = false;
-                handle.update();
+                currentTarget.dispatchEvent(events("drawingChanged"));
               }),
             ]}
           >
@@ -154,7 +163,7 @@ export const SevenGuisCircleDrawer = clientEntry(
               recordHistory(drawing);
               drawing.circles.push(circle);
               drawing.nextId = circle.id + 1;
-              handle.update();
+              currentTarget.dispatchEvent(events("drawingChanged"));
             }),
           ]}
         >

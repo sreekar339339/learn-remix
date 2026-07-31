@@ -26,7 +26,7 @@ export const SevenGuisCrud = clientEntry(
   import.meta.url,
   function SevenGuisCrud(handle) {
     let events = customEvents<
-      "filterApplied" | "personSelected" | "draftEdited"
+      "filterApplied" | "personSelected" | "draftEdited" | "peopleChanged"
     >();
     let peopleViewEvents = events.on(["filterApplied", "personSelected"]);
     let model: CrudModel = {
@@ -42,7 +42,13 @@ export const SevenGuisCrud = clientEntry(
     };
 
     return () => (
-      <section mix={[taskCss, events.host()]}>
+      <section
+        mix={[
+          taskCss,
+          events.host(),
+          events.on("peopleChanged", () => handle.update()),
+        ]}
+      >
         <h2>CRUD</h2>
         <label>
           Filter prefix{" "}
@@ -135,12 +141,12 @@ export const SevenGuisCrud = clientEntry(
                     }
                     mix={[
                       buttonCss,
-                      on("click", () => {
+                      on("click", ({ currentTarget }) => {
                         let person = { id: model.nextId, ...model.draft };
                         model.people.push(person);
                         model.selectedId = person.id;
                         model.nextId = person.id + 1;
-                        handle.update();
+                        currentTarget.dispatchEvent(events("peopleChanged"));
                       }),
                     ]}
                   >
@@ -154,7 +160,7 @@ export const SevenGuisCrud = clientEntry(
                     }
                     mix={[
                       buttonCss,
-                      on("click", () => {
+                      on("click", ({ currentTarget }) => {
                         if (model.selectedId === null) return;
                         let person = model.people.find(
                           (person) => person.id === model.selectedId,
@@ -162,7 +168,7 @@ export const SevenGuisCrud = clientEntry(
                         if (!person) return;
                         person.name = model.draft.name;
                         person.surname = model.draft.surname;
-                        handle.update();
+                        currentTarget.dispatchEvent(events("peopleChanged"));
                       }),
                     ]}
                   >
@@ -173,7 +179,7 @@ export const SevenGuisCrud = clientEntry(
                     disabled={model.selectedId === null}
                     mix={[
                       buttonCss,
-                      on("click", () => {
+                      on("click", ({ currentTarget }) => {
                         if (model.selectedId === null) return;
                         let index = model.people.findIndex(
                           (person) => person.id === model.selectedId,
@@ -182,7 +188,7 @@ export const SevenGuisCrud = clientEntry(
                         model.selectedId = null;
                         model.draft.name = "";
                         model.draft.surname = "";
-                        handle.update();
+                        currentTarget.dispatchEvent(events("peopleChanged"));
                       }),
                     ]}
                   >

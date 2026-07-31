@@ -31,7 +31,7 @@ export const customEventsOnMixin = createMixin<
   [
     runtime: CustomEventsRuntime,
     types: string | readonly string[],
-    listener: (event: Event) => void | Promise<void>,
+    listener: (event: Event) => void | Promise<unknown>,
   ]
 >((handle) => {
   return (runtime, types, listener) => {
