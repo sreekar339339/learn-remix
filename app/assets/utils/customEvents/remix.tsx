@@ -5,69 +5,43 @@ import {
   type Handle,
   type RemixNode,
 } from "remix/ui";
-import { CUSTOM_EVENTS_ALL } from "./constants.ts";
+import { createListenerEvent, type CustomEventsRuntime } from "./runtime.ts";
 import {
-  createListenerEvent,
-  type CustomEventsRuntime,
-} from "./runtime.ts";
-import type {
-  CustomEventsEvent,
-  CustomEventsEventElement,
-  CustomEventsEventElements,
-  CustomEventsEventElementProps,
-  CustomEventsEventType,
-  EventDetails,
+  type CustomEventsEventElement,
+  type CustomEventsEventElements,
+  type CustomEventsEventElementProps,
+  type CustomEventsEventType,
+  type CustomEventsEventMap,
+  type EventDetails,
 } from "./types.ts";
 
-function registerElementSubscription(
-  element: Element,
-  signal: AbortSignal,
-  descriptor: CustomEventsRuntime,
-  eventTypes: ReadonlySet<string> | null,
-  phase: "projection" | "effect",
-  notify: (event: CustomEvent) => Promise<unknown> | void,
-) {
-  let unregisterTarget = descriptor.registerDispatchTarget(element);
-  let unregisterSubscription = descriptor.registerElementSubscription({
-    element,
-    eventTypes,
-    phase,
-    notify,
-  });
-  signal.addEventListener("abort", () => {
-    unregisterSubscription();
-    unregisterTarget();
-  }, { once: true });
+const ALL_EVENTS = "*";
+
+function selectEventTypes(types: string | readonly string[]) {
+  let selected = typeof types === "string" ? [types] : types;
+  if (selected.length === 1 && selected[0] === ALL_EVENTS) return null;
+  return new Set(selected);
 }
 
 export const customEventsOnMixin = createMixin<
   Element,
   [
-    descriptor: CustomEventsRuntime,
+    runtime: CustomEventsRuntime,
     types: string | readonly string[],
     listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
   ]
 >((handle) => {
-  return (descriptor, types, listener) => {
-    let eventTypes = typeof types === "string" ? [types] : [...types];
-    let allEvents = eventTypes.length === 1 &&
-      eventTypes[0] === CUSTOM_EVENTS_ALL;
-    if (allEvents) eventTypes = [];
-    for (let type of eventTypes) descriptor.addEventType(type);
-    let selectedTypes = allEvents
-      ? null
-      : new Set(eventTypes);
+  return (runtime, types, listener) => {
+    let eventTypes = selectEventTypes(types);
     return (
       <handle.element
         mix={ref((element, signal) => {
           let reentry: AbortController | undefined;
-          registerElementSubscription(
+          runtime.subscribeElement({
             element,
-            signal,
-            descriptor,
-            selectedTypes,
-            "effect",
-            (event) => {
+            eventTypes,
+            phase: "effect",
+            notify(event) {
               reentry?.abort();
               reentry = new AbortController();
               return listener(
@@ -75,7 +49,7 @@ export const customEventsOnMixin = createMixin<
                 reentry.signal,
               );
             },
-          );
+          }, signal);
           signal.addEventListener("abort", () => reentry?.abort(), {
             once: true,
           });
@@ -85,11 +59,11 @@ export const customEventsOnMixin = createMixin<
   };
 });
 
-function prependMixins(mix: unknown, internalMixins: unknown[]) {
-  if (mix === undefined) return internalMixins;
+function prependMixin(mix: unknown, internalMixin: unknown) {
+  if (mix === undefined) return [internalMixin];
   return Array.isArray(mix)
-    ? [...internalMixins, ...mix]
-    : [...internalMixins, mix];
+    ? [internalMixin, ...mix]
+    : [internalMixin, mix];
 }
 
 function isReactiveElementProp(key: string) {
@@ -123,39 +97,35 @@ function createCustomEventsEventElement<
   Type extends CustomEventsEventType<Events>,
   Tag extends keyof JSX.IntrinsicElements,
 >(
-  types: readonly Type[] | typeof CUSTOM_EVENTS_ALL,
+  types: readonly Type[] | typeof ALL_EVENTS,
   tag: Tag,
-  descriptor: CustomEventsRuntime,
+  runtime: CustomEventsRuntime,
 ): CustomEventsEventElement<Events, Type, Tag> {
-  let allEvents = types === CUSTOM_EVENTS_ALL;
-  let eventTypes: readonly Type[] = allEvents
-    ? []
-    : types as readonly Type[];
-  for (let type of eventTypes) descriptor.addEventType(type);
-  let selectedTypes = allEvents
-    ? null
-    : new Set(eventTypes);
+  let eventTypes = selectEventTypes(types);
 
   return function CustomEventsEventElement(
     handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
   ) {
-    let currentEvent: Event | undefined;
+    let currentEvent:
+      | CustomEventsEventMap<Events>[Type]
+      | undefined;
     let projectionMix = ref((element, signal) => {
-      registerElementSubscription(
-        element,
-        signal,
-        descriptor,
-        selectedTypes,
-        "projection",
-        (event) => {
-          currentEvent = event as unknown as CustomEventsEvent<Events, Type>;
-          return handle.update();
+      runtime.subscribeElement(
+        {
+          element,
+          eventTypes,
+          phase: "projection",
+          notify(event) {
+            currentEvent = event as
+              unknown as CustomEventsEventMap<Events>[Type];
+            return handle.update();
+          },
         },
+        signal,
       );
     });
 
     return () => {
-      let event = currentEvent as CustomEventsEvent<Events, Type> | undefined;
       let {
         children,
         mix,
@@ -174,17 +144,17 @@ function createCustomEventsEventElement<
       }
 
       let content = typeof child === "function"
-        ? child(event, handle)
+        ? child(currentEvent)
         : children;
       let resolvedProps = resolveEventElementProps(
         elementProps,
-        event,
+        currentEvent,
       );
       return createElement(
         tag,
         {
           ...resolvedProps,
-          mix: prependMixins(mix, [projectionMix]),
+          mix: prependMixin(mix, projectionMix),
         },
         content,
       );
@@ -196,10 +166,13 @@ export function createCustomEventsEventElements<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 >(
-  types: readonly Type[] | typeof CUSTOM_EVENTS_ALL,
-  descriptor: CustomEventsRuntime,
+  types: readonly Type[] | typeof ALL_EVENTS,
+  runtime: CustomEventsRuntime,
 ): CustomEventsEventElements<Events, Type> {
-  let elements = new Map<string, CustomEventsEventElement<Events, Type, any>>();
+  let elements = new Map<
+    string,
+    CustomEventsEventElements<Events, Type>[keyof JSX.IntrinsicElements]
+  >();
 
   return new Proxy({}, {
     get(_, property) {
@@ -210,7 +183,7 @@ export function createCustomEventsEventElements<
         element = createCustomEventsEventElement(
           types,
           property as keyof JSX.IntrinsicElements,
-          descriptor,
+          runtime,
         );
         elements.set(property, element);
       }

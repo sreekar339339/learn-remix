@@ -1,32 +1,30 @@
 import { ref } from "remix/ui";
 import {
-  CUSTOM_EVENTS_ALL,
-  CUSTOM_EVENTS_TRANSACTION,
-} from "./constants.ts";
-import { isElement, isEventTarget } from "./dom.ts";
-import {
   createListenerEvent,
+  type CustomEventsBatchRuntimeEntry,
   CustomEventsRuntime,
 } from "./runtime.ts";
 import {
   createCustomEventsEventElements,
   customEventsOnMixin,
 } from "./remix.tsx";
-import type {
-  CustomEventsOptions,
-  CustomEventsBatchItem,
-  CustomEventsDispatch,
-  CustomEventsFactory,
-  CustomEventsDescriptor,
-  CustomEventsEventElements,
-  CustomEventsEventType,
-  CustomEventsInit,
-  CustomEventsOnFunction,
-  CustomEventsTargetListenerOptions,
-  CustomEventsTargetListeners,
-  EventDetails,
+import {
+  type CustomEventsOptions,
+  type CustomEventsBatchItem,
+  type CustomEventsDispatch,
+  type CustomEventsFactory,
+  type CustomEventsDescriptor,
+  type CustomEventsEventElements,
+  type CustomEventsEventType,
+  type CustomEventsInit,
+  type CustomEventsOnFunction,
+  type CustomEventsTargetListenerOptions,
+  type CustomEventsTargetListeners,
+  type EventDetails,
 } from "./types.ts";
 
+const ALL_EVENTS = "*";
+const CUSTOM_EVENTS_TRANSACTION = "$transaction";
 const customEventsInitKeys = new Set([
   "bubbles",
   "composed",
@@ -34,12 +32,20 @@ const customEventsInitKeys = new Set([
   "signal",
 ]);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function isCustomEventsInit(value: unknown): value is CustomEventsInit {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   if (!Object.keys(value).every((key) => customEventsInitKeys.has(key))) {
     return false;
   }
   return true;
+}
+
+function isEventTarget(value: unknown): value is EventTarget {
+  return typeof EventTarget !== "undefined" && value instanceof EventTarget;
 }
 
 function assertNonCancelable(init: object | undefined) {
@@ -59,40 +65,42 @@ function getEventInit(init: CustomEventsInit | undefined): EventInit {
   };
 }
 
-function getDispatchEntries(events: Partial<EventDetails>) {
-  return Object.entries(events).map(([type, detail]) => {
-    if (type === CUSTOM_EVENTS_ALL) {
-      throw new TypeError('customEvents reserves "*" for subscriptions.');
-    }
-    return [type, detail] as [string, unknown];
-  });
-}
-
 // Event elements are proxy-backed so their type-shaped API does not require
 // duplicating runtime keys.
 export function createCustomEventsDescriptor<Events extends EventDetails>(
   options?: CustomEventsOptions,
 ): CustomEventsDescriptor<Events> {
-  let state = new CustomEventsRuntime();
+  let runtime = new CustomEventsRuntime();
 
   function createBatchEvent(
-    entries: Array<{
-      type: string;
-      detail: unknown;
-      init: EventInit;
-      key?: PropertyKey;
-    }>,
+    entries: CustomEventsBatchRuntimeEntry[],
     transactionOptions?: CustomEventsInit,
   ) {
     transactionOptions?.signal?.throwIfAborted();
-
-    for (let { type } of entries) state.addEventType(type);
-    return state.createProductEvent(
+    return runtime.createProductEvent(
       CUSTOM_EVENTS_TRANSACTION,
       undefined,
       getEventInit(transactionOptions),
       entries,
     );
+  }
+
+  function createEntry(
+    type: string,
+    detail: unknown,
+    options?: CustomEventsInit,
+  ): CustomEventsBatchRuntimeEntry {
+    options?.signal?.throwIfAborted();
+    if (type === ALL_EVENTS) {
+      throw new TypeError('customEvents reserves "*" for subscriptions.');
+    }
+    runtime.addEventType(type);
+    return {
+      type,
+      detail,
+      init: getEventInit(options),
+      ...(options?.key === undefined ? {} : { key: options.key }),
+    };
   }
 
   function normalizeConfiguredBatch(
@@ -107,11 +115,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
           );
         }
         seen.add(configuredEvent);
-        return {
-          type: configuredEvent,
-          detail: null,
-          init: getEventInit(undefined),
-        };
+        return createEntry(configuredEvent, null);
       }
 
       let eventEntries = Object.entries(configuredEvent);
@@ -122,9 +126,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       }
 
       let [[type, configuration]] = eventEntries;
-      if (type === CUSTOM_EVENTS_ALL) {
-        throw new TypeError('customEvents reserves "*" for subscriptions.');
-      }
       if (seen.has(type)) {
         throw new TypeError(
           `customEvents batch event "${type}" must be unique.`,
@@ -136,15 +137,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         detail?: unknown;
         options?: CustomEventsInit;
       };
-      config.options?.signal?.throwIfAborted();
-      return {
+      return createEntry(
         type,
-        detail: Object.hasOwn(config, "detail") ? config.detail : null,
-        init: getEventInit(config.options),
-        ...(config.options?.key === undefined
-          ? {}
-          : { key: config.options.key }),
-      };
+        Object.hasOwn(config, "detail") ? config.detail : null,
+        config.options,
+      );
     });
   }
 
@@ -153,60 +150,13 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     detail: unknown,
     init?: CustomEventsInit,
   ) {
-    init?.signal?.throwIfAborted();
-    if (type === CUSTOM_EVENTS_ALL) {
-      throw new TypeError('customEvents reserves "*" for subscriptions.');
-    }
-
-    let eventInit = getEventInit(init);
-    return state.createProductEvent(
+    let entry = createEntry(type, detail, init);
+    return runtime.createProductEvent(
       type,
       detail,
-      eventInit,
-      [{
-        type,
-        detail,
-        init: eventInit,
-        ...(init?.key === undefined ? {} : { key: init.key }),
-      }],
+      entry.init,
+      [entry],
     );
-  }
-
-  let eventElements = new Map<
-    string,
-    CustomEventsEventElements<Events, CustomEventsEventType<Events>>
-  >();
-
-  function registerHost(target: EventTarget, signal?: AbortSignal) {
-    if (signal?.aborted) return () => {};
-
-    let cleanupHost: () => void;
-    let cleanupDispatchTarget = state.registerDispatchTarget(
-      target,
-      isElement(target),
-    );
-    if (isElement(target)) {
-      state.addHost(target);
-      cleanupHost = () => {
-        state.removeHost(target);
-      };
-    } else {
-      state.setDefaultHost(target);
-      cleanupHost = () => {
-        state.setDefaultHost(undefined);
-      };
-    }
-
-    let isActive = true;
-    let cleanup = () => {
-      if (!isActive) return;
-      isActive = false;
-      signal?.removeEventListener("abort", cleanup);
-      cleanupDispatchTarget();
-      cleanupHost();
-    };
-    signal?.addEventListener("abort", cleanup, { once: true });
-    return cleanup;
   }
 
   type DirectTargetListener = (
@@ -216,20 +166,15 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
   function registerTargetListeners(
     target: EventTarget,
-    namedListeners: ReadonlyMap<string, DirectTargetListener>,
-    wildcardListener: DirectTargetListener | undefined,
+    listeners: ReadonlyMap<string, DirectTargetListener>,
     options?: CustomEventsTargetListenerOptions,
   ) {
     if (options?.signal?.aborted) return () => {};
 
     let reentries = new Set<AbortController>();
-    let cleanupDispatchTarget = state.registerDispatchTarget(target);
-
     function createInvoker(listener: DirectTargetListener) {
       let reentry: AbortController | undefined;
-      return (event: Event) => {
-        if (!(event instanceof CustomEvent)) return;
-
+      return (event: CustomEvent) => {
         reentry?.abort();
         if (reentry) reentries.delete(reentry);
         reentry = new AbortController();
@@ -240,50 +185,33 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     }
 
     let invokers = new Map(
-      [...namedListeners].map(([type, listener]) => {
-        state.addEventType(type);
+      [...listeners].map(([type, listener]) => {
+        if (type !== ALL_EVENTS) runtime.addEventType(type);
         return [type, createInvoker(listener)] as const;
       }),
     );
-    let invokeWildcard = wildcardListener
-      ? createInvoker(wildcardListener)
-      : undefined;
-    let unregisterSubscription = state.registerTargetSubscription({
+    let unsubscribe = runtime.subscribeTarget(
       target,
-      notify(event) {
+      (event) => {
         let results = [
           invokers.get(event.type)?.(event),
-          invokeWildcard?.(event),
+          invokers.get(ALL_EVENTS)?.(event),
         ];
         return Promise.all(results);
       },
-    });
+    );
 
     let active = true;
     let cleanup = () => {
       if (!active) return;
       active = false;
       options?.signal?.removeEventListener("abort", cleanup);
-      unregisterSubscription();
+      unsubscribe();
       for (let reentry of reentries) reentry.abort();
       reentries.clear();
-      cleanupDispatchTarget();
     };
     options?.signal?.addEventListener("abort", cleanup, { once: true });
     return cleanup;
-  }
-
-  function getEventElements(property: string) {
-    state.addEventType(property);
-    let elements = eventElements.get(property);
-    if (elements) return elements;
-
-    elements = createCustomEventsEventElements(
-      [property as CustomEventsEventType<Events>],
-      state,
-    );
-    eventElements.set(property, elements);
-    return elements;
   }
 
   let eventElementGroups = new Map<
@@ -295,51 +223,38 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     let key = [...new Set(types)].sort().join("\u0000");
     let elements = eventElementGroups.get(key);
     if (elements) return elements;
-    for (let type of types) state.addEventType(type);
     elements = createCustomEventsEventElements(
       types as readonly CustomEventsEventType<Events>[],
-      state,
+      runtime,
     );
     eventElementGroups.set(key, elements);
     return elements;
   }
 
+  function getEventElements(type: string) {
+    return getEventElementGroup([type]);
+  }
+
   let onFunction = ((...args: unknown[]) => {
     let explicitTarget = isEventTarget(args[0]);
     let usesDefaultHost = !explicitTarget && options?.host &&
-      (
-        (
-          args[0] !== null &&
-          typeof args[0] === "object" &&
-          !Array.isArray(args[0])
-        ) ||
-        args.length >= 3
-      );
+      (isRecord(args[0]) || args.length >= 3);
 
     if (explicitTarget || usesDefaultHost) {
       let target = explicitTarget ? args[0] as EventTarget : options!.host!;
       let argumentOffset = explicitTarget ? 1 : 0;
       let selectorOrListeners = args[argumentOffset];
-      let namedListeners = new Map<string, DirectTargetListener>();
-      let wildcardListener: DirectTargetListener | undefined;
+      let listeners = new Map<string, DirectTargetListener>();
       let listenerOptions: CustomEventsTargetListenerOptions | undefined;
 
-      if (
-        selectorOrListeners &&
-        typeof selectorOrListeners === "object" &&
-        !Array.isArray(selectorOrListeners)
-      ) {
-        let listeners = selectorOrListeners as CustomEventsTargetListeners<
+      if (isRecord(selectorOrListeners)) {
+        let listenerMap = selectorOrListeners as CustomEventsTargetListeners<
           Events,
           EventTarget
         >;
-        for (let [type, listener] of Object.entries(listeners)) {
+        for (let [type, listener] of Object.entries(listenerMap)) {
           if (!listener) continue;
-          if (type === CUSTOM_EVENTS_ALL) {
-            wildcardListener = listener as DirectTargetListener;
-          } else {
-            namedListeners.set(type, listener as DirectTargetListener);
-          }
+          listeners.set(type, listener as DirectTargetListener);
         }
         listenerOptions = args[argumentOffset + 1] as
           | CustomEventsTargetListenerOptions
@@ -353,15 +268,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
             "customEvents direct on() requires an event listener.",
           );
         }
-        if (selectorOrListeners === CUSTOM_EVENTS_ALL) {
-          wildcardListener = listener;
-        } else {
-          let selectedTypes = Array.isArray(selectorOrListeners)
-            ? selectorOrListeners
-            : [selectorOrListeners];
-          for (let type of selectedTypes) {
-            if (typeof type === "string") namedListeners.set(type, listener);
-          }
+        let selectedTypes = Array.isArray(selectorOrListeners)
+          ? selectorOrListeners
+          : [selectorOrListeners];
+        for (let type of selectedTypes) {
+          if (typeof type === "string") listeners.set(type, listener);
         }
         listenerOptions = args[argumentOffset + 2] as
           | CustomEventsTargetListenerOptions
@@ -370,14 +281,13 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
       return registerTargetListeners(
         target,
-        namedListeners,
-        wildcardListener,
+        listeners,
         listenerOptions,
       );
     }
 
     let typeOrTypes = args[0] as
-      | typeof CUSTOM_EVENTS_ALL
+      | typeof ALL_EVENTS
       | CustomEventsEventType<Events>
       | readonly CustomEventsEventType<Events>[];
     let listener = args[1] as
@@ -390,22 +300,16 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       throw new TypeError("customEvents on() requires an event listener.");
     }
     return customEventsOnMixin(
-      state,
+      runtime,
       typeOrTypes as string | readonly string[],
       listener,
     );
   }) as CustomEventsOnFunction<Events>;
   let on = new Proxy(onFunction, {
     get(target, property, receiver) {
-      if (Reflect.has(target, property)) {
-        return Reflect.get(target, property, receiver);
-      }
-
-      if (typeof property !== "string") {
-        return Reflect.get(target, property, receiver);
-      }
-
-      return getEventElements(property);
+      return typeof property === "string"
+        ? getEventElements(property)
+        : Reflect.get(target, property, receiver);
     },
   }) as CustomEventsOnFunction<Events>;
 
@@ -440,17 +344,10 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
 
     let options = detailOrInit as CustomEventsInit | undefined;
     let details = Array.isArray(typeOrEvents)
-      ? [...new Set(typeOrEvents)].map((type) =>
-        [type, null] as [string, unknown]
-      )
-      : getDispatchEntries(typeOrEvents as Partial<Events>);
+      ? [...new Set(typeOrEvents)].map((type) => [type, null] as const)
+      : Object.entries(typeOrEvents as Partial<Events>);
     return createBatchEvent(
-      details.map(([type, detail]) => ({
-        type,
-        detail,
-        init: getEventInit(options),
-        ...(options?.key === undefined ? {} : { key: options.key }),
-      })),
+      details.map(([type, detail]) => createEntry(type, detail, options)),
       options,
     );
   }) as CustomEventsFactory<Events>;
@@ -458,26 +355,26 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   let allEventElements = createCustomEventsEventElements<
     Events,
     CustomEventsEventType<Events>
-  >(CUSTOM_EVENTS_ALL, state);
+  >(ALL_EVENTS, runtime);
   let dispatch = ((
     target: EventTarget,
     ...args: unknown[]
   ) => {
     let createEvent = events as (...args: unknown[]) => Event;
     let event = createEvent(...args);
-    return state.dispatch(target, event);
+    return runtime.dispatch(target, event);
   }) as CustomEventsDispatch<Events>;
   let descriptorTarget = Object.assign(events, {
     dispatch,
     on,
     host() {
       return ref((target, signal) => {
-        registerHost(target, signal);
+        runtime.registerHost(target, signal);
       });
     },
   });
   if (options?.host) {
-    registerHost(options.host);
+    runtime.registerHost(options.host);
   }
 
   return new Proxy(descriptorTarget, {

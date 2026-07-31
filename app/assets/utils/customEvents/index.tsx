@@ -6,6 +6,7 @@ import type {
   CustomEventsOptions,
   NormalizeCustomEventsDefinition,
 } from "./types.ts";
+export type { CustomEventsEventMap } from "./types.ts";
 
 /** A typed native-event descriptor. See README.md for usage and design rules. */
 export type CustomEvents<Definition extends CustomEventsDefinition> =

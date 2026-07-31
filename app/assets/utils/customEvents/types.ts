@@ -1,5 +1,4 @@
 import type { Handle, MixinDescriptor, Props, RemixNode } from "remix/ui";
-import { CUSTOM_EVENTS_ALL } from "./constants.ts";
 
 export type EventDetails = Record<string, unknown>;
 
@@ -81,17 +80,21 @@ export type CustomEventsOptions = {
   host?: EventTarget;
 };
 
-export type CustomEventsEventType<Events extends EventDetails> = Extract<
-  Exclude<keyof Events, typeof CUSTOM_EVENTS_ALL | NativeDOMEventName>,
+export type CustomEventsEventType<
+  Definition extends CustomEventsDefinition,
+> = Extract<
+  Exclude<CustomEventsDefinitionKeys<Definition>, "*" | NativeDOMEventName>,
   string
 >;
 
-export type CustomEventsEvent<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> = Type extends CustomEventsEventType<Events>
-  ? CustomEvent<Events[Type]> & { readonly type: Type }
-  : never;
+/** Canonical event map for descriptor consumers and TypedEventTarget. */
+export type CustomEventsEventMap<
+  Definition extends CustomEventsDefinition,
+> = {
+  [Type in CustomEventsEventType<Definition>]:
+    & CustomEvent<NormalizeCustomEventsDefinition<Definition>[Type]>
+    & { readonly type: Type };
+};
 
 /** Internal batch carrier accepted by native `dispatchEvent(...)`. */
 export type CustomEventsTransactionEvent = CustomEvent<undefined>;
@@ -100,13 +103,12 @@ type CustomEventsElementEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > =
-  | CustomEventsEvent<Events, Type>
+  | CustomEventsEventMap<Events>[Type]
   | undefined;
 
 type CustomEventsElementProjection<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-  Tag extends keyof JSX.IntrinsicElements,
   Value,
 > = (
   event: CustomEventsElementEvent<Events, Type>,
@@ -122,13 +124,13 @@ type CustomEventsReactiveElementProps<
       ? Props<Tag>[Key]
       :
           | Props<Tag>[Key]
-          | CustomEventsElementProjection<Events, Type, Tag, Props<Tag>[Key]>
+          | CustomEventsElementProjection<Events, Type, Props<Tag>[Key]>
     : Props<Tag>[Key];
 } & {
   [Key in `data-${string}`]?:
     | string
     | undefined
-    | CustomEventsElementProjection<Events, Type, Tag, string | undefined>;
+    | CustomEventsElementProjection<Events, Type, string | undefined>;
 };
 
 type CustomEventsIntrinsicChildren<
@@ -138,10 +140,8 @@ type CustomEventsIntrinsicChildren<
 export type CustomEventsEventElementRender<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
-  Tag extends keyof JSX.IntrinsicElements,
 > = (
   event: CustomEventsElementEvent<Events, Type>,
-  handle: Handle<CustomEventsEventElementProps<Events, Type, Tag>>,
 ) => RemixNode;
 
 /** Props for an intrinsic element driven by one descriptor event. */
@@ -157,7 +157,7 @@ export type CustomEventsEventElementProps<
       }
     | {
         children?: never;
-        child: CustomEventsEventElementRender<Events, Type, Tag>;
+        child: CustomEventsEventElementRender<Events, Type>;
       }
   );
 
@@ -245,7 +245,9 @@ type CustomEventsSingleResult<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
   Mode extends CustomEventsOperationMode,
-> = Mode extends "create" ? CustomEventsEvent<Events, Type> : Promise<void>;
+> = Mode extends "create"
+  ? CustomEventsEventMap<Events>[Type]
+  : Promise<void>;
 
 /**
  * Shared call grammar for event creation and awaitable dispatch.
@@ -339,7 +341,7 @@ export type CustomEventsListenerEvent<
   Type extends CustomEventsEventType<Events>,
   Target extends EventTarget,
 > = Type extends CustomEventsEventType<Events>
-  ? Omit<CustomEventsEvent<Events, Type>, "currentTarget"> & {
+  ? Omit<CustomEventsEventMap<Events>[Type], "currentTarget"> & {
     readonly currentTarget: Target;
   }
   : never;
@@ -369,7 +371,7 @@ export type CustomEventsTargetListeners<
     >;
   }>
   & {
-    [CUSTOM_EVENTS_ALL]?: CustomEventsListener<
+    "*"?: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
       Target
@@ -383,7 +385,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
   (
-    type: typeof CUSTOM_EVENTS_ALL,
+    type: "*",
     listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
@@ -410,7 +412,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): () => void;
   <Target extends EventTarget>(
     target: Target,
-    type: typeof CUSTOM_EVENTS_ALL,
+    type: "*",
     listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
@@ -439,7 +441,7 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
 
   /** Element-scoped effects and event-element groups. */
   <HostElement extends Element = Element>(
-    type: typeof CUSTOM_EVENTS_ALL,
+    type: "*",
     listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,

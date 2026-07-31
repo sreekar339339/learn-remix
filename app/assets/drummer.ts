@@ -1,15 +1,22 @@
-import { customEvents } from "./utils/customEvents/index.tsx";
+import { TypedEventTarget } from "remix/ui";
+import {
+  customEvents,
+  type CustomEventsEventMap,
+} from "./utils/customEvents/index.tsx";
 
 type TempoBpm = number;
 
-export class Drummer extends EventTarget {
+type DrummerEvents = {
+  playbackStarted: TempoBpm;
+  playbackStopped: TempoBpm;
+  tempoSet: TempoBpm;
+};
+
+export class Drummer
+  extends TypedEventTarget<CustomEventsEventMap<DrummerEvents>> {
   #isPlaying = false;
   #tempoBpm = 90;
-  events = customEvents<{
-    playbackStarted: TempoBpm;
-    playbackStopped: TempoBpm;
-    tempoSet: TempoBpm;
-  }>({ host: this });
+  events = customEvents<DrummerEvents>({ host: this });
 
   constructor() {
     super();

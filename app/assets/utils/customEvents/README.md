@@ -156,17 +156,76 @@ let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
 />
 ```
 
+For reusable domain objects, derive Remix's `TypedEventTarget` map from the
+same detail definition. Native `addEventListener()` and Remix
+`addEventListeners()` callbacks then receive the correct event names, details,
+and `currentTarget`:
+
+```tsx
+type PlayerEvents = {
+  playbackStarted: number;
+  playbackStopped: number;
+};
+
+class Player extends TypedEventTarget<CustomEventsEventMap<PlayerEvents>> {
+  events = customEvents<PlayerEvents>({ host: this });
+}
+```
+
 On event-aware elements, ordinary attributes accept either a static value or
 `(event) => value`. Read payloads from `event.detail`. `mix`, `ref`, and JSX
 children retain their ordinary Remix meaning. Use Remix's `on()` inside `mix`
 for native DOM handlers. `child` supplies dynamic children, so it cannot be
 combined with static JSX children.
 
+### Intrinsic elements as granular projections
+
+An event-aware intrinsic element is an independently invalidatable projection.
+It can update native properties such as `value`, `class`, `disabled`, ARIA and
+`data-*` attributes, and its child content without rerendering the component
+that contains it.
+
+This is especially useful for repeated elements. A keyed event can update one
+existing item without rerunning the parent's render function or `.map()`:
+
+```tsx
+{items.map((item) => (
+  <events.on.itemUpdated.button
+    id={String(item.id)}
+    value={() => String(item.id)}
+    disabled={() => item.pending}
+    class={() => item.pending ? "pending" : ""}
+    data-state={() => item.pending ? "saving" : "ready"}
+    child={() => item.label}
+  />
+))}
+
+button.dispatchEvent(events("itemUpdated", { key: item.id }));
+```
+
+Without this boundary, independent updates commonly require extracting a
+function component solely to hold rendering state, register listeners, call
+`handle.update()`, and clean up. Event-aware elements keep the semantic,
+HTML-like structure intact: the model owns durable state, events describe
+completed transitions, and attributes declare how those transitions project
+onto the native element.
+
+Granularity follows DOM ownership. Updating an existing item can target that
+item; adding, removing, or reordering items must update the nearest projection
+that owns the collection. Use `handle.update()` when the whole component is the
+unit of change, a collection projection for structural changes, and keyed
+event-aware elements for changes within existing items.
+
 ### Keyed routing
 
 Use `key` in the event options and the matching DOM `id` on repeated event-aware
 elements or elements using `events.on()`. Only the addressed projection updates
 and only the addressed DOM-effect listener runs.
+
+The routing `id` is captured when the subscription mounts and must remain stable
+for that mounted element. Remount the element when its routing identity changes.
+The runtime indexes subscriptions by phase, event type, and routing ID, so a
+keyed dispatch does not scan unrelated keyed subscriptions.
 
 Projections and listeners without an `id` continue to receive keyed events as
 broad consumers. The DOM `id` is the explicit runtime address because JSX
@@ -192,8 +251,8 @@ second argument.
 
 ### Callback semantics
 
-Child callbacks receive `(event, handle)`. Before the first matching event,
-`event` is `undefined`; a dispatched signal event has `event.detail === null`.
+Child callbacks receive the event. Before the first matching event, `event` is
+`undefined`; a dispatched signal event has `event.detail === null`.
 
 Projection callbacks receive a resolved event snapshot but do not synthesize
 `currentTarget`. Handle the empty branch or use a local event as the default

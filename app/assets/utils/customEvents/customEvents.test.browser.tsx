@@ -3,6 +3,7 @@ import { describe, it } from "remix/test";
 import { on, ref } from "remix/ui";
 import { render } from "remix/ui/test";
 import { customEvents } from "./index.tsx";
+import { CustomEventsRuntime } from "./runtime.ts";
 import type { CustomEventsOptions } from "./types.ts";
 
 type TestEvents = {
@@ -125,6 +126,48 @@ describe("customEvents", () => {
         thrown = error;
       }
       assert.equal(thrown, reason);
+    }
+  });
+
+  it("supports event names that collide with Function properties", async (t) => {
+    let events = customEvents<"name" | "length" | "bind" | "toString">();
+
+    function CollidingEventNames() {
+      return () => (
+        <section mix={events.host()}>
+          <events.on.name.output
+            data-testid="name"
+            child={(event) => event?.type ?? "idle"}
+          />
+          <events.on.length.output
+            data-testid="length"
+            child={(event) => event?.type ?? "idle"}
+          />
+          <events.on.bind.output
+            data-testid="bind"
+            child={(event) => event?.type ?? "idle"}
+          />
+          <events.on.toString.output
+            data-testid="toString"
+            child={(event) => event?.type ?? "idle"}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<CollidingEventNames />);
+    t.after(() => result.cleanup());
+    let section = result.$("section") as HTMLElement;
+
+    await result.act(async () => {
+      section.dispatchEvent(
+        events(["name", "length", "bind", "toString"]),
+      );
+      await settleEffects();
+    });
+
+    for (let type of ["name", "length", "bind", "toString"]) {
+      assert.equal(result.$(`[data-testid="${type}"]`)?.textContent, type);
     }
   });
 
@@ -534,5 +577,117 @@ describe("customEvents", () => {
       (result.$('[data-testid="input"]') as HTMLInputElement).dataset.ready,
       "true",
     );
+  });
+
+  it("indexes subscriptions by phase, type, and routing id", async () => {
+    let runtime = new CustomEventsRuntime();
+    let host = document.createElement("section");
+    let origin = document.createElement("button");
+    host.append(origin);
+    let unregisterHost = runtime.registerHost(host);
+    let calls: string[] = [];
+    let cleanups: Array<() => void> = [];
+    let assertCalls = (...expected: string[]) => {
+      assert.deepEqual([...calls].sort(), [...expected].sort());
+    };
+
+    function subscribe(
+      name: string,
+      id: string,
+      eventTypes: ReadonlySet<string> | null,
+      phase: "projection" | "effect" = "projection",
+    ) {
+      let element = document.createElement("output");
+      element.id = id;
+      host.append(element);
+      let cleanup = runtime.subscribeElement({
+        element,
+        eventTypes,
+        phase,
+        notify(event) {
+          calls.push(`${name}:${event.type}`);
+        },
+      });
+      cleanups.push(cleanup);
+      return cleanup;
+    }
+
+    let removeExact = subscribe("exact", "first", new Set(["updated"]));
+    let removeBroad = subscribe("broad", "", new Set(["updated"]));
+    subscribe("other-key", "second", new Set(["updated"]));
+    subscribe("wildcard", "first", null);
+    subscribe("effect", "first", new Set(["updated"]), "effect");
+
+    function event(key?: string) {
+      let init = { bubbles: true, cancelable: false };
+      return runtime.createProductEvent("updated", null, init, [{
+        type: "updated",
+        detail: null,
+        init,
+        ...(key === undefined ? {} : { key }),
+      }]);
+    }
+
+    await runtime.dispatch(origin, event("first"));
+    assertCalls(
+      "broad:updated",
+      "exact:updated",
+      "wildcard:updated",
+      "effect:updated",
+    );
+
+    calls = [];
+    await runtime.dispatch(origin, event("second"));
+    assertCalls("broad:updated", "other-key:updated");
+
+    calls = [];
+    await runtime.dispatch(origin, event());
+    assertCalls(
+      "exact:updated",
+      "broad:updated",
+      "other-key:updated",
+      "wildcard:updated",
+      "effect:updated",
+    );
+
+    removeExact();
+    removeBroad();
+    calls = [];
+    await runtime.dispatch(origin, event("first"));
+    assertCalls("wildcard:updated", "effect:updated");
+
+    for (let cleanup of cleanups) cleanup();
+    unregisterHost();
+  });
+
+  it("derives host containment independently of registration order", () => {
+    let runtime = new CustomEventsRuntime();
+    let parent = document.createElement("main");
+    let host = document.createElement("section");
+    parent.append(host);
+    let reachedParent = false;
+    parent.addEventListener("updated", () => {
+      reachedParent = true;
+    });
+
+    let unsubscribe = runtime.subscribeElement({
+      element: host,
+      eventTypes: new Set(["updated"]),
+      phase: "projection",
+      notify() {},
+    });
+    let unregisterHost = runtime.registerHost(host);
+    let init = { bubbles: true, cancelable: false };
+    host.dispatchEvent(
+      runtime.createProductEvent("updated", null, init, [{
+        type: "updated",
+        detail: null,
+        init,
+      }]),
+    );
+
+    assert.equal(reachedParent, false);
+    unregisterHost();
+    unsubscribe();
   });
 });
