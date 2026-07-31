@@ -194,28 +194,17 @@ type NullDetailEventTypes<Events extends EventDetails> = {
     : never;
 }[keyof Events & string];
 
-type UniqueEventTypes<
-  Types extends readonly string[],
-  Seen extends string = never,
-> = Types extends readonly [
-  infer First extends string,
-  ...infer Rest extends readonly string[],
-]
-  ? First extends Seen
-    ? never
-    : UniqueEventTypes<Rest, Seen | First> extends never
-      ? never
-      : Types
-  : Types;
+/** Per-entry routing; propagation belongs to the shared batch carrier. */
+export type CustomEventsBatchEntryOptions = Pick<CustomEventsInit, "key">;
 
 type CustomEventsBatchEntryConfiguration<Detail> = [Detail] extends [null]
   ? {
       detail?: null;
-      options?: CustomEventsInit;
+      options?: CustomEventsBatchEntryOptions;
     }
   : {
       detail: Detail;
-      options?: CustomEventsInit;
+      options?: CustomEventsBatchEntryOptions;
     };
 
 /** One independently configured entry in a shared event transaction. */
@@ -225,7 +214,7 @@ export type CustomEventsBatchEntry<Events extends EventDetails> = {
   };
 }[keyof Events & string];
 
-/** A signal shorthand or an independently configured transaction entry. */
+/** A detail-less event-name shorthand or a configured transaction entry. */
 export type CustomEventsBatchItem<Events extends EventDetails> =
   | NullDetailEventTypes<Events>
   | CustomEventsBatchEntry<Events>;
@@ -261,7 +250,7 @@ type CustomEventsOperation<
   ]>(
     ...args: [
       ...CustomEventsOperationPrefix<Mode>,
-      types: Types & UniqueEventTypes<Types>,
+      types: Types,
       init?: CustomEventsInit,
     ]
   ): CustomEventsBatchResult<Mode>;
@@ -277,6 +266,7 @@ type CustomEventsOperation<
           ? never
           : unknown
       ),
+      init?: CustomEventsInit,
     ]
   ): CustomEventsBatchResult<Mode>;
 
@@ -344,6 +334,7 @@ export type CustomEventsListenerEvent<
   : never;
 
 export type CustomEventsObserverOptions = {
+  /** Removes the observation when aborted. */
   signal?: AbortSignal;
 };
 
@@ -353,7 +344,6 @@ type CustomEventsListener<
   Target extends EventTarget,
 > = (
   event: CustomEventsListenerEvent<Events, Type, Target>,
-  signal: AbortSignal,
 ) => void | Promise<void>;
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
@@ -410,9 +400,9 @@ export type CustomEventsDescriptor<Events extends EventDetails> =
   {
     /** Dispatches and resolves after projections, effects, and observers settle. */
     dispatch: CustomEventsDispatch<Events>;
-    /** Selects events for element effects or event elements. */
+    /** Selects events for element-bound projections or post-projection effects. */
     on: CustomEventsOnFunction<Events>;
-    /** Observes every descriptor-owned event on a target. */
+    /** Observes every descriptor-owned event on one exact target. */
     observe: CustomEventsObserveFunction<Events>;
     /** Makes an element the local boundary for this descriptor. */
     host<HostElement extends Element = Element>(): MixinDescriptor<

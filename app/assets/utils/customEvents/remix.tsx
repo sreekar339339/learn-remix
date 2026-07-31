@@ -31,7 +31,7 @@ export const customEventsOnMixin = createMixin<
   [
     runtime: CustomEventsRuntime,
     types: string | readonly string[],
-    listener: (event: Event, signal: AbortSignal) => void | Promise<void>,
+    listener: (event: Event) => void | Promise<void>,
   ]
 >((handle) => {
   return (runtime, types, listener) => {
@@ -42,11 +42,8 @@ export const customEventsOnMixin = createMixin<
           runtime.subscribeEffect({
             element,
             eventTypes,
-            notify(event, effectSignal) {
-              return listener(
-                createCurrentTargetEvent(event, element),
-                effectSignal,
-              );
+            notify(event) {
+              return listener(createCurrentTargetEvent(event, element));
             },
           }, signal);
         })}

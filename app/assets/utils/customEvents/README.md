@@ -39,8 +39,10 @@ is returned.
 
 The declared event name is also its raw DOM `event.type`, so ordinary
 `addEventListener()` consumers can observe it. Known native DOM event names are
-rejected at the type level. Private event-object ownership keeps descriptors
-that declare the same custom name isolated from one another.
+rejected at the type level. Descriptor-aware projections, effects, and
+observers ignore events created by another descriptor, even when both
+descriptors declare the same raw name. Native listeners follow ordinary DOM
+semantics and see every event with the name they subscribed to.
 
 ```tsx
 form.dispatchEvent(events("saveStarted"));
@@ -61,15 +63,23 @@ form.dispatchEvent(events([
       options: { key: revision },
     },
   },
-]));
+], { composed: true }));
 ```
 
-A batch is one dispatch containing several declared entries. Consumers receive
-event snapshots for those entries; the descriptor does not dispatch secondary
-DOM events or invent an aggregate `change` event. On a configured non-DOM
+A batch is one dispatch containing several declared entries. On DOM targets,
+the entries remain one atomic carrier and descriptor consumers receive
+in-memory event snapshots; the descriptor does not redispatch granular DOM
+events or invent an aggregate `change` event. On a configured non-DOM
 `EventTarget` host, each entry is additionally mirrored as a native named event
 so `addEventListener()` and `addEventListeners()` can consume batched domain
-updates. These mirrors do not reenter descriptor processing.
+updates. These domain mirrors do not reenter descriptor processing.
+
+Configured entry options contain only `key`, because routing may differ per
+entry. Propagation and event-creation cancellation belong to the single batch
+carrier. Repeated event types are preserved in declaration order, allowing one
+transaction to address several keyed consumers with the same event. Effects
+and observers run for every matching entry; each projection commits once with
+its final matching entry.
 
 ### Await transaction completion
 
@@ -86,9 +96,9 @@ await events.dispatch(form, [
 It accepts the same single-event, map, and batch forms as `events()`. Native DOM
 dispatch still runs synchronously. The returned promise resolves after the
 source projection, remaining projections, and returned observer/effect
-promises settle. Target observers are invoked synchronously; their
-returned promises join completion without delaying projection commits. The
-dispatch promise rejects when a projection, effect, or observer fails.
+promises settle. Target observers are invoked synchronously; their returned
+promises join completion without delaying projection commits. The dispatch
+promise rejects when a projection, effect, or observer fails.
 
 Keep using `target.dispatchEvent(events(...))` when no code needs to await the
 committed DOM state.
@@ -105,9 +115,17 @@ event only after the transition has completed.
 
 ## Consume
 
+The API has three deliberately separate consumption roles:
+
+| Role | API | Ownership and timing |
+| --- | --- | --- |
+| Projection | `<events.on.name.tag>` or `<events.tag>` | Declaratively updates one existing element |
+| Effect | `events.on(selector, listener)` | Runs on the mixin element after matching projections commit |
+| Observer | `events.observe(listener)` | Imperatively sees every descriptor event on one exact target before projections commit |
+
 Use `events.on()` for a post-render DOM effect such as focus, selection, or
-measurement on the element hosting the mixin. Keep attributes and child content
-declarative in JSX.
+measurement on the element hosting the mixin. It participates in element host
+scope and keyed routing. Keep attributes and child content declarative in JSX.
 
 Use an event-aware intrinsic element such as `<events.on.name.form>` for one
 event, or `<events.form>` when the projection observes every declared event:
@@ -131,7 +149,7 @@ event, or `<events.form>` when the projection observes every declared event:
 
 // Observe every event for an imperative post-render effect.
 <input
-  mix={events.on("*", (_, signal) => {
+  mix={events.on("*", (event) => {
     // Runs once for each matching batch entry, in transaction order.
   })}
 />
@@ -146,6 +164,9 @@ addEventListeners(model, signal, {
 // Observe every descriptor-owned event on a configured host.
 let modelEvents = customEvents<SaveEventsMap>({ host: model });
 modelEvents.observe((event) => console.log(event.type), { signal });
+
+// Or observe an explicit target.
+events.observe(form, (event) => console.log(event.type), { signal });
 
 // Subscribe one projection to a precise subset of the event vocabulary.
 let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
@@ -233,9 +254,10 @@ private: callback events do not expose `key` or `originTarget`.
 
 ### Groups and wildcards
 
-Use `events.on(["eventA", "eventB"])` when a projection or effect depends on a
-known subset of events. Its callback receives the matching event, and
-`event.type` identifies which member triggered it.
+Use `events.on(["eventA", "eventB"])` without a listener to create an
+event-element projection group for a known subset. Pass a listener as the
+second argument to create an element effect for that subset instead. In either
+callback, `event.type` identifies which member triggered it.
 
 Use `<events.tag>` for a projection that observes the complete vocabulary and
 `events.on("*", ...)` for an effect that observes it. `*` is a subscription
@@ -244,8 +266,15 @@ selector, not a dispatchable event name.
 Use native `addEventListener()` or Remix `addEventListeners()` for named events.
 Use `events.observe()` only when one callback must observe every
 descriptor-owned event. It accepts an explicit target or uses the configured
-host. The options signal owns the observation, while the callback receives a
-reentry signal as its second argument.
+host. Its options signal owns the observation.
+
+`events.on("*", ...)` and `events.observe()` both consume every declared event,
+but they are not interchangeable. The former is an element-bound,
+post-projection effect that participates in host scope and keyed routing. The
+latter is an exact-target monitor invoked synchronously before projection
+commits; it receives keyed entries without filtering them by element ID.
+`observe()` implicitly means “all,” so it does not accept a redundant `"*"`
+selector.
 
 ### Callback semantics
 
@@ -255,7 +284,14 @@ Child callbacks receive the event. Before the first matching event, `event` is
 Projection callbacks receive a resolved event snapshot but do not synthesize
 `currentTarget`. Handle the empty branch or use a local event as the default
 parameter. `events.on()` remains listener-like, so its event identifies the
-listener element through `currentTarget`.
+listener element through `currentTarget`; observer events identify the observed
+target in the same way.
+
+Custom-event effects and observers do not create per-invocation reentry
+signals. Their returned promises join `events.dispatch()` completion, and
+multiple async invocations may overlap. Use Remix `on()` or
+`addEventListeners()` for native listeners that require Remix-managed reentry
+cancellation.
 
 ### Transaction sequencing
 

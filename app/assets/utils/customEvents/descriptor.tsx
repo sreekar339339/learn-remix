@@ -10,6 +10,7 @@ import {
 } from "./remix.tsx";
 import {
   type CustomEventsOptions,
+  type CustomEventsBatchEntryOptions,
   type CustomEventsBatchItem,
   type CustomEventsDispatch,
   type CustomEventsFactory,
@@ -102,15 +103,8 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   function normalizeConfiguredBatch(
     configuredEvents: readonly CustomEventsBatchItem<Events>[],
   ) {
-    let seen = new Set<string>();
     return configuredEvents.map((configuredEvent) => {
       if (typeof configuredEvent === "string") {
-        if (seen.has(configuredEvent)) {
-          throw new TypeError(
-            `customEvents batch event "${configuredEvent}" must be unique.`,
-          );
-        }
-        seen.add(configuredEvent);
         return createEntry(configuredEvent, null);
       }
 
@@ -122,16 +116,9 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       }
 
       let [[type, configuration]] = eventEntries;
-      if (seen.has(type)) {
-        throw new TypeError(
-          `customEvents batch event "${type}" must be unique.`,
-        );
-      }
-      seen.add(type);
-
       let config = configuration as {
         detail?: unknown;
-        options?: CustomEventsInit;
+        options?: CustomEventsBatchEntryOptions;
       };
       return createEntry(
         type,
@@ -182,7 +169,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       | CustomEventsEventType<Events>
       | readonly CustomEventsEventType<Events>[];
     let listener = args[1] as
-      | ((event: Event, signal: AbortSignal) => void | Promise<void>)
+      | ((event: Event) => void | Promise<void>)
       | undefined;
     if (Array.isArray(typeOrTypes) && listener === undefined) {
       return getEventElementGroup(typeOrTypes);
@@ -213,17 +200,13 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       );
     }
     let offset = explicitTarget ? 1 : 0;
-    let observer = args[offset] as (
-      event: Event,
-      signal: AbortSignal,
-    ) => void | Promise<void>;
+    let observer = args[offset] as (event: Event) => void | Promise<void>;
     let observerOptions = args[offset + 1] as
       | CustomEventsObserverOptions
       | undefined;
     return runtime.observe(
       target,
-      (event, signal) =>
-        observer(createCurrentTargetEvent(event, target), signal),
+      (event) => observer(createCurrentTargetEvent(event, target)),
       observerOptions?.signal,
     );
   }) as CustomEventsObserveFunction<Events>;
@@ -254,12 +237,15 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
       let entries = normalizeConfiguredBatch(
         typeOrEvents as readonly CustomEventsBatchItem<Events>[],
       );
-      return createBatchEvent(entries);
+      return createBatchEvent(
+        entries,
+        detailOrInit as CustomEventsInit | undefined,
+      );
     }
 
     let options = detailOrInit as CustomEventsInit | undefined;
     let details = Array.isArray(typeOrEvents)
-      ? [...new Set(typeOrEvents)].map((type) => [type, null] as const)
+      ? typeOrEvents.map((type) => [type, null] as const)
       : Object.entries(typeOrEvents as Partial<Events>);
     return createBatchEvent(
       details.map(([type, detail]) => createEntry(type, detail, options)),

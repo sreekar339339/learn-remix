@@ -154,22 +154,6 @@ export function createCurrentTargetEvent(
   return callbackEvent;
 }
 
-function createReentrantNotifier(
-  notify: (event: CustomEvent, signal: AbortSignal) => unknown,
-) {
-  let current: AbortController | undefined;
-  return {
-    notify(event: CustomEvent) {
-      current?.abort();
-      current = new AbortController();
-      return notify(event, current.signal);
-    },
-    abort() {
-      current?.abort();
-    },
-  };
-}
-
 /**
  * Private mechanics owned by one descriptor.
  *
@@ -226,21 +210,10 @@ export class CustomEventsRuntime {
   }
 
   subscribeEffect(
-    subscription: Omit<ElementSubscription, "notify"> & {
-      notify(event: CustomEvent, signal: AbortSignal): unknown;
-    },
+    subscription: ElementSubscription,
     signal?: AbortSignal,
   ) {
-    let reentry = createReentrantNotifier(subscription.notify);
-    let unsubscribe = this.#subscribeElement(
-      "effect",
-      { ...subscription, notify: reentry.notify },
-      undefined,
-    );
-    return ownCleanup(() => {
-      unsubscribe();
-      reentry.abort();
-    }, signal);
+    return this.#subscribeElement("effect", subscription, signal);
   }
 
   #subscribeElement(
@@ -279,23 +252,21 @@ export class CustomEventsRuntime {
 
   observe(
     target: EventTarget,
-    notify: (event: CustomEvent, signal: AbortSignal) => unknown,
+    notify: (event: CustomEvent) => unknown,
     signal?: AbortSignal,
   ) {
-    let reentry = createReentrantNotifier(notify);
     let observers = this.#observers.get(target);
     if (!observers) {
       observers = new Set();
       this.#observers.set(target, observers);
     }
-    observers.add(reentry.notify);
+    observers.add(notify);
     let unregisterTarget = this.#registerDispatchTarget(target);
 
     return ownCleanup(() => {
       unregisterTarget();
-      observers.delete(reentry.notify);
+      observers.delete(notify);
       if (observers.size === 0) this.#observers.delete(target);
-      reentry.abort();
     }, signal);
   }
 

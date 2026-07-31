@@ -82,6 +82,11 @@ describe("customEvents", () => {
       events("paid", "unexpected");
       // @ts-expect-error - detailed events require configured batch detail.
       events([{ submitted: {} }]);
+      // @ts-expect-error - entry options route only; propagation belongs to the batch.
+      events([{ submitted: {
+        detail: { id: "invalid-options" },
+        options: { composed: true },
+      } }]);
       // @ts-expect-error - `*` is reserved for subscriptions.
       events("*");
       // @ts-expect-error - native DOM event names are reserved.
@@ -95,6 +100,10 @@ describe("customEvents", () => {
       events("paid", { cancelable: true });
       // @ts-expect-error - awaitable dispatch preserves detailed-event typing.
       events.dispatch(new EventTarget(), "submitted");
+      // @ts-expect-error - customEvents effects do not expose reentry signals.
+      events.on("paid", (_event, _signal) => {});
+      // @ts-expect-error - customEvents observers do not expose reentry signals.
+      events.observe(new EventTarget(), (_event, _signal) => {});
     }
   });
 
@@ -107,15 +116,6 @@ describe("customEvents", () => {
     let factories = [
       () => events("paid", { signal: controller.signal }),
       () => events(["paid"], { signal: controller.signal }),
-      () =>
-        events([
-          {
-            submitted: {
-              detail: { id: "stale" },
-              options: { signal: controller.signal },
-            },
-          },
-        ]),
     ];
 
     for (let createEvent of factories) {
@@ -311,6 +311,31 @@ describe("customEvents", () => {
     assert.equal(second.textContent, "idle");
     assert.equal(second.dataset.effect, undefined);
     assert.equal(result.$('[data-testid="all"]')?.textContent, "submitted");
+
+    await result.act(() => {
+      (result.$("section") as HTMLElement).dispatchEvent(
+        events([
+          {
+            submitted: {
+              detail: { id: "first-again" },
+              options: { key: "first" },
+            },
+          },
+          {
+            submitted: {
+              detail: { id: "second" },
+              options: { key: "second" },
+            },
+          },
+        ], { composed: true }),
+      );
+    });
+    await settleEffects();
+
+    assert.equal(first.textContent, "first-again");
+    assert.equal(second.textContent, "second");
+    assert.equal(first.dataset.effect, "submitted");
+    assert.equal(second.dataset.effect, "submitted");
   });
 
   it("keeps unhosted events local and routes siblings through explicit hosts", async (t) => {
@@ -455,7 +480,6 @@ describe("customEvents", () => {
     let events = createEvents();
     let projectionUpdates = 0;
     let effects: string[] = [];
-    let effectSignals: AbortSignal[] = [];
     let dispatchTarget!: HTMLButtonElement;
 
     function Transaction() {
@@ -471,8 +495,7 @@ describe("customEvents", () => {
             data-testid="projection"
             child={(event) =>
               event ? `${event.type}:${++projectionUpdates}` : "idle:0"}
-            mix={events.on("*", async ({ type, currentTarget }, signal) => {
-              effectSignals.push(signal);
+            mix={events.on("*", async ({ type, currentTarget }) => {
               await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
@@ -503,8 +526,6 @@ describe("customEvents", () => {
       "submitted:paid:1",
       "paid:paid:1",
     ]);
-    assert.equal(effectSignals[0]?.aborted, true);
-    assert.equal(effectSignals[1]?.aborted, false);
   });
 
   it("observes all descriptor events on explicit and default hosts", async () => {
@@ -515,12 +536,10 @@ describe("customEvents", () => {
     let hostedEvents = createEvents({ host: defaultTarget });
     let controller = new AbortController();
     let calls: string[] = [];
-    let reentrySignals: AbortSignal[] = [];
 
-    explicitEvents.observe(explicitTarget, (event, signal) => {
+    explicitEvents.observe(explicitTarget, (event) => {
       assert.equal(event.currentTarget, explicitTarget);
       calls.push(`all:${event.type}`);
-      reentrySignals.push(signal);
     }, { signal: controller.signal });
 
     hostedEvents.observe(async (event) => {
@@ -542,11 +561,8 @@ describe("customEvents", () => {
       "all:paid",
       "hosted:paid",
     ]);
-    assert.equal(reentrySignals[0]?.aborted, true);
-    assert.equal(reentrySignals[1]?.aborted, false);
 
     controller.abort();
-    assert.equal(reentrySignals[1]?.aborted, true);
     explicitTarget.dispatchEvent(
       explicitEvents("submitted", { id: "ignored" }),
     );
@@ -568,8 +584,14 @@ describe("customEvents", () => {
       { submitted: { detail: { id: "batch" } } },
       "paid",
     ]);
+    await events.dispatch(domain, ["paid", "paid"]);
 
-    assert.deepEqual(nativeCalls, ["submitted:batch", "paid"]);
+    assert.deepEqual(nativeCalls, [
+      "submitted:batch",
+      "paid",
+      "paid",
+      "paid",
+    ]);
   });
 
   it("catches a mount-time event after listener setup", async (t) => {
