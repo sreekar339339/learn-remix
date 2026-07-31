@@ -96,9 +96,6 @@ export type CustomEventsEventMap<
     & { readonly type: Type };
 };
 
-/** Internal batch carrier accepted by native `dispatchEvent(...)`. */
-export type CustomEventsTransactionEvent = CustomEvent<undefined>;
-
 type CustomEventsElementEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -137,7 +134,7 @@ type CustomEventsIntrinsicChildren<
   Tag extends keyof JSX.IntrinsicElements,
 > = Props<Tag> extends { children?: infer Children } ? Children : RemixNode;
 
-export type CustomEventsEventElementRender<
+type CustomEventsEventElementRender<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
 > = (
@@ -239,7 +236,7 @@ type CustomEventsOperationPrefix<Mode extends CustomEventsOperationMode> =
   Mode extends "dispatch" ? [target: EventTarget] : [];
 
 type CustomEventsBatchResult<Mode extends CustomEventsOperationMode> =
-  Mode extends "create" ? CustomEventsTransactionEvent : Promise<void>;
+  Mode extends "create" ? CustomEvent<undefined> : Promise<void>;
 
 type CustomEventsSingleResult<
   Events extends EventDetails,
@@ -346,7 +343,7 @@ export type CustomEventsListenerEvent<
   }
   : never;
 
-export type CustomEventsTargetListenerOptions = {
+export type CustomEventsObserverOptions = {
   signal?: AbortSignal;
 };
 
@@ -359,87 +356,7 @@ type CustomEventsListener<
   signal: AbortSignal,
 ) => void | Promise<void>;
 
-export type CustomEventsTargetListeners<
-  Events extends EventDetails,
-  Target extends EventTarget,
-> =
-  & Partial<{
-    [Type in CustomEventsEventType<Events>]: CustomEventsListener<
-      Events,
-      Type,
-      Target
-    >;
-  }>
-  & {
-    "*"?: CustomEventsListener<
-      Events,
-      CustomEventsEventType<Events>,
-      Target
-    >;
-  };
-
 export type CustomEventsOnFunction<Events extends EventDetails> = {
-  /** Direct subscriptions using the configured host. */
-  (
-    listeners: CustomEventsTargetListeners<Events, EventTarget>,
-    options?: CustomEventsTargetListenerOptions,
-  ): () => void;
-  (
-    type: "*",
-    listener: CustomEventsListener<
-      Events,
-      CustomEventsEventType<Events>,
-      EventTarget
-    >,
-    options: CustomEventsTargetListenerOptions,
-  ): () => void;
-  <const Types extends CustomEventsTypeGroup<Events>>(
-    types: Types,
-    listener: CustomEventsListener<Events, Types[number], EventTarget>,
-    options: CustomEventsTargetListenerOptions,
-  ): () => void;
-  <Type extends CustomEventsEventType<Events>>(
-    type: Type,
-    listener: CustomEventsListener<Events, Type, EventTarget>,
-    options: CustomEventsTargetListenerOptions,
-  ): () => void;
-
-  /** Direct subscriptions using an explicit target. */
-  <Target extends EventTarget>(
-    target: Target,
-    listeners: CustomEventsTargetListeners<Events, Target>,
-    options?: CustomEventsTargetListenerOptions,
-  ): () => void;
-  <Target extends EventTarget>(
-    target: Target,
-    type: "*",
-    listener: CustomEventsListener<
-      Events,
-      CustomEventsEventType<Events>,
-      Target
-    >,
-    options?: CustomEventsTargetListenerOptions,
-  ): () => void;
-  <
-    Target extends EventTarget,
-    const Types extends CustomEventsTypeGroup<Events>,
-  >(
-    target: Target,
-    types: Types,
-    listener: CustomEventsListener<Events, Types[number], Target>,
-    options?: CustomEventsTargetListenerOptions,
-  ): () => void;
-  <
-    Target extends EventTarget,
-    Type extends CustomEventsEventType<Events>,
-  >(
-    target: Target,
-    type: Type,
-    listener: CustomEventsListener<Events, Type, Target>,
-    options?: CustomEventsTargetListenerOptions,
-  ): () => void;
-
-  /** Element-scoped effects and event-element groups. */
   <HostElement extends Element = Element>(
     type: "*",
     listener: CustomEventsListener<
@@ -468,13 +385,35 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
   ): MixinDescriptor<HostElement, any>;
 } & CustomEventsEventElementGroups<Events>;
 
+export type CustomEventsObserveFunction<Events extends EventDetails> = {
+  (
+    listener: CustomEventsListener<
+      Events,
+      CustomEventsEventType<Events>,
+      EventTarget
+    >,
+    options?: CustomEventsObserverOptions,
+  ): () => void;
+  <Target extends EventTarget>(
+    target: Target,
+    listener: CustomEventsListener<
+      Events,
+      CustomEventsEventType<Events>,
+      Target
+    >,
+    options?: CustomEventsObserverOptions,
+  ): () => void;
+};
+
 export type CustomEventsDescriptor<Events extends EventDetails> =
   CustomEventsFactory<Events> &
   {
-    /** Dispatches and resolves after projections and listeners settle. */
+    /** Dispatches and resolves after projections, effects, and observers settle. */
     dispatch: CustomEventsDispatch<Events>;
-    /** Selects events for effects, direct listeners, or event elements. */
+    /** Selects events for element effects or event elements. */
     on: CustomEventsOnFunction<Events>;
+    /** Observes every descriptor-owned event on a target. */
+    observe: CustomEventsObserveFunction<Events>;
     /** Makes an element the local boundary for this descriptor. */
     host<HostElement extends Element = Element>(): MixinDescriptor<
       HostElement,

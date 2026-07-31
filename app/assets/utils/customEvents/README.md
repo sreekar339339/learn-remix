@@ -66,7 +66,10 @@ form.dispatchEvent(events([
 
 A batch is one dispatch containing several declared entries. Consumers receive
 event snapshots for those entries; the descriptor does not dispatch secondary
-DOM events or invent an aggregate `change` event.
+DOM events or invent an aggregate `change` event. On a configured non-DOM
+`EventTarget` host, each entry is additionally mirrored as a native named event
+so `addEventListener()` and `addEventListeners()` can consume batched domain
+updates. These mirrors do not reenter descriptor processing.
 
 ### Await transaction completion
 
@@ -82,10 +85,10 @@ await events.dispatch(form, [
 
 It accepts the same single-event, map, and batch forms as `events()`. Native DOM
 dispatch still runs synchronously. The returned promise resolves after the
-source projection, remaining projections, and returned descriptor-listener
-promises settle. Direct target listeners are invoked synchronously; their
+source projection, remaining projections, and returned observer/effect
+promises settle. Target observers are invoked synchronously; their
 returned promises join completion without delaying projection commits. The
-dispatch promise rejects when a projection or tracked listener fails.
+dispatch promise rejects when a projection, effect, or observer fails.
 
 Keep using `target.dispatchEvent(events(...))` when no code needs to await the
 committed DOM state.
@@ -133,20 +136,16 @@ event, or `<events.form>` when the projection observes every declared event:
   })}
 />
 
-// Subscribe directly to a domain EventTarget.
-events.on(model, {
+// Use Remix for named native events.
+addEventListeners(model, signal, {
   saveFailed(event) {
     console.error(event.detail.error);
   },
-  "*"(event) {
-    console.log(event.type);
-  },
-}, { signal });
+});
 
-// A configured host is the default direct-listener target.
+// Observe every descriptor-owned event on a configured host.
 let modelEvents = customEvents<SaveEventsMap>({ host: model });
-modelEvents.on("saveSucceeded", listener, { signal });
-modelEvents.on({ saveFailed: reportFailure }, { signal });
+modelEvents.observe((event) => console.log(event.type), { signal });
 
 // Subscribe one projection to a precise subset of the event vocabulary.
 let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
@@ -242,12 +241,11 @@ Use `<events.tag>` for a projection that observes the complete vocabulary and
 `events.on("*", ...)` for an effect that observes it. `*` is a subscription
 selector, not a dispatchable event name.
 
-Direct `EventTarget` subscriptions also accept one name, a name group, `*`, or
-an `addEventListeners()`-style object. Named object callbacks receive their
-narrowed event; `"*"` receives the full discriminated event union. If both
-match, the named callback runs before the wildcard callback. The options signal
-owns the subscription, while each callback receives a reentry signal as its
-second argument.
+Use native `addEventListener()` or Remix `addEventListeners()` for named events.
+Use `events.observe()` only when one callback must observe every
+descriptor-owned event. It accepts an explicit target or uses the configured
+host. The options signal owns the observation, while the callback receives a
+reentry signal as its second argument.
 
 ### Callback semantics
 
@@ -264,7 +262,7 @@ listener element through `currentTarget`.
 Within one dispatch transaction, each matching event-aware projection commits
 once using its final matching event.
 
-1. Direct `EventTarget` listeners retain native synchronous timing.
+1. Target observers retain native synchronous timing.
 2. Projections on the dispatch target commit first.
 3. Remaining projections commit concurrently and have no defined order.
 4. After every projection settles, matching `events.on()` effects run once per

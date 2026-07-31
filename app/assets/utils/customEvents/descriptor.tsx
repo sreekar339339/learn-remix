@@ -1,6 +1,6 @@
 import { ref } from "remix/ui";
 import {
-  createListenerEvent,
+  createCurrentTargetEvent,
   type CustomEventsBatchRuntimeEntry,
   CustomEventsRuntime,
 } from "./runtime.ts";
@@ -17,9 +17,9 @@ import {
   type CustomEventsEventElements,
   type CustomEventsEventType,
   type CustomEventsInit,
+  type CustomEventsObserveFunction,
+  type CustomEventsObserverOptions,
   type CustomEventsOnFunction,
-  type CustomEventsTargetListenerOptions,
-  type CustomEventsTargetListeners,
   type EventDetails,
 } from "./types.ts";
 
@@ -48,16 +48,12 @@ function isEventTarget(value: unknown): value is EventTarget {
   return typeof EventTarget !== "undefined" && value instanceof EventTarget;
 }
 
-function assertNonCancelable(init: object | undefined) {
+function getEventInit(init: CustomEventsInit | undefined): EventInit {
   if (init && Object.hasOwn(init, "cancelable")) {
     throw new TypeError(
       "customEvents describe completed facts and cannot be cancelable.",
     );
   }
-}
-
-function getEventInit(init: CustomEventsInit | undefined): EventInit {
-  assertNonCancelable(init);
   return {
     bubbles: init?.bubbles ?? true,
     cancelable: false,
@@ -159,61 +155,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     );
   }
 
-  type DirectTargetListener = (
-    event: Event,
-    signal: AbortSignal,
-  ) => void | Promise<void>;
-
-  function registerTargetListeners(
-    target: EventTarget,
-    listeners: ReadonlyMap<string, DirectTargetListener>,
-    options?: CustomEventsTargetListenerOptions,
-  ) {
-    if (options?.signal?.aborted) return () => {};
-
-    let reentries = new Set<AbortController>();
-    function createInvoker(listener: DirectTargetListener) {
-      let reentry: AbortController | undefined;
-      return (event: CustomEvent) => {
-        reentry?.abort();
-        if (reentry) reentries.delete(reentry);
-        reentry = new AbortController();
-        reentries.add(reentry);
-
-        return listener(createListenerEvent(event, target), reentry.signal);
-      };
-    }
-
-    let invokers = new Map(
-      [...listeners].map(([type, listener]) => {
-        if (type !== ALL_EVENTS) runtime.addEventType(type);
-        return [type, createInvoker(listener)] as const;
-      }),
-    );
-    let unsubscribe = runtime.subscribeTarget(
-      target,
-      (event) => {
-        let results = [
-          invokers.get(event.type)?.(event),
-          invokers.get(ALL_EVENTS)?.(event),
-        ];
-        return Promise.all(results);
-      },
-    );
-
-    let active = true;
-    let cleanup = () => {
-      if (!active) return;
-      active = false;
-      options?.signal?.removeEventListener("abort", cleanup);
-      unsubscribe();
-      for (let reentry of reentries) reentry.abort();
-      reentries.clear();
-    };
-    options?.signal?.addEventListener("abort", cleanup, { once: true });
-    return cleanup;
-  }
-
   let eventElementGroups = new Map<
     string,
     CustomEventsEventElements<Events, CustomEventsEventType<Events>>
@@ -236,56 +177,6 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   }
 
   let onFunction = ((...args: unknown[]) => {
-    let explicitTarget = isEventTarget(args[0]);
-    let usesDefaultHost = !explicitTarget && options?.host &&
-      (isRecord(args[0]) || args.length >= 3);
-
-    if (explicitTarget || usesDefaultHost) {
-      let target = explicitTarget ? args[0] as EventTarget : options!.host!;
-      let argumentOffset = explicitTarget ? 1 : 0;
-      let selectorOrListeners = args[argumentOffset];
-      let listeners = new Map<string, DirectTargetListener>();
-      let listenerOptions: CustomEventsTargetListenerOptions | undefined;
-
-      if (isRecord(selectorOrListeners)) {
-        let listenerMap = selectorOrListeners as CustomEventsTargetListeners<
-          Events,
-          EventTarget
-        >;
-        for (let [type, listener] of Object.entries(listenerMap)) {
-          if (!listener) continue;
-          listeners.set(type, listener as DirectTargetListener);
-        }
-        listenerOptions = args[argumentOffset + 1] as
-          | CustomEventsTargetListenerOptions
-          | undefined;
-      } else {
-        let listener = args[argumentOffset + 1] as
-          | DirectTargetListener
-          | undefined;
-        if (!listener) {
-          throw new TypeError(
-            "customEvents direct on() requires an event listener.",
-          );
-        }
-        let selectedTypes = Array.isArray(selectorOrListeners)
-          ? selectorOrListeners
-          : [selectorOrListeners];
-        for (let type of selectedTypes) {
-          if (typeof type === "string") listeners.set(type, listener);
-        }
-        listenerOptions = args[argumentOffset + 2] as
-          | CustomEventsTargetListenerOptions
-          | undefined;
-      }
-
-      return registerTargetListeners(
-        target,
-        listeners,
-        listenerOptions,
-      );
-    }
-
     let typeOrTypes = args[0] as
       | typeof ALL_EVENTS
       | CustomEventsEventType<Events>
@@ -312,6 +203,30 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         : Reflect.get(target, property, receiver);
     },
   }) as CustomEventsOnFunction<Events>;
+
+  let observe = ((...args: unknown[]) => {
+    let explicitTarget = isEventTarget(args[0]);
+    let target = explicitTarget ? args[0] as EventTarget : options?.host;
+    if (!target) {
+      throw new TypeError(
+        "customEvents observe() requires a target or configured host.",
+      );
+    }
+    let offset = explicitTarget ? 1 : 0;
+    let observer = args[offset] as (
+      event: Event,
+      signal: AbortSignal,
+    ) => void | Promise<void>;
+    let observerOptions = args[offset + 1] as
+      | CustomEventsObserverOptions
+      | undefined;
+    return runtime.observe(
+      target,
+      (event, signal) =>
+        observer(createCurrentTargetEvent(event, target), signal),
+      observerOptions?.signal,
+    );
+  }) as CustomEventsObserveFunction<Events>;
 
   let events = ((...args: Array<unknown>) => {
     let [typeOrEvents, detailOrInit, maybeInit] = args as [
@@ -367,6 +282,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
   let descriptorTarget = Object.assign(events, {
     dispatch,
     on,
+    observe,
     host() {
       return ref((target, signal) => {
         runtime.registerHost(target, signal);

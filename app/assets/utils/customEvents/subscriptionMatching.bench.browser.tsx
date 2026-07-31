@@ -20,10 +20,9 @@ it("benchmarks keyed subscription matching", async () => {
     element.id = String(index);
     host.append(element);
     cleanups.push(
-      runtime.subscribeElement({
+      runtime.subscribeProjection({
         element,
         eventTypes: new Set(["itemUpdated"]),
-        phase: "projection",
         notify() {
           notifications++;
         },

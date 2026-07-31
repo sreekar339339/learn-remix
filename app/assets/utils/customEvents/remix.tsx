@@ -5,7 +5,10 @@ import {
   type Handle,
   type RemixNode,
 } from "remix/ui";
-import { createListenerEvent, type CustomEventsRuntime } from "./runtime.ts";
+import {
+  createCurrentTargetEvent,
+  type CustomEventsRuntime,
+} from "./runtime.ts";
 import {
   type CustomEventsEventElement,
   type CustomEventsEventElements,
@@ -36,23 +39,16 @@ export const customEventsOnMixin = createMixin<
     return (
       <handle.element
         mix={ref((element, signal) => {
-          let reentry: AbortController | undefined;
-          runtime.subscribeElement({
+          runtime.subscribeEffect({
             element,
             eventTypes,
-            phase: "effect",
-            notify(event) {
-              reentry?.abort();
-              reentry = new AbortController();
+            notify(event, effectSignal) {
               return listener(
-                createListenerEvent(event, element),
-                reentry.signal,
+                createCurrentTargetEvent(event, element),
+                effectSignal,
               );
             },
           }, signal);
-          signal.addEventListener("abort", () => reentry?.abort(), {
-            once: true,
-          });
         })}
       />
     );
@@ -110,11 +106,10 @@ function createCustomEventsEventElement<
       | CustomEventsEventMap<Events>[Type]
       | undefined;
     let projectionMix = ref((element, signal) => {
-      runtime.subscribeElement(
+      runtime.subscribeProjection(
         {
           element,
           eventTypes,
-          phase: "projection",
           notify(event) {
             currentEvent = event as
               unknown as CustomEventsEventMap<Events>[Type];

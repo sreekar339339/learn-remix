@@ -1,6 +1,6 @@
 import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
-import { on, type Handle } from "remix/ui";
+import { addEventListeners, on, type Handle } from "remix/ui";
 import { render } from "remix/ui/test";
 import {
   AppContext,
@@ -23,25 +23,23 @@ describe("AppContext", () => {
       settings: { layout: "normal", theme: "system" },
     });
     let calls: string[] = [];
+    let controller = new AbortController();
 
     assert.deepEqual(context.value, {
       user: null,
       settings: { layout: "normal", theme: "system" },
     });
 
-    context.on("user", (event) => {
-      assert.equal(event.currentTarget, context);
-      calls.push(`named:${event.detail?.name ?? "none"}`);
-    }, {});
-
-    context.on({
+    addEventListeners(context, controller.signal, {
+      user(event) {
+        calls.push(`named:${event.detail?.name ?? "none"}`);
+      },
       settings(event) {
-        assert.equal(event.currentTarget, context);
         calls.push(`map:${event.detail.theme}:${event.detail.layout}`);
       },
-      "*"(event) {
-        calls.push(`all:${event.type}`);
-      },
+    });
+    context.events.observe((event) => {
+      calls.push(`all:${event.type}`);
     });
 
     let originalValue = context.value;
@@ -49,10 +47,7 @@ describe("AppContext", () => {
 
     assert.equal(context.value, originalValue);
     assert.deepEqual(context.value.user, { name: "Ada", age: 37 });
-    assert.deepEqual(calls, [
-      "named:Ada",
-      "all:user",
-    ]);
+    assert.equal(calls.join(","), "named:Ada,all:user");
 
     context.patch({
       user: { name: "Grace", age: 85 },
@@ -63,14 +58,10 @@ describe("AppContext", () => {
       user: { name: "Grace", age: 85 },
       settings: { layout: "zen", theme: "dark" },
     });
-    assert.deepEqual(calls, [
-      "named:Ada",
-      "all:user",
-      "named:Grace",
-      "all:user",
-      "map:dark:zen",
-      "all:settings",
-    ]);
+    assert.equal(
+      calls.join(","),
+      "named:Ada,all:user,named:Grace,map:dark:zen,all:user,all:settings",
+    );
   });
 
   it("supports explicit cleanup and AbortSignal-owned subscriptions", () => {
@@ -78,16 +69,21 @@ describe("AppContext", () => {
       user: null,
       settings: { layout: "normal", theme: "system" },
     });
-    let controller = new AbortController();
+    let userController = new AbortController();
+    let settingsController = new AbortController();
     let cleanedCalls = 0;
     let abortedCalls = 0;
 
-    let cleanup = context.on("user", () => {
-      cleanedCalls++;
-    }, {});
-    context.on("settings", () => {
-      abortedCalls++;
-    }, { signal: controller.signal });
+    addEventListeners(context, userController.signal, {
+      user() {
+        cleanedCalls++;
+      },
+    });
+    addEventListeners(context, settingsController.signal, {
+      settings() {
+        abortedCalls++;
+      },
+    });
 
     context.patch({
       user: { name: "Ada", age: 37 },
@@ -96,8 +92,8 @@ describe("AppContext", () => {
     assert.equal(cleanedCalls, 1);
     assert.equal(abortedCalls, 1);
 
-    cleanup();
-    controller.abort();
+    userController.abort();
+    settingsController.abort();
     context.patch({
       user: null,
       settings: { layout: "normal", theme: "system" },

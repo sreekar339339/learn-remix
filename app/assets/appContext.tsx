@@ -1,5 +1,13 @@
-import { type Handle, type RemixNode } from "remix/ui";
-import { customEvents } from "./utils/customEvents/index.tsx";
+import {
+  addEventListeners,
+  type Handle,
+  type RemixNode,
+  TypedEventTarget,
+} from "remix/ui";
+import {
+  customEvents,
+  type CustomEventsEventMap,
+} from "./utils/customEvents/index.tsx";
 
 export type AppContextValue = {
   user: { name: string; age: number } | null;
@@ -9,9 +17,9 @@ export type AppContextValue = {
   };
 };
 
-export class AppContext extends EventTarget {
-  #events = customEvents<AppContextValue>({ host: this });
-  on = this.#events.on;
+export class AppContext
+  extends TypedEventTarget<CustomEventsEventMap<AppContextValue>> {
+  events = customEvents<AppContextValue>({ host: this });
   readonly value: AppContextValue;
 
   constructor(initial: AppContextValue) {
@@ -21,7 +29,7 @@ export class AppContext extends EventTarget {
 
   patch(value: Partial<AppContextValue>) {
     Object.assign(this.value, value);
-    this.dispatchEvent(this.#events(value));
+    this.dispatchEvent(this.events(value));
   }
 }
 
@@ -49,13 +57,11 @@ export function AppProvider(
 export function UserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  appContext.on(
-    "user",
-    () => {
+  addEventListeners(appContext, handle.signal, {
+    user() {
       void handle.update();
     },
-    { signal: handle.signal },
-  );
+  });
 
   return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
 }
@@ -65,7 +71,7 @@ export function EventUserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.on.user.div
+    <appContext.events.on.user.div
       child={(event) => event?.detail?.name ?? "Not logged in"}
     />
   );
@@ -74,13 +80,11 @@ export function EventUserDisplay(handle: Handle) {
 export function SettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
-  appContext.on(
-    "settings",
-    () => {
+  addEventListeners(appContext, handle.signal, {
+    settings() {
       void handle.update();
     },
-    { signal: handle.signal },
-  );
+  });
 
   return () => (
     <div>
@@ -96,7 +100,7 @@ export function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.on.settings.pre
+    <appContext.events.on.settings.pre
       child={(event) =>
         `Layout: ${event?.detail.layout}, Theme: ${event?.detail.theme}`
       }

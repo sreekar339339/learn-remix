@@ -8,16 +8,8 @@ describe("Drummer", () => {
     let drummer = new Drummer();
     let events: string[] = [];
 
-    drummer.events.on({
-      tempoSet({ detail }) {
-        events.push(`tempoSet:${detail}`);
-      },
-      playbackStarted({ detail }) {
-        events.push(`playbackStarted:${detail}`);
-      },
-      playbackStopped({ detail }) {
-        events.push(`playbackStopped:${detail}`);
-      },
+    drummer.events.observe(({ type, detail }) => {
+      events.push(`${type}:${detail}`);
     });
 
     drummer.play(120);

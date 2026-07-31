@@ -455,6 +455,7 @@ describe("customEvents", () => {
     let events = createEvents();
     let projectionUpdates = 0;
     let effects: string[] = [];
+    let effectSignals: AbortSignal[] = [];
     let dispatchTarget!: HTMLButtonElement;
 
     function Transaction() {
@@ -470,7 +471,8 @@ describe("customEvents", () => {
             data-testid="projection"
             child={(event) =>
               event ? `${event.type}:${++projectionUpdates}` : "idle:0"}
-            mix={events.on("*", async ({ type, currentTarget }) => {
+            mix={events.on("*", async ({ type, currentTarget }, signal) => {
+              effectSignals.push(signal);
               await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
@@ -501,9 +503,11 @@ describe("customEvents", () => {
       "submitted:paid:1",
       "paid:paid:1",
     ]);
+    assert.equal(effectSignals[0]?.aborted, true);
+    assert.equal(effectSignals[1]?.aborted, false);
   });
 
-  it("subscribes directly to explicit and default EventTarget hosts", async () => {
+  it("observes all descriptor events on explicit and default hosts", async () => {
     let explicitTarget = new EventTarget();
     let defaultTarget = new EventTarget();
     let explicitEvents = createEvents();
@@ -511,41 +515,61 @@ describe("customEvents", () => {
     let hostedEvents = createEvents({ host: defaultTarget });
     let controller = new AbortController();
     let calls: string[] = [];
+    let reentrySignals: AbortSignal[] = [];
 
-    explicitEvents.on(explicitTarget, {
-      submitted(event) {
-        assert.equal(event.currentTarget, explicitTarget);
-        calls.push(`named:${event.detail.id}`);
-      },
-      "*"(event) {
-        calls.push(`all:${event.type}`);
-      },
+    explicitEvents.observe(explicitTarget, (event, signal) => {
+      assert.equal(event.currentTarget, explicitTarget);
+      calls.push(`all:${event.type}`);
+      reentrySignals.push(signal);
     }, { signal: controller.signal });
 
-    hostedEvents.on("paid", async (event) => {
+    hostedEvents.observe(async (event) => {
       assert.equal(event.currentTarget, defaultTarget);
       await Promise.resolve();
       calls.push(`hosted:${event.type}`);
-    }, {});
-    otherEvents.on(explicitTarget, "submitted", () => {
+    });
+    otherEvents.observe(explicitTarget, () => {
       calls.push("wrong-descriptor");
-    }, {});
+    });
 
     explicitTarget.dispatchEvent(
       explicitEvents("submitted", { id: "direct" }),
     );
+    explicitTarget.dispatchEvent(explicitEvents("paid"));
     await hostedEvents.dispatch(defaultTarget, "paid");
     assert.deepEqual(calls, [
-      "named:direct",
       "all:submitted",
+      "all:paid",
       "hosted:paid",
     ]);
+    assert.equal(reentrySignals[0]?.aborted, true);
+    assert.equal(reentrySignals[1]?.aborted, false);
 
     controller.abort();
+    assert.equal(reentrySignals[1]?.aborted, true);
     explicitTarget.dispatchEvent(
       explicitEvents("submitted", { id: "ignored" }),
     );
     assert.equal(calls.length, 3);
+  });
+
+  it("mirrors batch entries only on configured domain EventTargets", async () => {
+    let domain = new EventTarget();
+    let events = createEvents({ host: domain });
+    let nativeCalls: string[] = [];
+    domain.addEventListener("submitted", (event) => {
+      nativeCalls.push(
+        `submitted:${(event as CustomEvent<{ id: string }>).detail.id}`,
+      );
+    });
+    domain.addEventListener("paid", () => nativeCalls.push("paid"));
+
+    await events.dispatch(domain, [
+      { submitted: { detail: { id: "batch" } } },
+      "paid",
+    ]);
+
+    assert.deepEqual(nativeCalls, ["submitted:batch", "paid"]);
   });
 
   it("catches a mount-time event after listener setup", async (t) => {
@@ -600,14 +624,16 @@ describe("customEvents", () => {
       let element = document.createElement("output");
       element.id = id;
       host.append(element);
-      let cleanup = runtime.subscribeElement({
+      let subscription = {
         element,
         eventTypes,
-        phase,
-        notify(event) {
+        notify(event: CustomEvent) {
           calls.push(`${name}:${event.type}`);
         },
-      });
+      };
+      let cleanup = phase === "effect"
+        ? runtime.subscribeEffect(subscription)
+        : runtime.subscribeProjection(subscription);
       cleanups.push(cleanup);
       return cleanup;
     }
@@ -670,10 +696,9 @@ describe("customEvents", () => {
       reachedParent = true;
     });
 
-    let unsubscribe = runtime.subscribeElement({
+    let unsubscribe = runtime.subscribeProjection({
       element: host,
       eventTypes: new Set(["updated"]),
-      phase: "projection",
       notify() {},
     });
     let unregisterHost = runtime.registerHost(host);

@@ -10,8 +10,7 @@ type DispatchTargetRegistration = {
 type ElementSubscription = {
   element: Element;
   eventTypes: ReadonlySet<string> | null;
-  phase: Phase;
-  notify(event: CustomEvent): Promise<unknown> | void;
+  notify(event: CustomEvent): unknown;
 };
 
 type IndexedSubscription = ElementSubscription & {
@@ -117,6 +116,17 @@ function ownCleanup(cleanup: () => void, signal?: AbortSignal) {
   return dispose;
 }
 
+function collect(
+  results: unknown[],
+  operation: () => unknown,
+) {
+  try {
+    results.push(operation());
+  } catch (error) {
+    results.push(Promise.reject(error));
+  }
+}
+
 function createEventSnapshot(
   entry: CustomEventsBatchRuntimeEntry,
   target: EventTarget,
@@ -129,26 +139,42 @@ function createEventSnapshot(
   return event;
 }
 
-export function createListenerEvent(
+export function createCurrentTargetEvent(
   event: CustomEvent,
   currentTarget: EventTarget,
 ) {
-  let listenerEvent = new CustomEvent(event.type, {
+  let callbackEvent = new CustomEvent(event.type, {
     bubbles: false,
     cancelable: event.cancelable,
     composed: event.composed,
     detail: event.detail,
   });
-  setEventProperty(listenerEvent, "target", event.target);
-  setEventProperty(listenerEvent, "currentTarget", currentTarget);
-  return listenerEvent;
+  setEventProperty(callbackEvent, "target", event.target);
+  setEventProperty(callbackEvent, "currentTarget", currentTarget);
+  return callbackEvent;
+}
+
+function createReentrantNotifier(
+  notify: (event: CustomEvent, signal: AbortSignal) => unknown,
+) {
+  let current: AbortController | undefined;
+  return {
+    notify(event: CustomEvent) {
+      current?.abort();
+      current = new AbortController();
+      return notify(event, current.signal);
+    },
+    abort() {
+      current?.abort();
+    },
+  };
 }
 
 /**
  * Private mechanics owned by one descriptor.
  *
  * Product events are the only events dispatched through the DOM. Once one
- * reaches a local listener or explicit host, the runtime turns its entries into
+ * reaches a local subscription or explicit host, the runtime turns its entries into
  * in-memory snapshots and notifies indexed projections and effects.
  */
 export class CustomEventsRuntime {
@@ -159,7 +185,7 @@ export class CustomEventsRuntime {
     projection: new Map(),
     effect: new Map(),
   };
-  #targetSubscriptions = new WeakMap<
+  #observers = new WeakMap<
     EventTarget,
     Set<(event: CustomEvent) => unknown>
   >();
@@ -192,7 +218,33 @@ export class CustomEventsRuntime {
     return metadata?.completion ?? Promise.resolve();
   }
 
-  subscribeElement(
+  subscribeProjection(
+    subscription: ElementSubscription,
+    signal?: AbortSignal,
+  ) {
+    return this.#subscribeElement("projection", subscription, signal);
+  }
+
+  subscribeEffect(
+    subscription: Omit<ElementSubscription, "notify"> & {
+      notify(event: CustomEvent, signal: AbortSignal): unknown;
+    },
+    signal?: AbortSignal,
+  ) {
+    let reentry = createReentrantNotifier(subscription.notify);
+    let unsubscribe = this.#subscribeElement(
+      "effect",
+      { ...subscription, notify: reentry.notify },
+      undefined,
+    );
+    return ownCleanup(() => {
+      unsubscribe();
+      reentry.abort();
+    }, signal);
+  }
+
+  #subscribeElement(
+    phaseName: Phase,
     subscription: ElementSubscription,
     signal?: AbortSignal,
   ) {
@@ -200,7 +252,7 @@ export class CustomEventsRuntime {
       ...subscription,
       routingId: subscription.element.id,
     };
-    let phase = this.#subscriptions[subscription.phase];
+    let phase = this.#subscriptions[phaseName];
     let selectors = subscription.eventTypes ?? [ALL_EVENTS];
     let routes: Array<[string, RoutedSubscriptions]> = [];
 
@@ -225,23 +277,25 @@ export class CustomEventsRuntime {
     }, signal);
   }
 
-  subscribeTarget(
+  observe(
     target: EventTarget,
-    notify: (event: CustomEvent) => unknown,
+    notify: (event: CustomEvent, signal: AbortSignal) => unknown,
     signal?: AbortSignal,
   ) {
-    let subscriptions = this.#targetSubscriptions.get(target);
-    if (!subscriptions) {
-      subscriptions = new Set();
-      this.#targetSubscriptions.set(target, subscriptions);
+    let reentry = createReentrantNotifier(notify);
+    let observers = this.#observers.get(target);
+    if (!observers) {
+      observers = new Set();
+      this.#observers.set(target, observers);
     }
-    subscriptions.add(notify);
+    observers.add(reentry.notify);
     let unregisterTarget = this.#registerDispatchTarget(target);
 
     return ownCleanup(() => {
       unregisterTarget();
-      subscriptions.delete(notify);
-      if (subscriptions.size === 0) this.#targetSubscriptions.delete(target);
+      observers.delete(reentry.notify);
+      if (observers.size === 0) this.#observers.delete(target);
+      reentry.abort();
     }, signal);
   }
 
@@ -276,8 +330,7 @@ export class CustomEventsRuntime {
   }
 
   #scopeFor(element: Element | undefined) {
-    return this.#findHost(element) ??
-      (!isElement(this.#defaultHost) ? this.#defaultHost : undefined);
+    return this.#findHost(element) ?? this.#defaultHost;
   }
 
   #matchesScope(
@@ -326,16 +379,11 @@ export class CustomEventsRuntime {
       ...(entry.key === undefined ? {} : { key: entry.key }),
     }));
 
-    // Direct EventTarget subscriptions retain native synchronous invocation
-    // timing. Their returned promises join transaction completion.
-    let directResults: unknown[] = [];
-    for (let notify of this.#targetSubscriptions.get(originTarget) ?? []) {
+    // Observers run synchronously; returned promises join the transaction.
+    let observerResults: unknown[] = [];
+    for (let notify of this.#observers.get(originTarget) ?? []) {
       for (let { event } of events) {
-        try {
-          directResults.push(notify(event));
-        } catch (error) {
-          directResults.push(Promise.reject(error));
-        }
+        collect(observerResults, () => notify(event));
       }
     }
 
@@ -393,13 +441,10 @@ export class CustomEventsRuntime {
               originTarget,
             )
           ) {
-            try {
-              effectResults.push(
-                subscription.notify(transactionEvent.event),
-              );
-            } catch (error) {
-              effectResults.push(Promise.reject(error));
-            }
+            collect(
+              effectResults,
+              () => subscription.notify(transactionEvent.event),
+            );
           }
         }
       }
@@ -407,7 +452,7 @@ export class CustomEventsRuntime {
     });
 
     return Promise.all([
-      Promise.all(directResults),
+      Promise.all(observerResults),
       projectionsAndEffectsSettled,
     ]).then(() => {});
   }
@@ -426,6 +471,19 @@ export class CustomEventsRuntime {
       event.composed !== true
     ) {
       event.stopPropagation();
+    }
+    let isBatch =
+      metadata.entries.length !== 1 ||
+      metadata.entries[0]?.type !== event.type;
+    if (isBatch && fallbackScope === this.#defaultHost) {
+      for (let entry of metadata.entries) {
+        fallbackScope.dispatchEvent(
+          new CustomEvent(entry.type, {
+            ...entry.init,
+            detail: entry.detail,
+          }),
+        );
+      }
     }
 
     let originScope = this.#scopeFor(
