@@ -33,7 +33,7 @@ share the authoritative model and the event is only a precise signal.
 ## Dispatch
 
 The descriptor is callable and returns an ordinary `CustomEvent`, so native
-`dispatchEvent()` remains the only dispatch API. An already-aborted event
+`dispatchEvent()` remains the normal dispatch API. An already-aborted event
 option signal throws its abort reason during event creation; no inert substitute
 is returned.
 
@@ -67,6 +67,38 @@ form.dispatchEvent(events([
 A batch is one dispatch containing several declared entries. Consumers receive
 event snapshots for those entries; the descriptor does not dispatch secondary
 DOM events or invent an aggregate `change` event.
+
+### Await transaction completion
+
+Use `events.dispatch(target, ...eventArgs)` when subsequent code genuinely
+depends on the descriptor transaction having settled:
+
+```tsx
+await events.dispatch(form, [
+  "listUpdated",
+  { editorUpdated: { options: { key: editorId } } },
+]);
+```
+
+It accepts the same single-event, map, and batch forms as `events()`. Native DOM
+dispatch still runs synchronously. The returned promise resolves after the
+source projection, remaining projections, and returned descriptor-listener
+promises settle. Direct target listeners are invoked synchronously; their
+returned promises join completion without delaying projection commits. The
+dispatch promise rejects when a projection or tracked listener fails.
+
+Keep using `target.dispatchEvent(events(...))` when no code needs to await the
+committed DOM state.
+
+### Cancellation
+
+Descriptor events report completed facts and are always non-cancelable.
+`cancelable` is therefore not a supported event option, and
+`dispatchEvent()` returns `true` for descriptor events.
+
+When an operation genuinely needs a preventable pre-transition phase, use a
+separate native event contract before changing the model. Publish the custom
+event only after the transition has completed.
 
 ## Consume
 

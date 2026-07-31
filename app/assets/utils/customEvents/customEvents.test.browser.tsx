@@ -44,6 +44,9 @@ describe("customEvents", () => {
     assert.ok(first !== second);
     assert.equal(first.type, second.type);
     assert.equal(first.type, "submitted");
+    assert.equal(first.cancelable, false);
+    first.preventDefault();
+    assert.equal(first.defaultPrevented, false);
     assert.equal(
       otherEvents("submitted", { id: "other" }).type,
       "submitted",
@@ -53,8 +56,23 @@ describe("customEvents", () => {
     target.addEventListener("submitted", () => {
       observed = true;
     });
-    target.dispatchEvent(first);
+    assert.equal(target.dispatchEvent(first), true);
     assert.equal(observed, true);
+
+    let createWithEventInit = events as unknown as (
+      type: "submitted",
+      detail: { id: string },
+      init: EventInit,
+    ) => CustomEvent<{ id: string }>;
+    assert.throws(
+      () =>
+        createWithEventInit(
+          "submitted",
+          { id: "runtime-check" },
+          { cancelable: true },
+        ),
+      /cannot be cancelable/,
+    );
 
     if (false) {
       // @ts-expect-error - detailed events require detail.
@@ -72,6 +90,10 @@ describe("customEvents", () => {
         // @ts-expect-error - factory host registration has no abort lifecycle.
         signal: new AbortController().signal,
       });
+      // @ts-expect-error - descriptor events are completed, non-cancelable facts.
+      events("paid", { cancelable: true });
+      // @ts-expect-error - awaitable dispatch preserves detailed-event typing.
+      events.dispatch(new EventTarget(), "submitted");
     }
   });
 
@@ -386,34 +408,27 @@ describe("customEvents", () => {
     assert.equal(root.dataset.latest, "composed");
   });
 
-  it("commits transaction projections once before ordered effects", async (t) => {
+  it("dispatches a transaction and awaits projections and ordered effects", async (t) => {
     let events = createEvents();
     let projectionUpdates = 0;
     let effects: string[] = [];
+    let dispatchTarget!: HTMLButtonElement;
 
     function Transaction() {
       return () => (
         <section mix={events.host()}>
           <button
             data-testid="dispatch"
-            mix={on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(
-                events([
-                  {
-                    submitted: {
-                      detail: { id: "batched" },
-                    },
-                  },
-                  "paid",
-                ]),
-              );
+            mix={ref((button) => {
+              dispatchTarget = button;
             })}
           />
           <events.output
             data-testid="projection"
             child={(event) =>
               event ? `${event.type}:${++projectionUpdates}` : "idle:0"}
-            mix={events.on("*", ({ type, currentTarget }) => {
+            mix={events.on("*", async ({ type, currentTarget }) => {
+              await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
           />
@@ -425,9 +440,15 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(() =>
-      (result.$('[data-testid="dispatch"]') as HTMLButtonElement).click()
+      events.dispatch(dispatchTarget, [
+        {
+          submitted: {
+            detail: { id: "batched" },
+          },
+        },
+        "paid",
+      ])
     );
-    await settleEffects();
 
     assert.equal(
       result.$('[data-testid="projection"]')?.textContent,
@@ -439,7 +460,7 @@ describe("customEvents", () => {
     ]);
   });
 
-  it("subscribes directly to explicit and default EventTarget hosts", () => {
+  it("subscribes directly to explicit and default EventTarget hosts", async () => {
     let explicitTarget = new EventTarget();
     let defaultTarget = new EventTarget();
     let explicitEvents = createEvents();
@@ -458,8 +479,9 @@ describe("customEvents", () => {
       },
     }, { signal: controller.signal });
 
-    hostedEvents.on("paid", (event) => {
+    hostedEvents.on("paid", async (event) => {
       assert.equal(event.currentTarget, defaultTarget);
+      await Promise.resolve();
       calls.push(`hosted:${event.type}`);
     }, {});
     otherEvents.on(explicitTarget, "submitted", () => {
@@ -469,7 +491,7 @@ describe("customEvents", () => {
     explicitTarget.dispatchEvent(
       explicitEvents("submitted", { id: "direct" }),
     );
-    defaultTarget.dispatchEvent(hostedEvents("paid"));
+    await hostedEvents.dispatch(defaultTarget, "paid");
     assert.deepEqual(calls, [
       "named:direct",
       "all:submitted",

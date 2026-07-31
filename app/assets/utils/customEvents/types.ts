@@ -1,11 +1,6 @@
 import type { Handle, MixinDescriptor, Props, RemixNode } from "remix/ui";
 import { CUSTOM_EVENTS_ALL } from "./constants.ts";
 
-// Public and internal types
-//
-// The public descriptor surface is type-derived: product engineers declare an
-// event-detail map once. The callable descriptor creates events, while its
-// proxy-backed `on` surface provides event elements.
 export type EventDetails = Record<string, unknown>;
 
 /** Payload maps and null-detail event names, which may be combined in a union. */
@@ -68,10 +63,13 @@ export type NormalizeCustomEventsDefinition<
 /**
  * Options for events created by `customEvents`.
  *
- * These include standard `EventInit` flags. An already-aborted `signal`
- * synchronously throws its abort reason instead of creating an event.
+ * These include the standard propagation flags except `cancelable`.
+ * An already-aborted `signal` synchronously throws its abort reason instead
+ * of creating an event.
  */
-export type CustomEventsInit = EventInit & {
+export type CustomEventsInit = Omit<EventInit, "cancelable"> & {
+  /** Custom events describe completed facts and are never cancelable. */
+  cancelable?: never;
   /** Throws the signal's abort reason when it is already aborted. */
   signal?: AbortSignal;
   /** Routes the event to event-aware elements with the same DOM `id`. */
@@ -79,12 +77,7 @@ export type CustomEventsInit = EventInit & {
 };
 
 export type CustomEventsOptions = {
-  /**
-   * Register this target as a host immediately.
-   *
-   * This is mainly useful for `EventTarget` domain objects.
-   * DOM components usually prefer `mix={events.host()}`.
-   */
+  /** Immediately registers a domain `EventTarget` as the default host. */
   host?: EventTarget;
 };
 
@@ -168,14 +161,7 @@ export type CustomEventsEventElementProps<
       }
   );
 
-/**
- * Event-aware intrinsic element with declarative reactive attributes.
- *
- * Attribute projections receive the event. Read payloads from `event.detail`.
- * `mix`, `ref`, and static children stay normal Remix props. Use Remix's
- * `on(...)` mixin for native DOM handlers. Use `child` instead of static
- * children when the element's children need to change with the event.
- */
+/** Event-aware intrinsic element with declarative reactive attributes. */
 export type CustomEventsEventElement<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -247,87 +233,94 @@ export type CustomEventsBatchItem<Events extends EventDetails> =
   | NullDetailEventTypes<Events>
   | CustomEventsBatchEntry<Events>;
 
-/** Callable factory surface of a custom-events descriptor. */
-export type CustomEventsFactory<Events extends EventDetails> = {
-  /** Creates a batch from non-payload event names. */
+type CustomEventsOperationMode = "create" | "dispatch";
+
+type CustomEventsOperationPrefix<Mode extends CustomEventsOperationMode> =
+  Mode extends "dispatch" ? [target: EventTarget] : [];
+
+type CustomEventsBatchResult<Mode extends CustomEventsOperationMode> =
+  Mode extends "create" ? CustomEventsTransactionEvent : Promise<void>;
+
+type CustomEventsSingleResult<
+  Events extends EventDetails,
+  Type extends CustomEventsEventType<Events>,
+  Mode extends CustomEventsOperationMode,
+> = Mode extends "create" ? CustomEventsEvent<Events, Type> : Promise<void>;
+
+/**
+ * Shared call grammar for event creation and awaitable dispatch.
+ *
+ * Dispatch prepends a target and changes only the result type.
+ */
+type CustomEventsOperation<
+  Events extends EventDetails,
+  Mode extends CustomEventsOperationMode,
+> = {
   <const Types extends readonly [
     NullDetailEventTypes<Events>,
     ...Array<NullDetailEventTypes<Events>>,
   ]>(
-    types: Types & UniqueEventTypes<Types>,
-    init?: CustomEventsInit,
-  ): CustomEventsTransactionEvent;
+    ...args: [
+      ...CustomEventsOperationPrefix<Mode>,
+      types: Types & UniqueEventTypes<Types>,
+      init?: CustomEventsInit,
+    ]
+  ): CustomEventsBatchResult<Mode>;
 
-  /**
-   * Creates one transaction whose entries have independent detail and options.
-   *
-   * @example
-   * events([
-   *   "modelChanged",
-   *   { focusRequested: { options: { key: itemId } } },
-   *   { draftSet: { detail: value, options: { key: itemId } } },
-   * ])
-   */
   <const Entries extends readonly [
     CustomEventsBatchItem<Events>,
     ...CustomEventsBatchItem<Events>[],
   ]>(
-    entries: Entries & (
-      Extract<Entries[number], CustomEventsBatchEntry<Events>> extends never
-        ? never
-        : unknown
-    ),
-  ): CustomEventsTransactionEvent;
+    ...args: [
+      ...CustomEventsOperationPrefix<Mode>,
+      entries: Entries & (
+        Extract<Entries[number], CustomEventsBatchEntry<Events>> extends never
+          ? never
+          : unknown
+      ),
+    ]
+  ): CustomEventsBatchResult<Mode>;
 
-  /** Creates a dynamic batch from null-detail event names. */
   <const Types extends readonly NullDetailEventTypes<Events>[]>(
-    types: Types & (number extends Types["length"] ? unknown : never),
-    init?: CustomEventsInit,
-  ): CustomEventsTransactionEvent;
+    ...args: [
+      ...CustomEventsOperationPrefix<Mode>,
+      types: Types & (number extends Types["length"] ? unknown : never),
+      init?: CustomEventsInit,
+    ]
+  ): CustomEventsBatchResult<Mode>;
 
-  /**
-   * Creates a batch event for native `dispatchEvent(...)`.
-   *
-   * Dispatch this when several details change together. The event system will
-   * also notify listeners for each changed event type.
-   *
-   * @example
-   * target.dispatchEvent(events({ user, settings }));
-   */
-  (
+  (...args: [
+    ...CustomEventsOperationPrefix<Mode>,
     events: Partial<Events>,
     init?: CustomEventsInit,
-  ): CustomEventsTransactionEvent;
+  ]): CustomEventsBatchResult<Mode>;
 
-  /**
-   * Creates one null-detail product event. For string-union descriptors, the
-   * options bag may be passed as the second argument because no detail exists.
-   */
   <Type extends NullDetailEventTypes<Events> & CustomEventsEventType<Events>>(
-    type: Type,
-    init?: CustomEventsInit,
-  ): CustomEventsEvent<Events, Type>;
+    ...args: [
+      ...CustomEventsOperationPrefix<Mode>,
+      type: Type,
+      init?: CustomEventsInit,
+    ]
+  ): CustomEventsSingleResult<Events, Type, Mode>;
 
-  /**
-   * Creates this product event for native `dispatchEvent(...)`.
-   *
-   * Dispatch product events on the element or object where the change happened.
-   * @example
-   * form.dispatchEvent(events("actionSubmitted"));
-   *
-   * @example
-   * form.dispatchEvent(events("actionErrored", { error }, { signal }));
-   */
   <
     Type extends keyof Events & string & CustomEventsEventType<Events>,
     Detail extends Events[Type],
   >(
-    type: Type,
-    detail: ExactEventDetail<Events[Type], Detail>,
-    init?: CustomEventsInit,
-  ): CustomEventsEvent<Events, Type>;
-
+    ...args: [
+      ...CustomEventsOperationPrefix<Mode>,
+      type: Type,
+      detail: ExactEventDetail<Events[Type], Detail>,
+      init?: CustomEventsInit,
+    ]
+  ): CustomEventsSingleResult<Events, Type, Mode>;
 };
+
+export type CustomEventsFactory<Events extends EventDetails> =
+  CustomEventsOperation<Events, "create">;
+
+export type CustomEventsDispatch<Events extends EventDetails> =
+  CustomEventsOperation<Events, "dispatch">;
 
 export type CustomEventsEventElementGroups<Events extends EventDetails> = {
   [Type in CustomEventsEventType<Events>]: CustomEventsEventElements<
@@ -336,19 +329,12 @@ export type CustomEventsEventElementGroups<Events extends EventDetails> = {
   >;
 };
 
+type CustomEventsTypeGroup<Events extends EventDetails> = readonly [
+  CustomEventsEventType<Events>,
+  ...CustomEventsEventType<Events>[],
+];
+
 export type CustomEventsListenerEvent<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-  HostElement extends Element,
-> = CustomEventsEvent<Events, Type> & {
-  readonly currentTarget: HostElement;
-};
-
-export type CustomEventsTargetListenerOptions = {
-  signal?: AbortSignal;
-};
-
-export type CustomEventsTargetListenerEvent<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
   Target extends EventTarget,
@@ -358,12 +344,16 @@ export type CustomEventsTargetListenerEvent<
   }
   : never;
 
-type CustomEventsTargetListener<
+export type CustomEventsTargetListenerOptions = {
+  signal?: AbortSignal;
+};
+
+type CustomEventsListener<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
   Target extends EventTarget,
 > = (
-  event: CustomEventsTargetListenerEvent<Events, Type, Target>,
+  event: CustomEventsListenerEvent<Events, Type, Target>,
   signal: AbortSignal,
 ) => void | Promise<void>;
 
@@ -372,14 +362,14 @@ export type CustomEventsTargetListeners<
   Target extends EventTarget,
 > =
   & Partial<{
-    [Type in CustomEventsEventType<Events>]: CustomEventsTargetListener<
+    [Type in CustomEventsEventType<Events>]: CustomEventsListener<
       Events,
       Type,
       Target
     >;
   }>
   & {
-    [CUSTOM_EVENTS_ALL]?: CustomEventsTargetListener<
+    [CUSTOM_EVENTS_ALL]?: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
       Target
@@ -387,221 +377,106 @@ export type CustomEventsTargetListeners<
   };
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
-  /**
-   * Attaches a listener map directly to the configured host.
-   *
-   * Requires `customEvents({ host })` at runtime.
-   */
+  /** Direct subscriptions using the configured host. */
   (
     listeners: CustomEventsTargetListeners<Events, EventTarget>,
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /**
-   * Attaches a wildcard listener directly to the configured host.
-   *
-   * The options argument distinguishes this from the element-mixin form.
-   */
   (
     type: typeof CUSTOM_EVENTS_ALL,
-    listener: CustomEventsTargetListener<
+    listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
       EventTarget
     >,
     options: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /**
-   * Attaches a selected event group directly to the configured host.
-   *
-   * The options argument distinguishes this from the element-mixin form.
-   */
-  <
-    const Types extends readonly [
-      CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ],
-  >(
+  <const Types extends CustomEventsTypeGroup<Events>>(
     types: Types,
-    listener: CustomEventsTargetListener<Events, Types[number], EventTarget>,
+    listener: CustomEventsListener<Events, Types[number], EventTarget>,
     options: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /**
-   * Attaches one listener directly to the configured host.
-   *
-   * The options argument distinguishes this from the element-mixin form.
-   */
   <Type extends CustomEventsEventType<Events>>(
     type: Type,
-    listener: CustomEventsTargetListener<Events, Type, EventTarget>,
+    listener: CustomEventsListener<Events, Type, EventTarget>,
     options: CustomEventsTargetListenerOptions,
   ): () => void;
 
-  /** Attaches named and wildcard listeners directly to an EventTarget. */
+  /** Direct subscriptions using an explicit target. */
   <Target extends EventTarget>(
     target: Target,
     listeners: CustomEventsTargetListeners<Events, Target>,
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /** Attaches one listener to every descriptor event on a target. */
   <Target extends EventTarget>(
     target: Target,
     type: typeof CUSTOM_EVENTS_ALL,
-    listener: CustomEventsTargetListener<
+    listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
       Target
     >,
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /** Attaches one listener to a selected event group on a target. */
   <
     Target extends EventTarget,
-    const Types extends readonly [
-      CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ],
+    const Types extends CustomEventsTypeGroup<Events>,
   >(
     target: Target,
     types: Types,
-    listener: CustomEventsTargetListener<Events, Types[number], Target>,
+    listener: CustomEventsListener<Events, Types[number], Target>,
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
-
-  /** Attaches one precisely typed listener directly to an EventTarget. */
   <
     Target extends EventTarget,
     Type extends CustomEventsEventType<Events>,
   >(
     target: Target,
     type: Type,
-    listener: CustomEventsTargetListener<Events, Type, Target>,
+    listener: CustomEventsListener<Events, Type, Target>,
     options?: CustomEventsTargetListenerOptions,
   ): () => void;
 
-  /** Reacts to every descriptor event on the element that owns this mixin. */
+  /** Element-scoped effects and event-element groups. */
   <HostElement extends Element = Element>(
     type: typeof CUSTOM_EVENTS_ALL,
-    listener: (
-      event: CustomEventsListenerEvent<
-        Events,
-        CustomEventsEventType<Events>,
-        HostElement
-      >,
-      signal: AbortSignal,
-    ) => void | Promise<void>,
-  ): MixinDescriptor<HostElement, any>;
-
-  /** Creates event-aware elements driven by any listed event. */
-  <
-    const Types extends readonly [
+    listener: CustomEventsListener<
+      Events,
       CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ],
-  >(
+      HostElement
+    >,
+  ): MixinDescriptor<HostElement, any>;
+  <const Types extends CustomEventsTypeGroup<Events>>(
     types: Types,
   ): CustomEventsEventElements<Events, Types[number]>;
-
-  /** Reacts to any listed event on the element that owns this mixin. */
   <
     HostElement extends Element = Element,
-    const Types extends readonly [
-      CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ] = readonly [
-      CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ],
+    const Types extends CustomEventsTypeGroup<Events> =
+      CustomEventsTypeGroup<Events>,
   >(
     types: Types,
-    listener: (
-      event: CustomEventsListenerEvent<
-        Events,
-        Types[number],
-        HostElement
-      >,
-      signal: AbortSignal,
-    ) => void | Promise<void>,
+    listener: CustomEventsListener<Events, Types[number], HostElement>,
   ): MixinDescriptor<HostElement, any>;
-
-  /**
-   * Reacts to one custom event on the element that owns this mixin.
-   *
-   * Events are observed locally on this element, or from the nearest `host()`
-   * boundary when one exists. The callback receives the same
-   * `currentTarget` shape as Remix `on(...)`, so DOM effects can stay local to
-   * the element. For keyed events, a non-empty `currentTarget.id` is its routing
-   * address; mismatched listeners are skipped, while listeners without an `id`
-   * continue to observe every key.
-   *
-   * When this mixin is rendered inside an event-aware element such as
-   * `<events.on.someEvent.form ...>`,
-   * matching events from the same dispatch transaction run after that event
-   * element commits. Elsewhere, callbacks run immediately like normal DOM
-   * listeners.
-   *
-   * Use an event-aware element for attributes such as `disabled` and `class`.
-   * Keep this mixin for post-render DOM work:
-   *
-   * @example
-   * <input mix={events.on("saveFailed", ({ currentTarget }) => {
-   *   currentTarget.focus();
-   * })} />
-   */
   <
     HostElement extends Element = Element,
     Type extends CustomEventsEventType<Events> = CustomEventsEventType<Events>,
   >(
     type: Type,
-    listener: (
-      event: CustomEventsListenerEvent<Events, Type, HostElement>,
-      signal: AbortSignal,
-    ) => void | Promise<void>,
+    listener: CustomEventsListener<Events, Type, HostElement>,
   ): MixinDescriptor<HostElement, any>;
 } & CustomEventsEventElementGroups<Events>;
 
-export type HostableCustomEventsDescriptor<Events extends EventDetails> = {
-  /**
-   * Makes an element the local event boundary for this event set.
-   *
-   * Use it on a widget root when sibling branches should share events through
-   * that root. Use it on repeated rows or forms when each instance should keep
-   * its non-composed events independent. Events stay inside the host unless
-   * they are created with `{ composed: true }`.
-   *
-   * Same-element delivery does not need a host. Add one when sibling branches
-   * need to share events; no implicit window route is installed.
-   */
-  host<HostElement extends Element = Element>(): MixinDescriptor<
-    HostElement,
-    any
-  >;
-};
-
 export type CustomEventsDescriptor<Events extends EventDetails> =
-  /**
-   * Creates a custom event for native `dispatchEvent(...)`.
-   *
-   * Call the descriptor with a name and detail for one event, an array of
-   * null-detail names, or a detail map for a coordinated batch.
-   */
   CustomEventsFactory<Events> &
   {
-    /**
-     * Selects named events for effects or event-aware elements.
-     *
-     * Use `events.on("name", listener)` for one post-render effect,
-     * `events.on("*", listener)` for every event, and
-     * `events.on.name.tag` for a projection of one event. Use `<events.tag>`
-     * when a projection observes every declared event. Pass an `EventTarget`
-     * first to attach direct named, grouped, wildcard, or listener-map
-     * subscriptions.
-     */
+    /** Dispatches and resolves after projections and listeners settle. */
+    dispatch: CustomEventsDispatch<Events>;
+    /** Selects events for effects, direct listeners, or event elements. */
     on: CustomEventsOnFunction<Events>;
+    /** Makes an element the local boundary for this descriptor. */
+    host<HostElement extends Element = Element>(): MixinDescriptor<
+      HostElement,
+      any
+    >;
   } &
-  HostableCustomEventsDescriptor<Events> &
   CustomEventsEventElements<Events, CustomEventsEventType<Events>>;

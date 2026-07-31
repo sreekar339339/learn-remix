@@ -1,6 +1,5 @@
 import { clientEntry, css, Frame, type Handle } from "remix/ui";
 import { AddTodo } from "./addTodo.tsx";
-import { Glyph } from "remix/ui/glyph";
 import type { Todo } from "../../data/todolist.ts";
 import { routes } from "../../routes.ts";
 import { customEvents } from "../utils/customEvents/index.tsx";
@@ -36,7 +35,17 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
         src={routes.todolist.todos.index.href()}
         fallback={
           <div mix={css({ display: "flex", alignItems: "center" })}>
-            <Glyph name="spinner" height={24} width={24} />
+            <span
+              aria-hidden="true"
+              mix={css({
+                width: 18,
+                height: 18,
+                border: "2px solid currentColor",
+                borderRightColor: "transparent",
+                borderRadius: "50%",
+                animation: "todoActionSpin 0.8s linear infinite",
+              })}
+            />
             &nbsp;Loading todos...
           </div>
         }

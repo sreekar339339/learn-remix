@@ -70,7 +70,7 @@ export const customEventsOnMixin = createMixin<
             (event) => {
               reentry?.abort();
               reentry = new AbortController();
-              void listener(
+              return listener(
                 createListenerEvent(event, element),
                 reentry.signal,
               );

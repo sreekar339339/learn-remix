@@ -14,7 +14,7 @@ type ElementSubscription = {
 
 type TargetSubscription = {
   target: EventTarget;
-  notify(event: CustomEvent): void;
+  notify(event: CustomEvent): unknown;
 };
 
 export type CustomEventsBatchRuntimeEntry = {
@@ -54,6 +54,7 @@ export function createListenerEvent(
 type ProductEventMetadata = {
   entries: CustomEventsBatchRuntimeEntry[];
   processed: boolean;
+  completion?: Promise<void>;
 };
 
 type TransactionEvent = {
@@ -98,6 +99,11 @@ export class CustomEventsRuntime {
     if (detail === undefined) defineEventValue(event, "detail", undefined);
     this.#eventMetadata.set(event, { entries, processed: false });
     return event;
+  }
+
+  dispatch(target: EventTarget, event: Event) {
+    target.dispatchEvent(event);
+    return this.#eventMetadata.get(event)?.completion ?? Promise.resolve();
   }
 
   registerElementSubscription(subscription: ElementSubscription) {
@@ -186,12 +192,21 @@ export class CustomEventsRuntime {
       ...(entry.key === undefined ? {} : { key: entry.key }),
     }));
 
-    // Direct EventTarget subscriptions retain native synchronous listener
-    // timing. Element effects still wait for projection commits.
+    // Direct EventTarget subscriptions retain native synchronous invocation
+    // timing. Their returned promises join transaction completion without
+    // delaying projection commits.
+    let directListenerResults: unknown[] = [];
     for (let subscription of [...this.#targetSubscriptions]) {
       if (subscription.target !== originTarget) continue;
-      for (let { event } of events) subscription.notify(event);
+      for (let { event } of events) {
+        try {
+          directListenerResults.push(subscription.notify(event));
+        } catch (error) {
+          directListenerResults.push(Promise.reject(error));
+        }
+      }
     }
+    let directListenersSettled = Promise.all(directListenerResults);
 
     let projections: Array<{
       subscription: ElementSubscription;
@@ -224,10 +239,11 @@ export class CustomEventsRuntime {
       ? commit(sourceProjections).then(() => commit(remainingProjections))
       : commit(remainingProjections);
 
-    void projectionsCommitted.then(() => {
+    let projectionsAndEffectsSettled = projectionsCommitted.then(() => {
       let effects = [...this.#elementSubscriptions].filter(
         (subscription) => subscription.phase === "effect",
       );
+      let effectResults: unknown[] = [];
       for (let transactionEvent of events) {
         for (let subscription of effects) {
           if (
@@ -238,11 +254,23 @@ export class CustomEventsRuntime {
               originTarget,
             )
           ) {
-            subscription.notify(transactionEvent.event);
+            try {
+              effectResults.push(
+                subscription.notify(transactionEvent.event),
+              );
+            } catch (error) {
+              effectResults.push(Promise.reject(error));
+            }
           }
         }
       }
+      return Promise.all(effectResults);
     });
+
+    return Promise.all([
+      directListenersSettled,
+      projectionsAndEffectsSettled,
+    ]).then(() => {});
   }
 
   #process(event: Event, fallbackScope: EventTarget, hosted: boolean) {
@@ -257,7 +285,15 @@ export class CustomEventsRuntime {
     let originScope = this.#scopeFor(
       isElement(originTarget) ? originTarget : undefined,
     ) ?? fallbackScope;
-    this.#notify(metadata.entries, originScope, originTarget);
+    try {
+      metadata.completion = this.#notify(
+        metadata.entries,
+        originScope,
+        originTarget,
+      );
+    } catch (error) {
+      metadata.completion = Promise.reject(error);
+    }
   }
 
   registerDispatchTarget(target: EventTarget, hosted = false) {

@@ -15,6 +15,7 @@ import {
 import type {
   CustomEventsOptions,
   CustomEventsBatchItem,
+  CustomEventsDispatch,
   CustomEventsFactory,
   CustomEventsDescriptor,
   CustomEventsEventElements,
@@ -28,7 +29,6 @@ import type {
 
 const customEventsInitKeys = new Set([
   "bubbles",
-  "cancelable",
   "composed",
   "key",
   "signal",
@@ -36,13 +36,25 @@ const customEventsInitKeys = new Set([
 
 function isCustomEventsInit(value: unknown): value is CustomEventsInit {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.keys(value).every((key) => customEventsInitKeys.has(key));
+  if (!Object.keys(value).every((key) => customEventsInitKeys.has(key))) {
+    return false;
+  }
+  return true;
 }
 
-function getEventInit(init: EventInit | undefined): EventInit {
+function assertNonCancelable(init: object | undefined) {
+  if (init && Object.hasOwn(init, "cancelable")) {
+    throw new TypeError(
+      "customEvents describe completed facts and cannot be cancelable.",
+    );
+  }
+}
+
+function getEventInit(init: CustomEventsInit | undefined): EventInit {
+  assertNonCancelable(init);
   return {
     bubbles: init?.bubbles ?? true,
-    cancelable: init?.cancelable ?? true,
+    cancelable: false,
     ...(init?.composed === undefined ? {} : { composed: init.composed }),
   };
 }
@@ -223,7 +235,7 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
         reentry = new AbortController();
         reentries.add(reentry);
 
-        void listener(createListenerEvent(event, target), reentry.signal);
+        return listener(createListenerEvent(event, target), reentry.signal);
       };
     }
 
@@ -239,8 +251,11 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     let unregisterSubscription = state.registerTargetSubscription({
       target,
       notify(event) {
-        invokers.get(event.type)?.(event);
-        invokeWildcard?.(event);
+        let results = [
+          invokers.get(event.type)?.(event),
+          invokeWildcard?.(event),
+        ];
+        return Promise.all(results);
       },
     });
 
@@ -444,7 +459,16 @@ export function createCustomEventsDescriptor<Events extends EventDetails>(
     Events,
     CustomEventsEventType<Events>
   >(CUSTOM_EVENTS_ALL, state);
+  let dispatch = ((
+    target: EventTarget,
+    ...args: unknown[]
+  ) => {
+    let createEvent = events as (...args: unknown[]) => Event;
+    let event = createEvent(...args);
+    return state.dispatch(target, event);
+  }) as CustomEventsDispatch<Events>;
   let descriptorTarget = Object.assign(events, {
+    dispatch,
     on,
     host() {
       return ref((target, signal) => {
