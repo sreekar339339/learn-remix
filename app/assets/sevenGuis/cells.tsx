@@ -1,4 +1,4 @@
-import { clientEntry, css, on, ref } from "remix/ui";
+import { clientEntry, css, on } from "remix/ui";
 import { customEvents } from "../utils/customEvents/index.tsx";
 import { taskCss } from "./styles.ts";
 
@@ -6,10 +6,6 @@ const columns = ["A", "B", "C", "D", "E", "F"] as const;
 const rows = Array.from({ length: 12 }, (_, index) => index);
 type CellId = `${(typeof columns)[number]}${number}`;
 type Values = Partial<Record<CellId, string>>;
-type Sheet = {
-  formulas: Values;
-  values: Values;
-};
 
 function cellId(column: (typeof columns)[number], row: number): CellId {
   return `${column}${row}`;
@@ -85,15 +81,19 @@ let localEvtOpts = { bubbles: false };
 export const SevenGuisCells = clientEntry(
   import.meta.url,
   function SevenGuisCells() {
-    let events = customEvents<
-      "sheetRecalculated" | "cellFocusRequested" | { cellDraftSet: string }
-    >();
-    let cellValueEvents = events.on(["sheetRecalculated", "cellDraftSet"]);
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
-    let sheet: Sheet = { formulas, values: calculate(formulas) };
+    let sheet = customEvents<{
+      values: Values;
+      focusTargetId: CellId;
+      cellDrafted: string;
+    }>().withState({
+      values: calculate(formulas),
+      focusTargetId: cellId("A", 0),
+    });
+    let cellValueEvents = sheet.events.on(["values", "cellDrafted"]);
 
     return () => (
-      <section mix={[taskCss, events.host()]}>
+      <section mix={[taskCss]}>
         <h2>Cells</h2>
         <div
           mix={css({
@@ -129,30 +129,29 @@ export const SevenGuisCells = clientEntry(
                         id={id}
                         type="text"
                         value={(event) =>
-                          event?.type === "cellDraftSet"
+                          event?.type === "cellDrafted"
                             ? event.detail
                             : sheet.values[id]
                         }
                         mix={[
                           cellCss,
-                          events.on(
-                            "cellFocusRequested",
+                          sheet.events.on(
+                            "focusTargetId",
                             ({ currentTarget }) => {
                               currentTarget.focus();
                             },
                           ),
                           on("blur", ({ currentTarget }) => {
-                            sheet.formulas[id] = currentTarget.value;
-                            sheet.values = calculate(sheet.formulas);
-                            currentTarget.dispatchEvent(
-                              events("sheetRecalculated"),
-                            );
+                            formulas[id] = currentTarget.value;
+                            sheet.patch({
+                              values: calculate(formulas),
+                            });
                           }),
                           on("focus", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              events(
-                                "cellDraftSet",
-                                sheet.formulas[id] ?? "",
+                              sheet.events(
+                                "cellDrafted",
+                                formulas[id] ?? "",
                                 localEvtOpts,
                               ),
                             );
@@ -160,8 +159,8 @@ export const SevenGuisCells = clientEntry(
                           }),
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              events(
-                                "cellDraftSet",
+                              sheet.events(
+                                "cellDrafted",
                                 currentTarget.value,
                                 localEvtOpts,
                               ),
@@ -172,8 +171,11 @@ export const SevenGuisCells = clientEntry(
                             let nextId = adjacentCellId(column, row, event.key);
                             if (nextId === undefined) return;
                             event.preventDefault();
-                            event.currentTarget.dispatchEvent(
-                              events("cellFocusRequested", { key: nextId }),
+                            sheet.patch(
+                              {
+                                focusTargetId: nextId,
+                              },
+                              { key: nextId },
                             );
                           }),
                         ]}

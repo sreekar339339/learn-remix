@@ -161,7 +161,26 @@ describe("7GUIs custom-event choreography", () => {
     await settle(result);
     assert.match(
       result.container.textContent ?? "",
-      /You have booked a return flight from/,
+      /You have booked a return flight from 2099-01-01 to 2099-12-31/,
+    );
+
+    await result.act(() => {
+      currentReturnDate.value = "2100-12-31";
+      currentReturnDate.dispatchEvent(
+        new InputEvent("input", { bubbles: true }),
+      );
+    });
+    await settle(result);
+    assert.match(
+      result.container.textContent ?? "",
+      /You have booked a return flight from 2099-01-01 to 2099-12-31/,
+    );
+
+    await result.act(() => book.click());
+    await settle(result);
+    assert.match(
+      result.container.textContent ?? "",
+      /You have booked a return flight from 2099-01-01 to 2100-12-31/,
     );
   });
 
@@ -321,6 +340,10 @@ describe("7GUIs custom-event choreography", () => {
       (result.container.querySelector("form") as HTMLFormElement).hidden,
       false,
     );
+    assert.equal(
+      result.container.querySelector("circle")?.getAttribute("fill"),
+      "#d4d4d8",
+    );
     let diameter = result.$('form input[type="range"]') as HTMLInputElement;
     assert.equal(diameter.value, "30");
     await result.act(() => {
@@ -341,6 +364,10 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(
       (result.container.querySelector("form") as HTMLFormElement).hidden,
       true,
+    );
+    assert.equal(
+      result.container.querySelector("circle")?.getAttribute("fill"),
+      "none",
     );
 
     await result.act(() => undo.click());
@@ -407,6 +434,16 @@ describe("7GUIs custom-event choreography", () => {
     assert.equal(circles[0].getAttribute("r"), "30");
     assert.equal(circles[1], secondCircle);
     assert.equal(circles[1].getAttribute("r"), "15");
+
+    await result.act(() => {
+      diameter.value = "30";
+      diameter.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    await settle(result);
+
+    circles = result.container.querySelectorAll("circle");
+    assert.equal(circles[0].getAttribute("r"), "15");
+    assert.equal(circles[1], secondCircle);
   });
 
   it("keeps every cell editable and recalculates formulas", async (t) => {

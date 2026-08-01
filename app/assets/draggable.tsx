@@ -89,9 +89,7 @@ export const draggable_ = createMixin<
     return (
       <handle.element
         {...props}
-        mix={[
-          on("pointerdown", (event) => startDrag(event)),
-        ]}
+        mix={on("pointerdown", (event) => startDrag(event))}
       />
     );
   };

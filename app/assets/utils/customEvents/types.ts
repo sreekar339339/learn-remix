@@ -5,12 +5,16 @@ export type EventDetails = Record<string, unknown>;
 /** Payload maps and null-detail event names, which may be combined in a union. */
 export type CustomEventsDefinition = EventDetails | string;
 
-type CustomEventsDefinitionMapKeys<Definition> =
-  Definition extends EventDetails ? keyof Definition & string : never;
+type EventNames<Definition> = Definition extends string ? Definition
+  : Definition extends EventDetails ? keyof Definition & string
+  : never;
 
-type CustomEventsDefinitionKeys<Definition> =
-  | Extract<Definition, string>
-  | CustomEventsDefinitionMapKeys<Definition>;
+type EventDetail<Definition, Type extends string> =
+  Definition extends EventDetails ? Type extends keyof Definition
+    ? Definition[Type]
+    : never
+    : Definition extends Type ? null
+    : never;
 
 type NativeDOMEventName = Extract<
   | keyof GlobalEventHandlersEventMap
@@ -22,7 +26,7 @@ type NativeDOMEventName = Extract<
 >;
 
 type NativeNamesIn<Definition> = Extract<
-  CustomEventsDefinitionKeys<Definition>,
+  EventNames<Definition>,
   NativeDOMEventName
 >;
 
@@ -37,13 +41,6 @@ export type CustomEventsFactoryArgs<Definition> =
     ? [options?: CustomEventsOptions]
     : [error: NativeEventNameError<NativeNamesIn<Definition>>];
 
-type CustomEventsDefinitionMapDetail<Definition, Type extends string> =
-  Definition extends EventDetails
-    ? Type extends keyof Definition
-      ? Definition[Type]
-      : never
-    : never;
-
 /**
  * Normalizes signal names and payload maps into one event-detail map.
  *
@@ -53,10 +50,7 @@ type CustomEventsDefinitionMapDetail<Definition, Type extends string> =
 export type NormalizeCustomEventsDefinition<
   Definition extends CustomEventsDefinition,
 > = {
-  [Type in CustomEventsDefinitionKeys<Definition>]:
-    Type extends CustomEventsDefinitionMapKeys<Definition>
-      ? CustomEventsDefinitionMapDetail<Definition, Type>
-      : null;
+  [Type in EventNames<Definition>]: EventDetail<Definition, Type>;
 };
 
 /**
@@ -82,10 +76,7 @@ export type CustomEventsOptions = {
 
 export type CustomEventsEventType<
   Definition extends CustomEventsDefinition,
-> = Extract<
-  Exclude<CustomEventsDefinitionKeys<Definition>, "*" | NativeDOMEventName>,
-  string
->;
+> = Exclude<EventNames<Definition>, "*" | NativeDOMEventName>;
 
 /** Canonical event map for descriptor consumers and TypedEventTarget. */
 export type CustomEventsEventMap<
@@ -96,19 +87,12 @@ export type CustomEventsEventMap<
     & { readonly type: Type };
 };
 
-type CustomEventsElementEvent<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> =
-  | CustomEventsEventMap<Events>[Type]
-  | undefined;
-
 type CustomEventsElementProjection<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
   Value,
 > = (
-  event: CustomEventsElementEvent<Events, Type>,
+  event: CustomEventsEventMap<Events>[Type] | undefined,
 ) => Value;
 
 type CustomEventsReactiveElementProps<
@@ -134,13 +118,6 @@ type CustomEventsIntrinsicChildren<
   Tag extends keyof JSX.IntrinsicElements,
 > = Props<Tag> extends { children?: infer Children } ? Children : RemixNode;
 
-type CustomEventsEventElementRender<
-  Events extends EventDetails,
-  Type extends CustomEventsEventType<Events>,
-> = (
-  event: CustomEventsElementEvent<Events, Type>,
-) => RemixNode;
-
 /** Props for an intrinsic element driven by one descriptor event. */
 export type CustomEventsEventElementProps<
   Events extends EventDetails,
@@ -151,10 +128,10 @@ export type CustomEventsEventElementProps<
     | {
         children?: CustomEventsIntrinsicChildren<Tag>;
         child?: never;
-      }
+    }
     | {
         children?: never;
-        child: CustomEventsEventElementRender<Events, Type>;
+        child: CustomEventsElementProjection<Events, Type, RemixNode>;
       }
   );
 
@@ -177,16 +154,6 @@ export type CustomEventsEventElements<
     Tag
   >;
 };
-
-type ExactEventDetail<Expected, Actual> = Actual extends Expected
-  ? Expected extends object
-    ? Actual extends object
-      ? Exclude<keyof Actual, keyof Expected> extends never
-        ? Actual
-        : never
-      : Actual
-  : Actual
-  : never;
 
 type NullDetailEventTypes<Events extends EventDetails> = {
   [Type in keyof Events & string]: [Events[Type]] extends [null]
@@ -219,6 +186,8 @@ export type CustomEventsBatchItem<Events extends EventDetails> =
   | NullDetailEventTypes<Events>
   | CustomEventsBatchEntry<Events>;
 
+type NonEmptyArray<Value> = readonly [Value, ...Value[]];
+
 type CustomEventsOperationMode = "create" | "dispatch";
 
 type CustomEventsOperationPrefix<Mode extends CustomEventsOperationMode> =
@@ -244,28 +213,10 @@ type CustomEventsOperation<
   Events extends EventDetails,
   Mode extends CustomEventsOperationMode,
 > = {
-  <const Types extends readonly [
-    NullDetailEventTypes<Events>,
-    ...Array<NullDetailEventTypes<Events>>,
-  ]>(
+  <const Entries extends NonEmptyArray<CustomEventsBatchItem<Events>>>(
     ...args: [
       ...CustomEventsOperationPrefix<Mode>,
-      types: Types,
-      init?: CustomEventsInit,
-    ]
-  ): CustomEventsBatchResult<Mode>;
-
-  <const Entries extends readonly [
-    CustomEventsBatchItem<Events>,
-    ...CustomEventsBatchItem<Events>[],
-  ]>(
-    ...args: [
-      ...CustomEventsOperationPrefix<Mode>,
-      entries: Entries & (
-        Extract<Entries[number], CustomEventsBatchEntry<Events>> extends never
-          ? never
-          : unknown
-      ),
+      entries: Entries,
       init?: CustomEventsInit,
     ]
   ): CustomEventsBatchResult<Mode>;
@@ -292,14 +243,11 @@ type CustomEventsOperation<
     ]
   ): CustomEventsSingleResult<Events, Type, Mode>;
 
-  <
-    Type extends keyof Events & string & CustomEventsEventType<Events>,
-    Detail extends Events[Type],
-  >(
+  <Type extends keyof Events & string & CustomEventsEventType<Events>>(
     ...args: [
       ...CustomEventsOperationPrefix<Mode>,
       type: Type,
-      detail: ExactEventDetail<Events[Type], Detail>,
+      detail: Events[Type],
       init?: CustomEventsInit,
     ]
   ): CustomEventsSingleResult<Events, Type, Mode>;
@@ -311,17 +259,12 @@ export type CustomEventsFactory<Events extends EventDetails> =
 export type CustomEventsDispatch<Events extends EventDetails> =
   CustomEventsOperation<Events, "dispatch">;
 
-export type CustomEventsEventElementGroups<Events extends EventDetails> = {
+type CustomEventsEventElementGroups<Events extends EventDetails> = {
   [Type in CustomEventsEventType<Events>]: CustomEventsEventElements<
     Events,
     Type
   >;
 };
-
-type CustomEventsTypeGroup<Events extends EventDetails> = readonly [
-  CustomEventsEventType<Events>,
-  ...CustomEventsEventType<Events>[],
-];
 
 export type CustomEventsListenerEvent<
   Events extends EventDetails,
@@ -355,16 +298,19 @@ export type CustomEventsOnFunction<Events extends EventDetails> = {
       HostElement
     >,
   ): MixinDescriptor<HostElement, any>;
-  <const Types extends CustomEventsTypeGroup<Events>>(
-    types: Types,
-  ): CustomEventsEventElements<Events, Types[number]>;
   <
-    HostElement extends Element = Element,
-    const Types extends CustomEventsTypeGroup<Events> =
-      CustomEventsTypeGroup<Events>,
+    const Type extends CustomEventsEventType<Events>,
+    const Rest extends readonly CustomEventsEventType<Events>[],
   >(
-    types: Types,
-    listener: CustomEventsListener<Events, Types[number], HostElement>,
+    types: readonly [Type, ...Rest],
+  ): CustomEventsEventElements<Events, Type | Rest[number]>;
+  <
+    const Type extends CustomEventsEventType<Events>,
+    const Rest extends readonly CustomEventsEventType<Events>[],
+    HostElement extends Element = Element,
+  >(
+    types: readonly [Type, ...Rest],
+    listener: CustomEventsListener<Events, Type | Rest[number], HostElement>,
   ): MixinDescriptor<HostElement, any>;
   <
     HostElement extends Element = Element,
@@ -395,19 +341,26 @@ export type CustomEventsObserveFunction<Events extends EventDetails> = {
   ): () => void;
 };
 
-export type CustomEventsDescriptor<Events extends EventDetails> =
-  CustomEventsFactory<Events> &
-  {
+/** The shared listener and event-aware-element surface of a descriptor. */
+export type CustomEventsConsumer<Events extends EventDetails> = {
+  /** Selects events for element-bound projections or post-projection effects. */
+  on: CustomEventsOnFunction<Events>;
+  /** Observes every descriptor-owned event on one exact target. */
+  observe: CustomEventsObserveFunction<Events>;
+  /** Makes an element the local boundary for this descriptor. */
+  host<HostElement extends Element = Element>(): MixinDescriptor<
+    HostElement,
+    any
+  >;
+} & CustomEventsEventElements<Events, CustomEventsEventType<Events>>;
+
+export type CustomEventsDescriptor<
+  ProducedEvents extends EventDetails,
+  ConsumedEvents extends EventDetails = ProducedEvents,
+> =
+  & CustomEventsFactory<ProducedEvents>
+  & {
     /** Dispatches and resolves after projections, effects, and observers settle. */
-    dispatch: CustomEventsDispatch<Events>;
-    /** Selects events for element-bound projections or post-projection effects. */
-    on: CustomEventsOnFunction<Events>;
-    /** Observes every descriptor-owned event on one exact target. */
-    observe: CustomEventsObserveFunction<Events>;
-    /** Makes an element the local boundary for this descriptor. */
-    host<HostElement extends Element = Element>(): MixinDescriptor<
-      HostElement,
-      any
-    >;
-  } &
-  CustomEventsEventElements<Events, CustomEventsEventType<Events>>;
+    dispatch: CustomEventsDispatch<ProducedEvents>;
+  }
+  & CustomEventsConsumer<ConsumedEvents>;

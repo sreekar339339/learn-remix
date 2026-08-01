@@ -24,12 +24,8 @@ function visiblePeople(people: Array<Person>, prefix: string) {
 
 export const SevenGuisCrud = clientEntry(
   import.meta.url,
-  function SevenGuisCrud(handle) {
-    let events = customEvents<
-      "filterApplied" | "personSelected" | "draftEdited" | "peopleChanged"
-    >();
-    let peopleViewEvents = events.on(["filterApplied", "personSelected"]);
-    let model: CrudModel = {
+  function SevenGuisCrud() {
+    let model = customEvents<CrudModel>().withState({
       people: [
         { id: 1, name: "Hans", surname: "Emil" },
         { id: 2, name: "Max", surname: "Mustermann" },
@@ -39,16 +35,12 @@ export const SevenGuisCrud = clientEntry(
       selectedId: null,
       draft: { name: "", surname: "" },
       nextId: 4,
-    };
+    });
+    let peopleView = model.events.on(["people", "prefix", "selectedId"]);
+    let draftView = model.events.on(["draft", "selectedId"]);
 
     return () => (
-      <section
-        mix={[
-          taskCss,
-          events.host(),
-          events.on("peopleChanged", () => handle.update()),
-        ]}
-      >
+      <section mix={taskCss}>
         <h2>CRUD</h2>
         <label>
           Filter prefix{" "}
@@ -58,8 +50,7 @@ export const SevenGuisCrud = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                model.prefix = currentTarget.value;
-                currentTarget.dispatchEvent(events("filterApplied"));
+                model.patch({ prefix: currentTarget.value });
               }),
             ]}
           />
@@ -74,7 +65,7 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <peopleViewEvents.select
+          <peopleView.select
             size={7}
             aria-label="People"
             value={() => model.selectedId ?? ""}
@@ -85,23 +76,23 @@ export const SevenGuisCrud = clientEntry(
                   (person) => person.id === Number(currentTarget.value),
                 );
                 if (!selected) return;
-                model.selectedId = selected.id;
-                model.draft.name = selected.name;
-                model.draft.surname = selected.surname;
-                currentTarget.dispatchEvent(
-                  events(["personSelected", "draftEdited"]),
-                );
+                model.patch({
+                  selectedId: selected.id,
+                  draft: { name: selected.name, surname: selected.surname },
+                });
               }),
             ]}
             child={() =>
-              visiblePeople(model.people, model.prefix).map((person) => (
-                <option value={person.id}>
-                  {person.surname}, {person.name}
-                </option>
-              ))
+              visiblePeople(model.people, model.prefix).map(
+                (person) => (
+                  <option value={person.id}>
+                    {person.surname}, {person.name}
+                  </option>
+                ),
+              )
             }
           />
-          <events.on.draftEdited.div
+          <draftView.div
             mix={css({ display: "grid", gap: 8 })}
             child={() => (
               <>
@@ -113,8 +104,12 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.draft.name = currentTarget.value;
-                        currentTarget.dispatchEvent(events("draftEdited"));
+                        model.patch({
+                          draft: {
+                            ...model.draft,
+                            name: currentTarget.value,
+                          },
+                        });
                       }),
                     ]}
                   />
@@ -127,8 +122,12 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.draft.surname = currentTarget.value;
-                        currentTarget.dispatchEvent(events("draftEdited"));
+                        model.patch({
+                          draft: {
+                            ...model.draft,
+                            surname: currentTarget.value,
+                          },
+                        });
                       }),
                     ]}
                   />
@@ -137,16 +136,23 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      !(model.draft.name.trim() && model.draft.surname.trim())
+                      !(
+                        model.draft.name.trim() &&
+                        model.draft.surname.trim()
+                      )
                     }
                     mix={[
                       buttonCss,
-                      on("click", ({ currentTarget }) => {
-                        let person = { id: model.nextId, ...model.draft };
-                        model.people.push(person);
-                        model.selectedId = person.id;
-                        model.nextId = person.id + 1;
-                        currentTarget.dispatchEvent(events("peopleChanged"));
+                      on("click", () => {
+                        let person = {
+                          id: model.nextId,
+                          ...model.draft,
+                        };
+                        model.patch({
+                          people: [...model.people, person],
+                          selectedId: person.id,
+                          nextId: person.id + 1,
+                        });
                       }),
                     ]}
                   >
@@ -156,19 +162,22 @@ export const SevenGuisCrud = clientEntry(
                     type="button"
                     disabled={
                       model.selectedId === null ||
-                      !(model.draft.name.trim() && model.draft.surname.trim())
+                      !(
+                        model.draft.name.trim() &&
+                        model.draft.surname.trim()
+                      )
                     }
                     mix={[
                       buttonCss,
-                      on("click", ({ currentTarget }) => {
+                      on("click", () => {
                         if (model.selectedId === null) return;
-                        let person = model.people.find(
-                          (person) => person.id === model.selectedId,
-                        );
-                        if (!person) return;
-                        person.name = model.draft.name;
-                        person.surname = model.draft.surname;
-                        currentTarget.dispatchEvent(events("peopleChanged"));
+                        model.patch({
+                          people: model.people.map((person) =>
+                            person.id === model.selectedId
+                              ? { ...person, ...model.draft }
+                              : person
+                          ),
+                        });
                       }),
                     ]}
                   >
@@ -179,16 +188,15 @@ export const SevenGuisCrud = clientEntry(
                     disabled={model.selectedId === null}
                     mix={[
                       buttonCss,
-                      on("click", ({ currentTarget }) => {
+                      on("click", () => {
                         if (model.selectedId === null) return;
-                        let index = model.people.findIndex(
-                          (person) => person.id === model.selectedId,
-                        );
-                        if (index !== -1) model.people.splice(index, 1);
-                        model.selectedId = null;
-                        model.draft.name = "";
-                        model.draft.surname = "";
-                        currentTarget.dispatchEvent(events("peopleChanged"));
+                        model.patch({
+                          people: model.people.filter(
+                            (person) => person.id !== model.selectedId,
+                          ),
+                          selectedId: null,
+                          draft: { name: "", surname: "" },
+                        });
                       }),
                     ]}
                   >

@@ -2,12 +2,8 @@ import {
   addEventListeners,
   type Handle,
   type RemixNode,
-  TypedEventTarget,
 } from "remix/ui";
-import {
-  customEvents,
-  type CustomEventsEventMap,
-} from "./utils/customEvents/index.tsx";
+import { customEvents } from "./utils/customEvents/index.tsx";
 
 export type AppContextValue = {
   user: { name: string; age: number } | null;
@@ -17,26 +13,15 @@ export type AppContextValue = {
   };
 };
 
-export class AppContext
-  extends TypedEventTarget<CustomEventsEventMap<AppContextValue>> {
-  events = customEvents<AppContextValue>({ host: this });
-  readonly value: AppContextValue;
-
-  constructor(initial: AppContextValue) {
-    super();
-    this.value = initial;
-  }
-
-  patch(value: Partial<AppContextValue>) {
-    Object.assign(this.value, value);
-    this.dispatchEvent(this.events(value));
-  }
-}
+export const appContextEvents = customEvents<AppContextValue>();
+export type AppContext = ReturnType<
+  typeof appContextEvents.withState<AppContextValue>
+>;
 
 export function AppProvider(
   handle: Handle<{ children?: RemixNode }, AppContext>,
 ) {
-  let appContext = new AppContext({
+  let appContext = appContextEvents.withState({
     user: null,
     settings: { layout: "normal", theme: "system" },
   });
@@ -63,7 +48,7 @@ export function UserDisplay(handle: Handle) {
     },
   });
 
-  return () => <div>{appContext.value.user?.name ?? "Not logged in"}</div>;
+  return () => <div>{appContext.user?.name ?? "Not logged in"}</div>;
 }
 
 // Event-aware elements can display context values without calling handle.update().
@@ -89,8 +74,8 @@ export function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {appContext.value.settings.layout}, Theme:{" "}
-        {appContext.value.settings.theme}
+        Layout: {appContext.settings.layout}, Theme:{" "}
+        {appContext.settings.theme}
       </pre>
     </div>
   );

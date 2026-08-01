@@ -3,7 +3,7 @@ import { describe, it } from "remix/test";
 import { addEventListeners, on, type Handle } from "remix/ui";
 import { render } from "remix/ui/test";
 import {
-  AppContext,
+  appContextEvents,
   AppProvider,
   EventSettingsDisplay,
   EventUserDisplay,
@@ -18,16 +18,17 @@ async function settleEvents() {
 
 describe("AppContext", () => {
   it("patches its model and emits only the affected events", () => {
-    let context = new AppContext({
+    let context = appContextEvents.withState({
       user: null,
       settings: { layout: "normal", theme: "system" },
     });
     let calls: string[] = [];
     let controller = new AbortController();
 
-    assert.deepEqual(context.value, {
-      user: null,
-      settings: { layout: "normal", theme: "system" },
+    assert.equal(context.user, null);
+    assert.deepEqual(context.settings, {
+      layout: "normal",
+      theme: "system",
     });
 
     addEventListeners(context, controller.signal, {
@@ -42,11 +43,9 @@ describe("AppContext", () => {
       calls.push(`all:${event.type}`);
     });
 
-    let originalValue = context.value;
     context.patch({ user: { name: "Ada", age: 37 } });
 
-    assert.equal(context.value, originalValue);
-    assert.deepEqual(context.value.user, { name: "Ada", age: 37 });
+    assert.deepEqual(context.user, { name: "Ada", age: 37 });
     assert.equal(calls.join(","), "named:Ada,all:user");
 
     context.patch({
@@ -54,10 +53,8 @@ describe("AppContext", () => {
       settings: { layout: "zen", theme: "dark" },
     });
 
-    assert.deepEqual(context.value, {
-      user: { name: "Grace", age: 85 },
-      settings: { layout: "zen", theme: "dark" },
-    });
+    assert.deepEqual(context.user, { name: "Grace", age: 85 });
+    assert.deepEqual(context.settings, { layout: "zen", theme: "dark" });
     assert.equal(
       calls.join(","),
       "named:Ada,all:user,named:Grace,map:dark:zen,all:user,all:settings",
@@ -65,7 +62,7 @@ describe("AppContext", () => {
   });
 
   it("supports explicit cleanup and AbortSignal-owned subscriptions", () => {
-    let context = new AppContext({
+    let context = appContextEvents.withState({
       user: null,
       settings: { layout: "normal", theme: "system" },
     });

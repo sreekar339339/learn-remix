@@ -23,6 +23,102 @@ async function settleEffects() {
 }
 
 describe("customEvents", () => {
+  it("publishes withState properties as typed events", () => {
+    let state = customEvents<{ count: number; label: string }>().withState({
+      count: 0,
+      label: "idle",
+    });
+    let received: Array<[string, unknown]> = [];
+
+    state.addEventListener("count", (event) => {
+      received.push([event.type, event.detail]);
+    });
+    state.addEventListener("label", (event) => {
+      received.push([event.type, event.detail]);
+    });
+
+    state.patch({ count: 1, label: "ready" });
+
+    assert.equal(state.count, 1);
+    assert.equal(state.label, "ready");
+    assert.deepEqual(received, [["count", 1], ["label", "ready"]]);
+
+    if (false) {
+      // @ts-expect-error - state properties change only through patch().
+      state.count = 2;
+      // @ts-expect-error - state properties cannot overwrite the state API.
+      customEvents<{ events: string }>().withState({ events: "collision" });
+      // @ts-expect-error - state property events cannot use native DOM names.
+      customEvents<{ click: boolean }>().withState({ click: false });
+      // @ts-expect-error - initial state keys must belong to the event map.
+      customEvents<{ count: number }>().withState({ count: 0, missing: true });
+    }
+  });
+
+  it("derives occurrences from event-map entries omitted by withState", () => {
+    type State = { count: number };
+    type Occurrences = { refreshRequested: null; countDrafted: number };
+    let state = customEvents<State & Occurrences>().withState({ count: 0 });
+    let received: Array<[string, unknown]> = [];
+
+    state.addEventListener("count", (event) => {
+      received.push([event.type, event.detail]);
+    });
+    state.addEventListener("countDrafted", (event) => {
+      received.push([event.type, event.detail]);
+    });
+    state.addEventListener("refreshRequested", (event) => {
+      received.push([event.type, event.detail]);
+    });
+
+    state.patch({ count: 1 });
+    state.dispatchEvent(state.events("countDrafted", 2));
+    state.dispatchEvent(state.events("refreshRequested"));
+
+    assert.equal(state.count, 1);
+    assert.deepEqual(received, [
+      ["count", 1],
+      ["countDrafted", 2],
+      ["refreshRequested", null],
+    ]);
+
+    if (false) {
+      // @ts-expect-error - property events are produced only by patch().
+      state.events("count", 2);
+      // @ts-expect-error - occurrences are not state properties.
+      state.patch({ countDrafted: 2 });
+      // @ts-expect-error - occurrences do not become readable state.
+      state.countDrafted;
+      // @ts-expect-error - occurrences cannot use native DOM event names.
+      customEvents<State & { click: null }>().withState({ count: 0 });
+    }
+  });
+
+  it("creates an independent EventTarget host for each state model", () => {
+    let models = customEvents<{ count: number }>();
+    let first = models.withState({ count: 0 });
+    let second = models.withState({ count: 10 });
+    let firstCalls = 0;
+    let secondCalls = 0;
+
+    first.addEventListener("count", () => firstCalls++);
+    second.addEventListener("count", () => secondCalls++);
+
+    first.patch({ count: 1 });
+
+    assert.equal(first.count, 1);
+    assert.equal(second.count, 10);
+    assert.equal(firstCalls, 1);
+    assert.equal(secondCalls, 0);
+
+    assert.throws(
+      () =>
+        customEvents<{ count: number }>({ host: new EventTarget() })
+          .withState({ count: 0 }),
+      /supplies its own EventTarget host/,
+    );
+  });
+
   it("creates typed local-name single and batch events", () => {
     let events = createEvents();
     let otherEvents = createEvents();
@@ -104,6 +200,19 @@ describe("customEvents", () => {
       events.on("paid", (_event, _signal) => {});
       // @ts-expect-error - customEvents observers do not expose reentry signals.
       events.observe(new EventTarget(), (_event, _signal) => {});
+      events.on("*", (event) => {
+        switch (event.type) {
+          case "submitted":
+            event.detail.id satisfies string;
+            break;
+          case "paid":
+          case "focusRequested":
+            event.detail satisfies null;
+            break;
+          default:
+            event satisfies never;
+        }
+      });
     }
   });
 

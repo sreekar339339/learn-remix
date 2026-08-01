@@ -1,4 +1,5 @@
 import { clientEntry, on } from "remix/ui";
+import { customEvents } from "../utils/customEvents/index.tsx";
 import { inputCss, rowCss, taskCss } from "./styles.ts";
 
 function parseTemperature(value: string) {
@@ -12,45 +13,46 @@ function formatTemperature(value: number) {
 
 export const SevenGuisTemperatureConverter = clientEntry(
   import.meta.url,
-  function SevenGuisTemperatureConverter(handle) {
-    let temperature = { celsius: "", fahrenheit: "" };
+  function SevenGuisTemperatureConverter() {
+    let temperature = customEvents<{
+      celsius: string;
+      fahrenheit: string;
+    }>().withState({ celsius: "", fahrenheit: "" });
 
     return () => (
       <section mix={taskCss}>
         <h2>Temperature Converter</h2>
         <div mix={rowCss}>
-          <input
+          <temperature.events.on.celsius.input
             aria-label="Celsius"
-            value={temperature.celsius}
+            value={() => temperature.celsius}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.celsius = value;
-                temperature.fahrenheit = formatTemperature(
-                  number * (9 / 5) + 32,
-                );
-                handle.update();
+                temperature.patch({
+                  celsius: value,
+                  fahrenheit: formatTemperature(number * (9 / 5) + 32),
+                });
               }),
             ]}
           />
           <span>Celsius =</span>
-          <input
+          <temperature.events.on.fahrenheit.input
             aria-label="Fahrenheit"
-            value={temperature.fahrenheit}
+            value={() => temperature.fahrenheit}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.celsius = formatTemperature(
-                  (number - 32) * (5 / 9),
-                );
-                temperature.fahrenheit = value;
-                handle.update();
+                temperature.patch({
+                  celsius: formatTemperature((number - 32) * (5 / 9)),
+                  fahrenheit: value,
+                });
               }),
             ]}
           />

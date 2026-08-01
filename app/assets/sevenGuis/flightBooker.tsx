@@ -3,11 +3,12 @@ import { customEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type FlightKind = "one-way flight" | "return flight";
-type FlightState = {
+type Flight = {
   kind: FlightKind;
   startDate: string;
   returnDate: string;
 };
+type FlightEvents = Flight | "bookingConfirmed";
 
 function isValidDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -20,7 +21,7 @@ function isValidDate(value: string) {
   );
 }
 
-function canBook({ kind, startDate, returnDate }: FlightState) {
+function canBook({ kind, startDate, returnDate }: Flight) {
   if (!isValidDate(startDate)) return false;
   return (
     kind === "one-way flight" ||
@@ -28,7 +29,7 @@ function canBook({ kind, startDate, returnDate }: FlightState) {
   );
 }
 
-function presentValidation(flight: FlightState) {
+function presentValidation(flight: Flight) {
   return {
     startDateInvalid: !isValidDate(flight.startDate),
     returnDateDisabled: flight.kind === "one-way flight",
@@ -41,22 +42,19 @@ function presentValidation(flight: FlightState) {
 export const SevenGuisFlightBooker = clientEntry(
   import.meta.url,
   function SevenGuisFlightBooker(handle) {
-    let events = customEvents<"flightChanged" | "bookingConfirmed">();
     let today = new Date().toISOString().slice(0, 10);
-    let flight: FlightState = {
-      kind: "one-way flight" as const,
+    let flight = customEvents<FlightEvents>().withState({
+      kind: "one-way flight",
       startDate: today,
       returnDate: today,
-    };
+    });
+    let confirmedFlight: Flight | null = null;
+    flight.events.observe((event) => {
+      if (event.type !== "bookingConfirmed") return handle.update();
+    });
 
     return () => (
-      <section
-        mix={[
-          taskCss,
-          events.host(),
-          events.on("flightChanged", () => handle.update()),
-        ]}
-      >
+      <section mix={[taskCss]}>
         <h2>Flight Booker</h2>
         <select
           aria-label="Flight type"
@@ -64,8 +62,7 @@ export const SevenGuisFlightBooker = clientEntry(
           mix={[
             inputCss,
             on("change", ({ currentTarget }) => {
-              flight.kind = currentTarget.value as FlightKind;
-              currentTarget.dispatchEvent(events("flightChanged"));
+              flight.patch({ kind: currentTarget.value as FlightKind });
             }),
           ]}
         >
@@ -80,8 +77,7 @@ export const SevenGuisFlightBooker = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.startDate = currentTarget.value;
-                currentTarget.dispatchEvent(events("flightChanged"));
+                flight.patch({ startDate: currentTarget.value });
               }),
             ]}
           />
@@ -93,8 +89,7 @@ export const SevenGuisFlightBooker = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.returnDate = currentTarget.value;
-                currentTarget.dispatchEvent(events("flightChanged"));
+                flight.patch({ returnDate: currentTarget.value });
               }),
             ]}
           />
@@ -104,21 +99,25 @@ export const SevenGuisFlightBooker = clientEntry(
           disabled={!canBook(flight)}
           mix={[
             buttonCss,
-            on("click", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(events("bookingConfirmed"));
+            on("click", () => {
+              confirmedFlight = {
+                kind: flight.kind,
+                startDate: flight.startDate,
+                returnDate: flight.returnDate,
+              };
+              flight.dispatchEvent(flight.events("bookingConfirmed"));
             }),
           ]}
         >
           Book
         </button>
-        <events.on.bookingConfirmed.output
-          child={(event) =>
-            event
-              ? flight.kind === "one-way flight"
-                ? `You have booked a one-way flight on ${flight.startDate}.`
-                : `You have booked a return flight from ${flight.startDate} to ${flight.returnDate}.`
-              : null
-          }
+        <flight.events.on.bookingConfirmed.output
+          child={(event) => {
+            if (!event || !confirmedFlight) return null;
+            return confirmedFlight.kind === "one-way flight"
+              ? `You have booked a one-way flight on ${confirmedFlight.startDate}.`
+              : `You have booked a return flight from ${confirmedFlight.startDate} to ${confirmedFlight.returnDate}.`;
+          }}
         />
       </section>
     );

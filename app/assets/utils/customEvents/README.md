@@ -30,6 +30,255 @@ An event detail is a consumer contract. Use it when the transition itself must
 transfer a value to its consumer. Omit it when producers and consumers already
 share the authoritative model and the event is only a precise signal.
 
+### Algebraic model
+
+The definition syntax follows the useful part of algebraic data types. An
+object is product-shaped state: all of its properties may coexist. A union adds
+alternative event variants:
+
+```tsx
+type Flight = {
+  kind: FlightKind;
+  startDate: string;
+  returnDate: string;
+};
+
+type FlightEvents = Flight | "bookingConfirmed";
+```
+
+`FlightEvents` is a descriptor grammar, not a value constructed at runtime.
+The object contributes detailed property events; the string contributes a
+detail-less occurrence. This says that confirmation is another event variant,
+not another property every `Flight` value must contain.
+
+Consumers receive a discriminated union. Narrowing `event.type` therefore also
+narrows `event.detail`, including in grouped and wildcard listeners:
+
+```tsx
+events.on("*", (event) => {
+  switch (event.type) {
+    case "saveSucceeded":
+      useRevision(event.detail.revision);
+      break;
+    case "saveFailed":
+      report(event.detail.error);
+      break;
+    case "saveStarted":
+      break;
+    default:
+      event satisfies never;
+  }
+});
+```
+
+Use exhaustive consumption when a listener owns the complete vocabulary. A
+new event then creates a compile-time reminder instead of an implicit ignored
+case.
+
+### State-backed descriptors
+
+Call `withState()` when some or all entries in an event map are retained model
+properties. The properties supplied to `withState()` become directly readable
+state; every omitted entry remains an occurrence. Each patched state key
+becomes a typed event whose detail is its new value. There is no `.value`
+wrapper, property-specific setter, parallel property-event map, or manual
+`dispatchEvent()` call:
+
+```tsx
+type TimerEvents = {
+  elapsed: number;
+  duration: number;
+};
+
+let timer = customEvents<TimerEvents>().withState({
+  elapsed: 0,
+  duration: 10,
+});
+
+timer.patch({ elapsed: 1 });
+
+timer.events.observe(() => handle.update());
+```
+
+The complete generic contextually types the initial values and defines the
+entire vocabulary. `withState()` infers only the supplied keys, so the returned
+model exposes those exact properties through `patch()`. In the example every
+entry is state, so there are no separately dispatchable occurrences.
+
+When the same model owns detail-less occurrences, union their names with the
+state shape. Object members describe state-capable detailed events; string
+members describe signal-only occurrences. `withState()` retains only the
+properties supplied in its argument:
+
+```tsx
+type Flight = {
+  kind: FlightKind;
+  startDate: string;
+  returnDate: string;
+};
+
+type FlightEvents = Flight | "bookingConfirmed";
+
+let confirmedFlight: Flight | null = null;
+let flight = customEvents<FlightEvents>().withState({
+  kind: "one-way flight",
+  startDate: today,
+  returnDate: today,
+});
+
+flight.patch({ startDate: value });
+confirmedFlight = {
+  kind: flight.kind,
+  startDate: flight.startDate,
+  returnDate: flight.returnDate,
+};
+flight.dispatchEvent(flight.events("bookingConfirmed"));
+
+let bookingEvents = flight.events.on(["startDate", "bookingConfirmed"]);
+```
+
+Here `patch()` accepts `kind`, `startDate`, and `returnDate`, while the callable
+`flight.events()` surface creates only `bookingConfirmed`. Both families share
+one host, routing index, and consumption API. Occurrences do not become readable
+properties. The component-scoped `confirmedFlight` preserves the result of the
+occurrence; the detail-less event only announces it. This lets one event-aware
+element consume durable property events and transition-scoped occurrences
+without manufacturing event detail or coordinating two descriptors.
+
+The call to `patch()` is both the mutation boundary and the publication
+boundary. One call may update several related properties as one transaction, so
+consumers never need to coordinate separately dispatched “changed” events or
+observe an intentionally half-applied transition. Top-level properties are
+readonly to consumers so assignments cannot silently bypass publication.
+`withState()` supplies the returned model as the descriptor host and therefore
+must not be combined with the `{ host }` factory option.
+
+#### Reusable context and model types
+
+For a reusable application context or domain model, export the descriptor as an
+`...Events` value and derive the instance type directly from its instantiated
+`withState<State>()` method:
+
+```tsx
+export type AppContextValue = {
+  user: { name: string; age: number } | null;
+  settings: {
+    theme: "dark" | "light" | "system";
+    layout: "zen" | "normal";
+  };
+};
+
+export const appContextEvents = customEvents<AppContextValue>();
+
+export type AppContext = ReturnType<
+  typeof appContextEvents.withState<AppContextValue>
+>;
+
+function AppProvider(
+  handle: Handle<{ children?: RemixNode }, AppContext>,
+) {
+  let appContext = appContextEvents.withState({
+    user: null,
+    settings: { theme: "system", layout: "normal" },
+  });
+
+  handle.context.set(appContext);
+  // ...
+}
+```
+
+The lower-camel-case value names the reusable event descriptor;
+the PascalCase type names an instance created from it. The instantiated method
+type fixes which part of the complete map is state, so no helper function,
+wrapper class, or manually repeated structural model type is needed.
+
+The same pattern works for a hybrid definition. Pass only its retained object
+shape to the type-level method application; string members remain occurrences:
+
+```tsx
+const flightEvents = customEvents<Flight | "bookingConfirmed">();
+
+type FlightModel = ReturnType<
+  typeof flightEvents.withState<Flight>
+>;
+```
+
+#### Practical DX wins
+
+State producers always call `patch()`; occurrence producers use the same
+model's `events()` descriptor. Each consumer independently chooses the smallest
+rendering policy appropriate to what it owns:
+
+| Consumer need | API | DX benefit |
+| --- | --- | --- |
+| A cohesive component derives most of its UI from the model | `model.events.observe(() => handle.update())` | Centralizes invalidation once; event handlers only mutate state |
+| One native element depends on one property | `<model.events.on.property.input>` | Updates native props or children without extracting a component or adding local state |
+| One region has a known dependency set | `model.events.on(["items", "filter", "selection"])` | Makes dependencies explicit and ignores unrelated patches |
+| A context consumer needs one domain value | `addEventListeners(model, signal, { property() {} })` | Uses normal typed `EventTarget` subscriptions without a store adapter |
+| One repeated item needs an isolated update | `model.patch(value, { key: item.id })` | Preserves the parent list and sibling DOM nodes without nested state objects |
+
+This lets a model begin with the low-ceremony component-wide strategy and move
+only proven hot or independent regions to granular projections. Producers do
+not change when that rendering policy changes.
+
+Multi-property patches are particularly useful for derived and selection state:
+
+```tsx
+model.patch({
+  selectedId: selected.id,
+  draft: { name: selected.name, surname: selected.surname },
+});
+```
+
+The model transition stays cohesive, while a selection view and an editor view
+may subscribe to different property groups. The event vocabulary is derived
+from the state shape instead of being maintained as a second domain model.
+
+For high-frequency editing, keep the working value as explicit draft state and
+commit durable collection state at the interaction boundary:
+
+```tsx
+model.patch({ draftItem: { ...draftItem, size } }, { key: draftItem.id });
+
+// On form submission:
+model.patch({ items: committedItems, draftItem: null }, { key: draftItem.id });
+```
+
+The keyed draft patch provides live fine-grained projection without rebuilding
+the collection on every input event. The closing transaction updates durable
+state and history once. This also avoids creating one state object per list item
+merely to gain keyed rendering.
+
+A state-backed descriptor may also hold retained intent when its current value
+remains meaningful. For example, `focusTargetId` means “the element the UI
+should focus next”; it does not claim to mirror `document.activeElement`:
+
+```tsx
+model.patch({ focusTargetId: nextId }, { key: nextId });
+
+model.events.on("focusTargetId", ({ currentTarget }) => {
+  currentTarget.focus();
+});
+```
+
+Name intent state after the desired target or outcome, not the effect that may
+eventually occur. A scalar target has latest-value-wins semantics. A property
+named `pendingFocusTargetId` implies acknowledgement and clearing, while a
+`focusQueue` must actually preserve multiple ordered requests. Use a separately
+named custom event when an occurrence has no meaningful retained value or
+lifecycle; do not manufacture state merely to avoid declaring an event.
+
+Pass a routing key when a patch should update only one addressed projection:
+
+```tsx
+model.patch({ items: nextItems }, { key: item.id });
+```
+
+Unkeyed projections still observe the patch according to the descriptor's
+normal broad-listener semantics. Components that reserve full rerenders for
+structural list changes should call `handle.update()` only in those structural
+mutation paths.
+
 ## Dispatch
 
 The descriptor is callable and returns an ordinary `CustomEvent`, so native
@@ -255,9 +504,16 @@ private: callback events do not expose `key` or `originTarget`.
 ### Groups and wildcards
 
 Use `events.on(["eventA", "eventB"])` without a listener to create an
-event-element projection group for a known subset. Pass a listener as the
+event-aware element group for a known subset. Pass a listener as the
 second argument to create an element effect for that subset instead. In either
 callback, `event.type` identifies which member triggered it.
+
+Name a stored group after the UI or domain scope it serves, followed by
+`Events`: `cellEvents`, `editorEvents`, or `saveOutcomeEvents`. This uses
+familiar frontend vocabulary and makes `<cellEvents.button>` read as an element
+subscribed to cell-relevant events. Avoid suffixes such as `State`, because the
+group owns no state, and framework-internal terms such as `Projection` when a
+plain event-oriented name communicates the public role.
 
 Use `<events.tag>` for a projection that observes the complete vocabulary and
 `events.on("*", ...)` for an effect that observes it. `*` is a subscription
@@ -328,6 +584,166 @@ calculations, or code that must read them independently of an event.
 A user interaction should complete one model transition and then publish one
 meaningful fact. Consumers normally derive their next projection from that
 model.
+
+### State and occurrence are different contracts
+
+Use `customEvents<EventMap>().withState(initialState)` for **what is true now**.
+Its returned object is product state: several durable properties coexist,
+remain readable between transitions, and can be published together with
+`patch()`. Consumers may observe one property, a known subset, or the whole
+model.
+
+Use entries omitted from `withState()`, or a descriptor without state, for
+**what happened** or **what another owner should do next**. Those entries
+declare an occurrence vocabulary, not an object whose members are
+simultaneously true. Occurrences fall into several useful families:
+
+- phase or outcome events select the latest view, such as empty, submitted,
+  succeeded, or failed;
+- lifecycle facts report independently useful stages such as started, updated,
+  and ended;
+- invalidation events announce that function-scoped or external model data
+  should be read again;
+- transition-scoped payload events carry a snapshot needed only by that
+  transition; and
+- request events ask another owner to perform an effect.
+
+Keep these domain roles distinct even though they share one API:
+
+| Role | Meaning | Typical shape |
+| --- | --- | --- |
+| State | What is true now | Readable property updated by `patch()` |
+| Fact | What happened | Past-tense occurrence such as `saveSucceeded` |
+| Intent | What another owner should do | Request occurrence or latest-target state |
+
+The lifecycle decides whether intent is state or an occurrence. A focus target
+is state when only its latest value matters; a request is an occurrence when
+every publication must be handled.
+
+Model mutually constrained states as one discriminated-union property instead
+of several booleans and nullable fields. This makes invalid combinations
+unrepresentable and publishes the transition atomically:
+
+```tsx
+type SaveStatus =
+  | { type: "idle" }
+  | { type: "pending" }
+  | { type: "failed"; error: Error }
+  | { type: "succeeded"; revision: number };
+
+let model = customEvents<{ status: SaveStatus }>().withState({
+  status: { type: "idle" } as SaveStatus,
+});
+
+model.patch({ status: { type: "pending" } });
+```
+
+`patch()` is the lightweight transition boundary: related product-state fields
+change together, while a discriminated-union property changes from one valid
+variant to another. Consumers should never need to reconstruct a transition
+from a sequence of partially applied property events.
+
+Mutual exclusivity belongs to a consumer and its scope, not to the descriptor.
+One result element may treat a search vocabulary as mutually exclusive phases:
+
+```ts
+type SearchEvents =
+  | "queryEmpty"
+  | { querySubmitted: { query: string } }
+  | { booksFound: Array<Book> }
+  | { booksNotFound: { reason: string } }
+  | { errorOccurred: Error };
+```
+
+An event-aware element remembers its latest matching event, so it can present
+this as small, view-local sum state. The same descriptor may still serve
+independent consumers, and separate hosts may occupy different phases at the
+same time. The API therefore must not impose global exclusivity.
+
+If business logic must ask for the current phase without receiving an event,
+make the phase durable: include one discriminated-union property in
+`withState()` or use an explicit component variable. Do not treat an event-aware
+element's retained event as an application store.
+
+A useful choice test is repetition: if publishing the same value twice should
+be indistinguishable, it is probably state; if both publications must be
+observed, it is an occurrence. A scalar request-like property is appropriate
+only when latest-value-wins semantics are intended. Use an occurrence event
+when every request matters, and a queue when several pending requests must be
+preserved.
+
+Use this decision table at the producer boundary:
+
+| Question | Model it as |
+| --- | --- |
+| Must code read the value before or after the transition that produced it? | State |
+| Does the value participate in validation, history, later calculations, or a multi-property atomic transition? | State |
+| Is only the latest target or intent meaningful? | State |
+| Must two identical publications still be observed as two separate happenings? | Occurrence |
+| Is the payload an immutable snapshot used only because this transition happened? | Occurrence detail |
+| Must several pending requests survive instead of replacing one another? | Durable queue state |
+| Does a durable transition also produce an independently meaningful outcome or lifecycle fact? | State plus occurrence |
+
+#### When the split is useful
+
+Hybrid components are normal, but the split should represent two real domain
+contracts rather than two ways of announcing the same mutation:
+
+```tsx
+type DocumentState = {
+  draft: string;
+  revision: number;
+};
+
+type DocumentEvents = DocumentState & {
+  saveSucceeded: { revision: number };
+  saveFailed: Error;
+};
+
+let document = customEvents<DocumentEvents>().withState({
+  draft: "",
+  revision: 0,
+});
+
+// Retained, directly readable model transition.
+document.patch({ draft: input.value });
+
+// Independently meaningful result of an operation.
+form.dispatchEvent(document.events("saveSucceeded", {
+  revision: document.revision,
+}));
+```
+
+The supplied and omitted portions of the map share one descriptor, so
+projections and effects can subscribe to either family or to a deliberate
+subset. Their write APIs remain intentionally different:
+
+- `model.patch({ property: value }, { key })` mutates retained state and
+  publishes its property events as one transaction;
+- `target.dispatchEvent(model.events("eventName", detail, { key }))` publishes
+  a fire-once occurrence; and
+- `model.events.dispatch(target, ...)` is the awaitable occurrence form when
+  later code depends on projection and effect completion.
+
+Do not split when an occurrence would merely repeat a property event already
+published by `patch()`. A property such as an active draft remains state when
+later handlers read it, repeated input updates replace its current value, and
+closing the interaction clears it. Adding an `editRequested` occurrence solely
+to assign that property creates dispatch choreography without adding a
+consumer contract.
+
+Conversely, do not manufacture a boolean or “latest event” property for a
+confirmation, notification, operation outcome, or local draft snapshot that
+has no useful value outside its transition. Declare an occurrence and place the
+snapshot in `detail`.
+
+Sometimes a state transition and an occurrence are causally related but need
+different timing. Patch the state at its actual mutation boundary, then publish
+the occurrence only when its statement becomes true—for example, after an
+asynchronous save succeeds. Do not publish a success occurrence merely because
+editing state changed. If consumers must atomically observe state and a
+one-time fact, preserve that invariant in one durable state transition rather
+than coordinating separate dispatches.
 
 ### When event detail should carry state
 

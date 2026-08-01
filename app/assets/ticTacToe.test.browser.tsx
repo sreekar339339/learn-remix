@@ -5,7 +5,7 @@ import { render } from "remix/ui/test";
 import { TicTacToeCustomEvents } from "./ticTacToe.tsx";
 
 describe("TicTacToeCustomEvents", () => {
-  it("renders the seeded initial game state and explicitly dispatches initial focus", async (t) => {
+  it("renders the initial game and applies its initial focus target", async (t) => {
     let result = render(<TicTacToeCustomEvents />);
     t.after(() => result.cleanup());
 
