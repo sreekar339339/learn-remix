@@ -90,10 +90,14 @@ export function readStateEventSource({
   let value = Reflect.get(owner, type);
   for (let segment of path) {
     if (value instanceof Map) {
-      let entry = value.entries().find(([key]) =>
-        samePropertyKey(key, segment)
-      );
-      value = entry?.[1];
+      if (value.has(segment)) {
+        value = value.get(segment);
+      } else {
+        let entry = value.entries().find(([key]) =>
+          samePropertyKey(key, segment)
+        );
+        value = entry?.[1];
+      }
     } else if (value instanceof Set) {
       value = value.values().some((item) => samePropertyKey(item, segment));
     } else if (Array.isArray(value)) {
