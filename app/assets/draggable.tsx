@@ -54,7 +54,7 @@ export const draggable_ = createMixin<
     pointerId = event.pointerId;
     element.setPointerCapture(event.pointerId);
     element.dispatchEvent(
-      events("start", { left: startLeft, top: startTop }),
+      events.create("start", { left: startLeft, top: startTop }),
     );
     window.addEventListener("pointermove", moveDrag);
     window.addEventListener("pointerup", stopDrag);
@@ -76,7 +76,7 @@ export const draggable_ = createMixin<
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
     element.dispatchEvent(
-      events("end", {
+      events.create("end", {
         left: readPx(element.style.left),
         top: readPx(element.style.top),
       }),
@@ -95,18 +95,17 @@ export const draggable_ = createMixin<
   };
 });
 
-export const draggable: typeof draggable_ & typeof events =
-  Object.assign(draggable_, events);
+export const draggable = Object.assign(draggable_, { events });
 
 function DraggableCard() {
   return () => (
     <div
       mix={[
         draggable(true),
-        draggable.on('start', ({ detail: { left, top } }) => {
+        draggable.events.start.on(({ detail: { left, top } }) => {
           console.log("draggable start with:", { left }, { top });
         }),
-        draggable.on('end', ({ detail: { left, top } }) => {
+        draggable.events.end.on(({ detail: { left, top } }) => {
           console.log("draggable end with:", { left }, { top });
         })
       ]}

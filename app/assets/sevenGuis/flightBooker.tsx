@@ -49,12 +49,15 @@ export const SevenGuisFlightBooker = clientEntry(
       returnDate: today,
     });
     let confirmedFlight: Flight | null = null;
-    flight.events.observe((event) => {
-      if (event.type !== "bookingConfirmed") return handle.update();
-    });
-
     return () => (
-      <section mix={[taskCss]}>
+      <section
+        mix={[
+          taskCss,
+          flight.events.on((event) => {
+            if (event.type !== "bookingConfirmed") return handle.update();
+          }),
+        ]}
+      >
         <h2>Flight Booker</h2>
         <select
           aria-label="Flight type"
@@ -111,14 +114,14 @@ export const SevenGuisFlightBooker = clientEntry(
                 startDate: flight.startDate,
                 returnDate: flight.returnDate,
               };
-              flight.dispatchEvent(flight.events("bookingConfirmed"));
+              flight.dispatchEvent(flight.events.create("bookingConfirmed"));
             }),
           ]}
         >
           Book
         </button>
-        <flight.events.output
-          on="bookingConfirmed"
+        <flight.view.output
+          on={flight.events.bookingConfirmed}
           hidden={(event) => event === undefined}
         >
           {(event) => {
@@ -127,7 +130,7 @@ export const SevenGuisFlightBooker = clientEntry(
               ? `You have booked a one-way flight on ${confirmedFlight.startDate}.`
               : `You have booked a return flight from ${confirmedFlight.startDate} to ${confirmedFlight.returnDate}.`;
           }}
-        </flight.events.output>
+        </flight.view.output>
       </section>
     );
   },

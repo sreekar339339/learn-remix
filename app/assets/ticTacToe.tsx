@@ -117,8 +117,8 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <game.events.button
-              on={(event) => [event.position.get(index), event.result]}
+            <game.view.button
+              on={[game.events.position.get(index), game.events.result]}
               key={index}
               id={String(index)}
               disabled={() => game.position.has(index) || game.result !== null}
@@ -135,7 +135,7 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                game.events.on("focusTargetId", ({ currentTarget }) => {
+                game.events.focusTargetId.on(({ currentTarget }) => {
                   currentTarget.focus();
                 }),
                 ref((currentTarget, signal) => {
@@ -147,13 +147,13 @@ export const TicTacToeCustomEvents = clientEntry(
               ]}
             >
               {() => game.position.get(index)}
-            </game.events.button>
+            </game.view.button>
           ))}
         </div>
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            game.events.on("result", ({ currentTarget }) => {
+            game.events.result.on(({ currentTarget }) => {
               if (game.result === null) return;
               currentTarget.focus();
             }),
@@ -176,14 +176,14 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <game.events.span on={(event) => event.result}>
+          <game.view.span on={game.events.result}>
             {(event) => {
               let result = event.detail;
               if (!result) return "Game in progress";
               if (result === "Draw") return "Game is drawn.";
               return `${result} has won!`;
             }}
-          </game.events.span>
+          </game.view.span>
         </p>
       </div>
     );

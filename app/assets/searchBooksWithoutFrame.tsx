@@ -38,7 +38,7 @@ async function fetchBooks(
     let json = await response.json();
     if (!("docs" in json)) {
       return input.dispatchEvent(
-        events(
+        events.create(
           "booksNotFound",
           { reason: { other: json.detail[0].msg } },
           opts,
@@ -48,11 +48,11 @@ async function fetchBooks(
     let books = json.docs as Array<Book>;
     input.dispatchEvent(
       books.length
-        ? events("booksFound", books, opts)
-        : events("booksNotFound", { reason: "emptyList" }, opts),
+        ? events.create("booksFound", books, opts)
+        : events.create("booksNotFound", { reason: "emptyList" }, opts),
     );
   } catch (error) {
-    input.dispatchEvent(events("errorOccurred", error as Error, opts));
+    input.dispatchEvent(events.create("errorOccurred", error as Error, opts));
   } finally {
   }
 }
@@ -62,15 +62,15 @@ export const SearchBooksWithoutFrame = clientEntry(
   function SearchBooksWithoutFrame(handle: Handle<{ initialQuery: string }>) {
     let initialQuery = handle.props.initialQuery.trim();
     let initialEvent = initialQuery
-      ? events("querySubmitted", { query: initialQuery })
-      : events("queryEmpty");
+      ? events.create("querySubmitted", { query: initialQuery })
+      : events.create("queryEmpty");
     let interacted = false;
 
     return () => (
       <div mix={events.host}>
         <label>
           Search{" "}
-          <events.input
+          <events.view.input
             initial={initialEvent}
             type="text"
             defaultValue={initialQuery}
@@ -83,13 +83,13 @@ export const SearchBooksWithoutFrame = clientEntry(
                 interacted = true;
                 let query = currentTarget.value.trim();
                 if (!query)
-                  return void currentTarget.dispatchEvent(events("queryEmpty"));
+                  return void currentTarget.dispatchEvent(events.create("queryEmpty"));
                 currentTarget.dispatchEvent(
-                  events("querySubmitted", { query }),
+                  events.create("querySubmitted", { query }),
                 );
                 fetchBooks(query, currentTarget, signal);
               }),
-              events.on("*", ({ currentTarget, type }) => {
+              events.on(({ currentTarget, type }) => {
                 if (type !== "querySubmitted") currentTarget.select();
               }),
               ref((input, signal) => {
@@ -102,7 +102,7 @@ export const SearchBooksWithoutFrame = clientEntry(
             ]}
           />
         </label>
-        <events.div initial={initialEvent}>
+        <events.view.div initial={initialEvent}>
           {(event) => {
             switch (event.type) {
               case "queryEmpty":
@@ -142,7 +142,7 @@ export const SearchBooksWithoutFrame = clientEntry(
                 );
             }
           }}
-        </events.div>
+        </events.view.div>
       </div>
     );
   },

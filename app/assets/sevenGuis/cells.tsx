@@ -126,10 +126,10 @@ export const SevenGuisCells = clientEntry(
                   <th>{row}</th>
                   {columns.map((column, __, _, id = cellId(column, row)) => (
                     <td key={id}>
-                      <sheet.events.input
-                        on={(event) => [
-                          event.values[id],
-                          event.cellDrafted,
+                      <sheet.view.input
+                        on={[
+                          sheet.events.values[id],
+                          sheet.events.cellDrafted,
                         ]}
                         aria-label={id}
                         id={id}
@@ -147,12 +147,9 @@ export const SevenGuisCells = clientEntry(
                         }
                         mix={[
                           cellCss,
-                          sheet.events.on(
-                            "focusTargetId",
-                            ({ currentTarget }) => {
-                              currentTarget.focus();
-                            },
-                          ),
+                          sheet.events.focusTargetId.on(({ currentTarget }) => {
+                            currentTarget.focus();
+                          }),
                           on("blur", ({ currentTarget }) => {
                             formulas[id] = currentTarget.value;
                             let previousValue = sheet.values[id];
@@ -162,7 +159,7 @@ export const SevenGuisCells = clientEntry(
                             });
                             if (Object.is(previousValue, values[id])) {
                               currentTarget.dispatchEvent(
-                                sheet.events(
+                                sheet.events.create(
                                   "cellDrafted",
                                   values[id] ?? "",
                                   localEvtOpts,
@@ -172,7 +169,7 @@ export const SevenGuisCells = clientEntry(
                           }),
                           on("focus", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              sheet.events(
+                              sheet.events.create(
                                 "cellDrafted",
                                 formulas[id] ?? "",
                                 localEvtOpts,
@@ -182,7 +179,7 @@ export const SevenGuisCells = clientEntry(
                           }),
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              sheet.events(
+                              sheet.events.create(
                                 "cellDrafted",
                                 currentTarget.value,
                                 localEvtOpts,

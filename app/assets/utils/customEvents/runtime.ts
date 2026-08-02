@@ -202,7 +202,6 @@ export type CustomEventsRuntimeState = {
   eventTypeListeners: Set<(type: string) => void>;
   eventMetadata: WeakMap<Event, ProductEventMetadata>;
   subscriptions: SubscriptionIndex;
-  observers: WeakMap<EventTarget, Set<(event: CustomEvent) => unknown>>;
   dispatchTargets: WeakMap<EventTarget, DispatchTargetRegistration>;
   hosts: WeakMap<Element, number>;
   defaultHost?: EventTarget;
@@ -218,7 +217,6 @@ export function createCustomEventsRuntimeState(): CustomEventsRuntimeState {
       projection: new Map(),
       effect: new Map(),
     },
-    observers: new WeakMap(),
     dispatchTargets: new WeakMap(),
     hosts: new WeakMap(),
   };
@@ -289,27 +287,6 @@ function subscribe(
         phase.delete(selector);
       }
     }
-  }, signal);
-}
-
-function observe(
-  runtime: CustomEventsRuntimeState,
-  target: EventTarget,
-  notify: (event: CustomEvent) => unknown,
-  signal?: AbortSignal,
-) {
-  let targetObservers = runtime.observers.get(target);
-  if (!targetObservers) {
-    targetObservers = new Set();
-    runtime.observers.set(target, targetObservers);
-  }
-  targetObservers.add(notify);
-  let unregisterTarget = registerDispatchTarget(runtime, target);
-
-  return ownCleanup(() => {
-    unregisterTarget();
-    targetObservers.delete(notify);
-    if (targetObservers.size === 0) runtime.observers.delete(target);
   }, signal);
 }
 
@@ -407,11 +384,6 @@ function notifyEntries(
     ...(entry.addresses === undefined ? {} : { addresses: entry.addresses }),
   }));
 
-  let observerResults: unknown[] = [];
-  for (let notify of runtime.observers.get(originTarget) ?? []) {
-    for (let { event } of events) collect(observerResults, () => notify(event));
-  }
-
   let matches = new Map<ElementSubscription, TransactionEvent>();
   for (let transactionEvent of events) {
     for (
@@ -479,10 +451,7 @@ function notifyEntries(
     return Promise.all(effectResults);
   });
 
-  return Promise.all([
-    Promise.all(observerResults),
-    projectionsAndEffectsSettled,
-  ]).then(() => {});
+  return projectionsAndEffectsSettled.then(() => {});
 }
 
 function process(
@@ -587,6 +556,5 @@ export const customEventsRuntime = {
   createProductEvent,
   dispatch,
   subscribe,
-  observe,
   registerHost,
 };

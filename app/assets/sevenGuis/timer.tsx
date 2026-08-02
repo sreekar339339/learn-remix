@@ -43,15 +43,15 @@ export const SevenGuisTimer = clientEntry(
       >
         <h2>Timer</h2>
         <div>
-          <timer.events.progress
-            on={(event) => event.timing}
+          <timer.view.progress
+            on={timer.events.timing}
             value={({ detail }) =>
               Math.min(1, detail.elapsed / detail.duration)}
             max={1}
           />
-          <timer.events.output on={(event) => event.timing.elapsed}>
+          <timer.view.output on={timer.events.timing.elapsed}>
             {(event) => `${event.detail.toFixed(1)}s elapsed`}
-          </timer.events.output>
+          </timer.view.output>
         </div>
         <label mix={rowCss}>
           Duration
@@ -75,9 +75,9 @@ export const SevenGuisTimer = clientEntry(
               }),
             ]}
           />
-          <timer.events.span on={(event) => event.timing.duration}>
+          <timer.view.span on={timer.events.timing.duration}>
             {(event) => `${event.detail.toFixed(1)}s`}
-          </timer.events.span>
+          </timer.view.span>
         </label>
         <button
           type="button"

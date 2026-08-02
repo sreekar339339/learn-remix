@@ -174,9 +174,9 @@ describe("customEvents", () => {
 
     function Profile() {
       return () => (
-        <state.events.output
+        <state.view.output
           data-testid="name"
-          on={(event) => event.profile.name}
+          on={state.events.profile.name}
           class={(event) => event.detail.toLowerCase()}
         >
           {(event) => {
@@ -188,7 +188,7 @@ describe("customEvents", () => {
             projections++;
             return event.detail;
           }}
-        </state.events.output>
+        </state.view.output>
       );
     }
 
@@ -252,27 +252,27 @@ describe("customEvents", () => {
     function Collections() {
       return () => (
         <section>
-          <state.events.output on={(event) => event.position.get("a")} id="a">
+          <state.view.output on={state.events.position.get("a")} id="a">
             {(event) => `${++calls.mapA}:${event.detail}`}
-          </state.events.output>
-          <state.events.output on={(event) => event.position.get("b")} id="b">
+          </state.view.output>
+          <state.view.output on={state.events.position.get("b")} id="b">
             {(event) => `${++calls.mapB}:${event.detail}`}
-          </state.events.output>
-          <state.events.output on={(event) => event.position}>
+          </state.view.output>
+          <state.view.output on={state.events.position}>
             {(event) => `${++calls.mapAll}:${event.detail.size}`}
-          </state.events.output>
-          <state.events.output
-            on={(event) => event.selected.has("red")}
+          </state.view.output>
+          <state.view.output
+            on={state.events.selected.has("red")}
             id="red"
           >
             {(event) => `${++calls.red}:${event.detail}`}
-          </state.events.output>
-          <state.events.output
-            on={(event) => event.selected.has("blue")}
+          </state.view.output>
+          <state.view.output
+            on={state.events.selected.has("blue")}
             id="blue"
           >
             {(event) => `${++calls.blue}:${event.detail}`}
-          </state.events.output>
+          </state.view.output>
         </section>
       );
     }
@@ -345,42 +345,36 @@ describe("customEvents", () => {
     function Board() {
       return () => (
         <section>
-          <state.events.output
-            on={(event) => event.columns.get("column:todo")}
+          <state.view.output
+            on={state.events.columns.get("column:todo")}
             id="column:todo"
           >
             {() => String(++calls.todo)}
-          </state.events.output>
-          <state.events.output
-            on={(event) => event.columns.get("column:done")}
+          </state.view.output>
+          <state.view.output
+            on={state.events.columns.get("column:done")}
             id="column:done"
           >
             {() => String(++calls.done)}
-          </state.events.output>
-          <state.events.output
-            on={(event) =>
-              event.columns.get("column:todo").cards.get("card:one")
-            }
+          </state.view.output>
+          <state.view.output
+            on={state.events.columns.get("column:todo").cards.get("card:one")}
             id="card:one"
           >
             {() => String(++calls.one)}
-          </state.events.output>
-          <state.events.output
-            on={(event) =>
-              event.columns.get("column:todo").cards.get("card:two")
-            }
+          </state.view.output>
+          <state.view.output
+            on={state.events.columns.get("column:todo").cards.get("card:two")}
             id="card:two"
           >
             {() => String(++calls.two)}
-          </state.events.output>
-          <state.events.output
-            on={(event) =>
-              event.columns.get("column:done").cards.get("card:three")
-            }
+          </state.view.output>
+          <state.view.output
+            on={state.events.columns.get("column:done").cards.get("card:three")}
             id="card:three"
           >
             {() => String(++calls.three)}
-          </state.events.output>
+          </state.view.output>
         </section>
       );
     }
@@ -415,9 +409,9 @@ describe("customEvents", () => {
 
     function RecordValue() {
       return () => (
-        <state.events.output on={(event) => event.records.get(recordKey).value}>
+        <state.view.output on={state.events.records.get(recordKey).value}>
           {(event) => `${++projections}:${event.detail}`}
-        </state.events.output>
+        </state.view.output>
       );
     }
 
@@ -444,15 +438,15 @@ describe("customEvents", () => {
     function Items() {
       return () => (
         <section>
-          <state.events.output on={(event) => event.items[0]} id="0">
+          <state.view.output on={state.events.items[0]} id="0">
             {() => String(++calls.first)}
-          </state.events.output>
-          <state.events.output on={(event) => event.items[1]} id="1">
+          </state.view.output>
+          <state.view.output on={state.events.items[1]} id="1">
             {() => String(++calls.second)}
-          </state.events.output>
-          <state.events.output on={(event) => event.items}>
+          </state.view.output>
+          <state.view.output on={state.events.items}>
             {() => String(++calls.all)}
-          </state.events.output>
+          </state.view.output>
         </section>
       );
     }
@@ -502,18 +496,18 @@ describe("customEvents", () => {
     function Collections() {
       return () => (
         <section>
-          <state.events.output on={(event) => event.circles[7]} id="7">
+          <state.view.output on={state.events.circles[7]} id="7">
             {() => String(++calls.circle7)}
-          </state.events.output>
-          <state.events.output on={(event) => event.circles[8]} id="8">
+          </state.view.output>
+          <state.view.output on={state.events.circles[8]} id="8">
             {() => String(++calls.circle8)}
-          </state.events.output>
-          <state.events.output on={(event) => event.values.A0}>
+          </state.view.output>
+          <state.view.output on={state.events.values.A0}>
             {() => String(++calls.A0)}
-          </state.events.output>
-          <state.events.output on={(event) => event.values.B0}>
+          </state.view.output>
+          <state.view.output on={state.events.values.B0}>
             {() => String(++calls.B0)}
-          </state.events.output>
+          </state.view.output>
         </section>
       );
     }
@@ -580,31 +574,31 @@ describe("customEvents", () => {
     function Selection() {
       return () => (
         <section>
-          <state.events.button
-            on={(event) => event.selectedId}
+          <state.view.button
+            on={state.events.selectedId}
             id="1"
             type="button"
-            mix={state.events.on("selectedId", ({ currentTarget }) => {
+            mix={state.events.selectedId.on(({ currentTarget }) => {
               effectOrder.push(currentTarget.id);
               currentTarget.focus();
             })}
           >
             {() => String(++calls.first)}
-          </state.events.button>
-          <state.events.button
-            on={(event) => event.selectedId}
+          </state.view.button>
+          <state.view.button
+            on={state.events.selectedId}
             id="2"
             type="button"
-            mix={state.events.on("selectedId", ({ currentTarget }) => {
+            mix={state.events.selectedId.on(({ currentTarget }) => {
               effectOrder.push(currentTarget.id);
               currentTarget.focus();
             })}
           >
             {() => String(++calls.second)}
-          </state.events.button>
-          <state.events.output on={(event) => event.selectedId}>
+          </state.view.button>
+          <state.view.output on={state.events.selectedId}>
             {() => String(++calls.all)}
-          </state.events.output>
+          </state.view.output>
         </section>
       );
     }
@@ -671,8 +665,8 @@ describe("customEvents", () => {
     state.update((draft) => {
       draft.count = 1;
     });
-    state.dispatchEvent(state.events("countDrafted", 2));
-    state.dispatchEvent(state.events("refreshRequested"));
+    state.dispatchEvent(state.events.create("countDrafted", 2));
+    state.dispatchEvent(state.events.create("refreshRequested"));
 
     assert.equal(state.count, 1);
     assert.deepEqual(received, [
@@ -683,7 +677,7 @@ describe("customEvents", () => {
 
     if (false) {
       // @ts-expect-error - property events are produced only by update().
-      state.events("count", 2);
+      state.events.create("count", 2);
       state.update((draft) => {
         // @ts-expect-error - occurrences are not state properties.
         draft.countDrafted = 2;
@@ -695,7 +689,7 @@ describe("customEvents", () => {
     }
   });
 
-  it("selects state paths and occurrences from one event-source callback", async (t) => {
+  it("combines state and occurrence event sources", async (t) => {
     let state = customEvents<{
       count: number;
       countDrafted: number;
@@ -704,9 +698,9 @@ describe("customEvents", () => {
 
     function Count() {
       return () => (
-        <state.events.output on={(event) => [event.count, event.countDrafted]}>
+        <state.view.output on={[state.events.count, state.events.countDrafted]}>
           {(event) => `${event.detail}:${++projections}`}
-        </state.events.output>
+        </state.view.output>
       );
     }
 
@@ -715,7 +709,7 @@ describe("customEvents", () => {
     assert.equal(result.$("output")?.textContent, "0:1");
 
     await result.act(async () => {
-      state.dispatchEvent(state.events("countDrafted", 2));
+      state.dispatchEvent(state.events.create("countDrafted", 2));
       await settleEffects();
     });
     assert.equal(result.$("output")?.textContent, "2:2");
@@ -752,10 +746,10 @@ describe("customEvents", () => {
   it("creates typed local-name single and batch events", () => {
     let events = createEvents();
     let otherEvents = createEvents();
-    let first = events("submitted", { id: "first" });
-    let second = events("submitted", { id: "second" });
-    let signal = events("paid");
-    let batch = events([
+    let first = events.create("submitted", { id: "first" });
+    let second = events.create("submitted", { id: "second" });
+    let signal = events.create("paid");
+    let batch = events.create([
       "paid",
       {
         submitted: {
@@ -774,7 +768,10 @@ describe("customEvents", () => {
     assert.equal(first.cancelable, false);
     first.preventDefault();
     assert.equal(first.defaultPrevented, false);
-    assert.equal(otherEvents("submitted", { id: "other" }).type, "submitted");
+    assert.equal(
+      otherEvents.create("submitted", { id: "other" }).type,
+      "submitted",
+    );
     let target = new EventTarget();
     let observed = false;
     target.addEventListener("submitted", () => {
@@ -783,7 +780,7 @@ describe("customEvents", () => {
     assert.equal(target.dispatchEvent(first), true);
     assert.equal(observed, true);
 
-    let createWithEventInit = events as unknown as (
+    let createWithEventInit = events.create as unknown as (
       type: "submitted",
       detail: { id: string },
       init: EventInit,
@@ -800,22 +797,22 @@ describe("customEvents", () => {
 
     if (false) {
       // @ts-expect-error - detailed events require detail.
-      events("submitted");
+      events.create("submitted");
       // @ts-expect-error - signal events do not accept detail.
-      events("paid", "unexpected");
+      events.create("paid", "unexpected");
       // @ts-expect-error - detailed events require configured batch detail.
-      events([{ submitted: {} }]);
+      events.create([{ submitted: {} }]);
       // @ts-expect-error - transactions use the ordered array grammar.
-      events({ paid: null });
+      events.create({ paid: null });
       // @ts-expect-error - entry options route only; propagation belongs to the batch.
-      events([{
+      events.create([{
         submitted: {
           detail: { id: "invalid-options" },
           options: { composed: true },
         },
       }]);
       // @ts-expect-error - `*` is reserved for subscriptions.
-      events("*");
+      events.create("*");
       // @ts-expect-error - native DOM event names are reserved.
       customEvents<"click">();
       customEvents<TestEvents>({
@@ -824,14 +821,12 @@ describe("customEvents", () => {
         signal: new AbortController().signal,
       });
       // @ts-expect-error - descriptor events are completed, non-cancelable facts.
-      events("paid", { cancelable: true });
+      events.create("paid", { cancelable: true });
       // @ts-expect-error - awaitable dispatch preserves detailed-event typing.
       events.dispatch(new EventTarget(), "submitted");
       // @ts-expect-error - customEvents effects do not expose reentry signals.
-      events.on("paid", (_event, _signal) => {});
-      // @ts-expect-error - customEvents observers do not expose reentry signals.
-      events.observe(new EventTarget(), (_event, _signal) => {});
-      events.on("*", (event) => {
+      events.paid.on((_event, _signal) => {});
+      events.on((event) => {
         switch (event.type) {
           case "submitted":
             event.detail.id satisfies string;
@@ -854,8 +849,8 @@ describe("customEvents", () => {
     controller.abort(reason);
 
     let factories = [
-      () => events("paid", { signal: controller.signal }),
-      () => events(["paid"], { signal: controller.signal }),
+      () => events.create("paid", { signal: controller.signal }),
+      () => events.create(["paid"], { signal: controller.signal }),
     ];
 
     for (let createEvent of factories) {
@@ -875,18 +870,18 @@ describe("customEvents", () => {
     function CollidingEventNames() {
       return () => (
         <section mix={events.host}>
-          <events.output on="name" data-testid="name">
+          <events.view.output on={events.name} data-testid="name">
             {(event) => event?.type}
-          </events.output>
-          <events.output on="length" data-testid="length">
+          </events.view.output>
+          <events.view.output on={events.length} data-testid="length">
             {(event) => event?.type}
-          </events.output>
-          <events.output on="bind" data-testid="bind">
+          </events.view.output>
+          <events.view.output on={events.bind} data-testid="bind">
             {(event) => event?.type}
-          </events.output>
-          <events.output on="toString" data-testid="toString">
+          </events.view.output>
+          <events.view.output on={events.toString} data-testid="toString">
             {(event) => event?.type}
-          </events.output>
+          </events.view.output>
         </section>
       );
     }
@@ -896,7 +891,7 @@ describe("customEvents", () => {
     let section = result.$("section") as HTMLElement;
 
     await result.act(async () => {
-      section.dispatchEvent(events(["name", "length", "bind", "toString"]));
+      section.dispatchEvent(events.create(["name", "length", "bind", "toString"]));
       await settleEffects();
     });
 
@@ -915,26 +910,26 @@ describe("customEvents", () => {
             data-testid="submit"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                events("submitted", { id: "order-1" }),
+                events.create("submitted", { id: "order-1" }),
               );
             })}
           >
             Submit
           </button>
-          <events.form
-            on="submitted"
-            initial={events("submitted", { id: "idle" })}
+          <events.view.form
+            on={events.submitted}
+            initial={events.create("submitted", { id: "idle" })}
             data-testid="form"
             class={(event) => (event.detail.id === "idle" ? "" : "pending")}
             aria-busy={(event) => event.detail.id !== "idle"}
-            mix={events.on("submitted", ({ currentTarget }) => {
+            mix={events.submitted.on(({ currentTarget }) => {
               currentTarget.dataset.committed = String(
                 currentTarget.classList.contains("pending"),
               );
             })}
           >
             {(event) => <output>{event.detail.id}</output>}
-          </events.form>
+          </events.view.form>
         </section>
       );
     }
@@ -964,21 +959,21 @@ describe("customEvents", () => {
     function Confirmation() {
       return () => (
         <section mix={events.host} data-testid="confirmation-host">
-          <events.output
-            on="submitted"
+          <events.view.output
+            on={events.submitted}
             hidden={(event) => event === undefined}
             data-testid="confirmation"
           >
             {(event) => event?.detail.id ?? null}
-          </events.output>
-          <events.output
-            on="submitted"
-            initial={events("submitted", { id: "initial" })}
+          </events.view.output>
+          <events.view.output
+            on={events.submitted}
+            initial={events.create("submitted", { id: "initial" })}
             hidden={(event) => event.detail.id === "hidden"}
             data-testid="initial-confirmation"
           >
             {(event) => event.detail.id}
-          </events.output>
+          </events.view.output>
         </section>
       );
     }
@@ -998,11 +993,11 @@ describe("customEvents", () => {
     assert.equal(initialConfirmation.hidden, false);
     assert.equal(initialConfirmation.textContent, "initial");
 
-    await result.act(() => host.dispatchEvent(events("paid")));
+    await result.act(() => host.dispatchEvent(events.create("paid")));
     assert.equal(confirmation.hidden, true);
 
     await result.act(() =>
-      host.dispatchEvent(events("submitted", { id: "order-1" }))
+      host.dispatchEvent(events.create("submitted", { id: "order-1" }))
     );
     assert.equal(confirmation.hidden, false);
     assert.equal(confirmation.textContent, "order-1");
@@ -1013,7 +1008,7 @@ describe("customEvents", () => {
 
     function Form() {
       return () => (
-        <events.form
+        <events.view.form
           data-testid="source"
           data-action={(event) => event?.type}
           mix={[
@@ -1024,11 +1019,11 @@ describe("customEvents", () => {
             }),
           ]}
         >
-          <events.input
+          <events.view.input
             data-testid="input"
             disabled={(event) => event?.type === "submitted"}
           />
-        </events.form>
+        </events.view.form>
       );
     }
 
@@ -1039,7 +1034,7 @@ describe("customEvents", () => {
     input.focus();
 
     await result.act(async () => {
-      form.dispatchEvent(events("submitted", { id: "order-1" }));
+      form.dispatchEvent(events.create("submitted", { id: "order-1" }));
       await settleEffects();
     });
 
@@ -1050,7 +1045,7 @@ describe("customEvents", () => {
 
   it("supports named groups, wildcards, and keyed routing", async (t) => {
     let events = createEvents();
-    let initialOutcome = events("paid");
+    let initialOutcome = events.create("paid");
 
     function Orders() {
       return () => (
@@ -1059,28 +1054,28 @@ describe("customEvents", () => {
             data-testid="update"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                events("submitted", { id: "first" }, { key: "first" }),
+                events.create("submitted", { id: "first" }, { key: "first" }),
               );
             })}
           />
           {["first", "second"].map((id) => (
-            <events.output
-              on={["submitted", "paid"]}
+            <events.view.output
+              on={[events.submitted, events.paid]}
               initial={initialOutcome}
               id={id}
               data-testid={id}
-              mix={events.on("*", ({ currentTarget, type }) => {
+              mix={events.on(({ currentTarget, type }) => {
                 currentTarget.dataset.effect = type;
               })}
             >
               {(event) =>
                 event.type === "submitted" ? event.detail.id : "idle"
               }
-            </events.output>
+            </events.view.output>
           ))}
-          <events.output on="*" initial={initialOutcome} data-testid="all">
+          <events.view.output initial={initialOutcome} data-testid="all">
             {(event) => (event.type === "paid" ? "idle" : event.type)}
-          </events.output>
+          </events.view.output>
         </section>
       );
     }
@@ -1103,7 +1098,7 @@ describe("customEvents", () => {
 
     await result.act(() => {
       (result.$("section") as HTMLElement).dispatchEvent(
-        events(
+        events.create(
           [
             {
               submitted: {
@@ -1139,11 +1134,11 @@ describe("customEvents", () => {
           <button
             data-testid="local"
             mix={[
-              events.on("paid", ({ currentTarget }) => {
+              events.paid.on(({ currentTarget }) => {
                 currentTarget.dataset.received = "true";
               }),
               on("click", ({ currentTarget }) => {
-                currentTarget.dispatchEvent(events("paid", { bubbles: false }));
+                currentTarget.dispatchEvent(events.create("paid", { bubbles: false }));
               }),
             ]}
           />
@@ -1151,12 +1146,12 @@ describe("customEvents", () => {
             <button
               data-testid="unhosted-source"
               mix={on("click", ({ currentTarget }) => {
-                currentTarget.dispatchEvent(events("paid"));
+                currentTarget.dispatchEvent(events.create("paid"));
               })}
             />
             <output
               data-testid="unhosted-listener"
-              mix={events.on("paid", ({ currentTarget }) => {
+              mix={events.paid.on(({ currentTarget }) => {
                 currentTarget.textContent = "received";
               })}
             />
@@ -1165,12 +1160,12 @@ describe("customEvents", () => {
             <button
               data-testid="hosted-source"
               mix={on("click", ({ currentTarget }) => {
-                currentTarget.dispatchEvent(events("paid"));
+                currentTarget.dispatchEvent(events.create("paid"));
               })}
             />
             <output
               data-testid="hosted-listener"
-              mix={events.on("paid", ({ currentTarget }) => {
+              mix={events.paid.on(({ currentTarget }) => {
                 currentTarget.textContent = "received";
               })}
             />
@@ -1223,7 +1218,7 @@ describe("customEvents", () => {
         <section
           mix={[
             events.host,
-            events.on("submitted", ({ currentTarget, detail }) => {
+            events.submitted.on(({ currentTarget, detail }) => {
               currentTarget.dataset.latest = detail.id;
             }),
           ]}
@@ -1233,7 +1228,7 @@ describe("customEvents", () => {
               data-testid="local"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  events("submitted", { id: "local" }),
+                  events.create("submitted", { id: "local" }),
                 );
               })}
             />
@@ -1241,7 +1236,7 @@ describe("customEvents", () => {
               data-testid="composed"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  events(
+                  events.create(
                     [
                       {
                         submitted: { detail: { id: "composed" } },
@@ -1287,15 +1282,15 @@ describe("customEvents", () => {
               dispatchTarget = button;
             })}
           />
-          <events.output
+          <events.view.output
             data-testid="projection"
-            mix={events.on("*", async ({ type, currentTarget }) => {
+            mix={events.on(async ({ type, currentTarget }) => {
               await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
           >
             {(event) => event && `${event.type}:${++projectionUpdates}`}
-          </events.output>
+          </events.view.output>
         </section>
       );
     }
@@ -1316,45 +1311,6 @@ describe("customEvents", () => {
 
     assert.equal(result.$('[data-testid="projection"]')?.textContent, "paid:1");
     assert.deepEqual(effects, ["submitted:paid:1", "paid:paid:1"]);
-  });
-
-  it("observes all descriptor events on explicit and default hosts", async () => {
-    let explicitTarget = new EventTarget();
-    let defaultTarget = new EventTarget();
-    let explicitEvents = createEvents();
-    let otherEvents = createEvents();
-    let hostedEvents = createEvents({ host: defaultTarget });
-    let controller = new AbortController();
-    let calls: string[] = [];
-
-    explicitEvents.observe(
-      explicitTarget,
-      (event) => {
-        assert.equal(event.currentTarget, explicitTarget);
-        calls.push(`all:${event.type}`);
-      },
-      { signal: controller.signal },
-    );
-
-    hostedEvents.observe(async (event) => {
-      assert.equal(event.currentTarget, defaultTarget);
-      await Promise.resolve();
-      calls.push(`hosted:${event.type}`);
-    });
-    otherEvents.observe(explicitTarget, () => {
-      calls.push("wrong-descriptor");
-    });
-
-    explicitTarget.dispatchEvent(explicitEvents("submitted", { id: "direct" }));
-    explicitTarget.dispatchEvent(explicitEvents("paid"));
-    await hostedEvents.dispatch(defaultTarget, "paid");
-    assert.deepEqual(calls, ["all:submitted", "all:paid", "hosted:paid"]);
-
-    controller.abort();
-    explicitTarget.dispatchEvent(
-      explicitEvents("submitted", { id: "ignored" }),
-    );
-    assert.equal(calls.length, 3);
   });
 
   it("mirrors batch entries only on configured domain EventTargets", async () => {
@@ -1387,9 +1343,9 @@ describe("customEvents", () => {
           mix={[
             events.host,
             on("input", ({ currentTarget }) => {
-              currentTarget.dispatchEvent(events("paid"));
+              currentTarget.dispatchEvent(events.create("paid"));
             }),
-            events.on("paid", ({ currentTarget }) => {
+            events.paid.on(({ currentTarget }) => {
               currentTarget.dataset.ready = "true";
             }),
             ref((input) => input.dispatchEvent(new InputEvent("input"))),

@@ -114,8 +114,8 @@ export const SevenGuisCircleDrawer = clientEntry(
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
         <div mix={rowCss}>
-          <drawing.events.button
-            on={(event) => event.history}
+          <drawing.view.button
+            on={drawing.events.history}
             type="button"
             disabled={(event) => event.detail.index === 0}
             mix={[
@@ -128,9 +128,9 @@ export const SevenGuisCircleDrawer = clientEntry(
             ]}
           >
             Undo
-          </drawing.events.button>
-          <drawing.events.button
-            on={(event) => event.history}
+          </drawing.view.button>
+          <drawing.view.button
+            on={drawing.events.history}
             type="button"
             disabled={(event) =>
               event.detail.index === event.detail.snapshots.length - 1
@@ -148,7 +148,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             ]}
           >
             Redo
-          </drawing.events.button>
+          </drawing.view.button>
         </div>
         <svg
           viewBox="0 0 420 220"
@@ -179,10 +179,10 @@ export const SevenGuisCircleDrawer = clientEntry(
           ]}
         >
           {[...drawing.circles.values()].map((circle) => (
-            <drawing.events.circle
-              on={(event) => [
-                event.circles.get(circle.id).diameter,
-                event.editingCircleId,
+            <drawing.view.circle
+              on={[
+                drawing.events.circles.get(circle.id).diameter,
+                drawing.events.editingCircleId,
               ]}
               key={circle.id}
               id={String(circle.id)}
@@ -214,8 +214,8 @@ export const SevenGuisCircleDrawer = clientEntry(
             />
           ))}
         </svg>
-        <drawing.events.form
-          on={(event) => event.editingCircleId}
+        <drawing.view.form
+          on={drawing.events.editingCircleId}
           hidden={(event) => event.detail === null}
           mix={[
             rowCss,
@@ -227,8 +227,8 @@ export const SevenGuisCircleDrawer = clientEntry(
         >
           <label>
             Diameter{" "}
-            <drawing.events.input
-              on={(event) => [event.editingCircleId, event.circles]}
+            <drawing.view.input
+              on={[drawing.events.editingCircleId, drawing.events.circles]}
               type="range"
               min={10}
               max={120}
@@ -256,7 +256,7 @@ export const SevenGuisCircleDrawer = clientEntry(
           <button type="submit" mix={buttonCss}>
             Close
           </button>
-        </drawing.events.form>
+        </drawing.view.form>
       </section>
     );
   },

@@ -44,7 +44,7 @@ async function fetchBooks(
     let json = await response.json();
     if (!("docs" in json)) {
       input.dispatchEvent(
-        events(
+        events.create(
           "booksNotFound",
           { reason: { other: json.detail[0].msg } },
           options,
@@ -56,11 +56,11 @@ async function fetchBooks(
     let books = json.docs as Array<Book>;
     input.dispatchEvent(
       books.length
-        ? events("booksFound", books, options)
-        : events("booksNotFound", { reason: "emptyList" }, options),
+        ? events.create("booksFound", books, options)
+        : events.create("booksNotFound", { reason: "emptyList" }, options),
     );
   } catch (error) {
-    input.dispatchEvent(events("errorOccurred", error as Error, options));
+    input.dispatchEvent(events.create("errorOccurred", error as Error, options));
   }
 }
 
@@ -106,8 +106,8 @@ export const SearchBooksWithoutFrameWithHandleUpdate = clientEntry(
   ) {
     let initialQuery = handle.props.initialQuery.trim();
     let currentEvent: SearchEvent = initialQuery
-      ? events("querySubmitted", { query: initialQuery })
-      : events("queryEmpty");
+      ? events.create("querySubmitted", { query: initialQuery })
+      : events.create("queryEmpty");
     let interacted = false;
 
     return () => (
@@ -123,15 +123,15 @@ export const SearchBooksWithoutFrameWithHandleUpdate = clientEntry(
               on("input", ({ currentTarget }, signal) => {
                 let query = currentTarget.value.trim();
                 if (!query) {
-                  currentTarget.dispatchEvent(events("queryEmpty"));
+                  currentTarget.dispatchEvent(events.create("queryEmpty"));
                   return;
                 }
                 currentTarget.dispatchEvent(
-                  events("querySubmitted", { query }),
+                  events.create("querySubmitted", { query }),
                 );
                 fetchBooks(query, currentTarget, signal);
               }),
-              events.on("*", async (event) => {
+              events.on(async (event) => {
                 currentEvent = event;
                 let signal = await handle.update();
                 if (!signal.aborted && event.type !== "querySubmitted") {

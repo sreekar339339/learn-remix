@@ -39,16 +39,12 @@ describe("AppContext", () => {
         calls.push(`map:${event.detail.theme}:${event.detail.layout}`);
       },
     });
-    context.events.observe((event) => {
-      calls.push(`all:${event.type}`);
-    });
-
     context.update((draft) => {
       draft.user = { name: "Ada", age: 37 };
     });
 
     assert.deepEqual(context.user, { name: "Ada", age: 37 });
-    assert.equal(calls.join(","), "named:Ada,all:user");
+    assert.equal(calls.join(","), "named:Ada");
 
     context.update((draft) => {
       draft.user = { name: "Grace", age: 85 };
@@ -59,7 +55,7 @@ describe("AppContext", () => {
     assert.deepEqual(context.settings, { layout: "zen", theme: "dark" });
     assert.equal(
       calls.join(","),
-      "named:Ada,all:user,named:Grace,map:dark:zen,all:user,all:settings",
+      "named:Ada,named:Grace,map:dark:zen",
     );
   });
 

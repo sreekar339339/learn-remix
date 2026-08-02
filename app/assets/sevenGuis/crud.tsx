@@ -64,8 +64,12 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <model.events.select
-            on={(event) => [event.people, event.prefix, event.selectedId]}
+          <model.view.select
+            on={[
+              model.events.people,
+              model.events.prefix,
+              model.events.selectedId,
+            ]}
             size={7}
             aria-label="People"
             value={() => model.selectedId ?? ""}
@@ -91,9 +95,9 @@ export const SevenGuisCrud = clientEntry(
                 </option>
               ))
             }
-          </model.events.select>
-          <model.events.div
-            on={(event) => [event.draft, event.selectedId]}
+          </model.view.select>
+          <model.view.div
+            on={[model.events.draft, model.events.selectedId]}
             mix={css({ display: "grid", gap: 8 })}
           >
             {() => (
@@ -195,7 +199,7 @@ export const SevenGuisCrud = clientEntry(
                 </div>
               </>
             )}
-          </model.events.div>
+          </model.view.div>
         </div>
       </section>
     );

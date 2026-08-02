@@ -22,7 +22,7 @@ export function AddTodo(handle: Handle<Props<"form">>) {
     formData.set("redirectTo", "none");
     let opts = { composed: true, signal };
     try {
-      form.dispatchEvent(events("actionSubmitted", null, opts));
+      form.dispatchEvent(events.create("actionSubmitted", null, opts));
       // await new Promise((res, rej) => setTimeout(rej, 2000, new Error('laude lag gaye')));
       let resp = await fetch(new URL(form.action), {
         method: "POST",
@@ -35,10 +35,10 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         });
       }
       await handle.frames.get("TodoItems")!.reload();
-      form.dispatchEvent(events("actionSucceeded", null, opts));
+      form.dispatchEvent(events.create("actionSucceeded", null, opts));
     } catch (error) {
       form.dispatchEvent(
-        events("actionErrored", { error: error as Error }, opts),
+        events.create("actionErrored", { error: error as Error }, opts),
       );
     }
   };
@@ -51,21 +51,21 @@ export function AddTodo(handle: Handle<Props<"form">>) {
         css({ display: "flex", alignItems: "center", gap: 8 }),
         on("submit", onSubmit),
         events.host,
-        events.on("actionSucceeded", ({ currentTarget }) => {
+        events.actionSucceeded.on(({ currentTarget }) => {
           currentTarget.reset();
         }),
       ]}
     >
       <label>
         Enter a todo{" "}
-        <events.input
+        <events.view.input
           disabled={(event) => event?.type === "actionSubmitted"}
           class={(event) =>
             event?.type === "actionSubmitted" ? "pending" : ""
           }
           mix={[
             inputCss,
-            events.on('*', ({ currentTarget, type }) => {
+            events.on(({ currentTarget, type }) => {
               if (type !== "actionSubmitted") {
                 currentTarget.select();
               }

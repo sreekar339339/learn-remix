@@ -1,19 +1,26 @@
 import * as assert from "remix/assert";
 import { describe, it } from "remix/test";
 import { addEventListeners } from "remix/ui";
+import { render } from "remix/ui/test";
 import { Drummer } from "./drummer.ts";
 
 describe("Drummer", () => {
-  it("publishes domain events through its configured host", () => {
+  it("publishes domain events to a mounted component effect", async (t) => {
     let drummer = new Drummer();
     let events: string[] = [];
+    let result = render(
+      <output
+        mix={drummer.events.on(({ type, detail }) => {
+          events.push(`${type}:${detail}`);
+        })}
+      />,
+    );
+    t.after(() => result.cleanup());
 
-    drummer.events.observe(({ type, detail }) => {
-      events.push(`${type}:${detail}`);
+    await result.act(() => {
+      drummer.play(120);
+      drummer.stop();
     });
-
-    drummer.play(120);
-    drummer.stop();
 
     assert.equal(drummer.bpm, 120);
     assert.equal(drummer.isPlaying, false);

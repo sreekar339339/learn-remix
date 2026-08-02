@@ -6,7 +6,6 @@ import {
   type RemixNode,
 } from "remix/ui";
 import {
-  ALL_EVENTS,
   createCurrentTargetEvent,
   customEventsRuntime,
   type CustomEventsRuntimeState,
@@ -16,27 +15,20 @@ import {
   type EventDetails,
 } from "./types.ts";
 import {
-  getStateEventSourceMetadata,
-  readStateEventSource,
-  type StateEventSourceMetadata,
-} from "./stateEventSources.ts";
-
-function selectEventTypes(types: string | readonly string[]) {
-  let selected = typeof types === "string" ? [types] : types;
-  if (selected.length === 1 && selected[0] === ALL_EVENTS) return null;
-  return new Set(selected);
-}
+  getEventSourceMetadata,
+  readEventSource,
+  type EventSourceMetadata,
+} from "./eventSources.ts";
 
 export const customEventsOnMixin = createMixin<
   Element,
   [
     runtime: CustomEventsRuntimeState,
-    types: string | readonly string[],
+    source: EventSourceMetadata | undefined,
     listener: (event: Event) => void | Promise<unknown>,
   ]
 >((handle) => {
-  return (runtime, types, listener) => {
-    let eventTypes = selectEventTypes(types);
+  return (runtime, source, listener) => {
     return (
       <handle.element
         mix={ref((element, signal) => {
@@ -45,7 +37,10 @@ export const customEventsOnMixin = createMixin<
             "effect",
             {
               element,
-              eventTypes,
+              eventTypes: source ? new Set([source.type]) : null,
+              ...(source
+                ? { addresses: new Map([[source.type, source.path]]) }
+                : {}),
               notify(event) {
                 return listener(createCurrentTargetEvent(event, element));
               },
@@ -65,15 +60,15 @@ function prependMixin(mix: unknown, internalMixin: unknown) {
     : [internalMixin, mix];
 }
 
-function createStateEvent(
-  metadata: StateEventSourceMetadata,
+function createProjectionEvent(
+  metadata: EventSourceMetadata,
   sourceEvent?: CustomEvent,
 ) {
   return new CustomEvent(metadata.type, {
     bubbles: false,
     cancelable: false,
     composed: sourceEvent?.composed,
-    detail: readStateEventSource(metadata),
+    detail: readEventSource(metadata),
   });
 }
 
@@ -109,55 +104,50 @@ function createCustomEventsEventElement<
 >(
   tag: Tag,
   runtime: CustomEventsRuntimeState,
-  stateOwner?: object,
-  stateSources?: object,
+  sourceOwner: object,
 ): CustomEventsEventElement<Events, State, Tag> {
   type RuntimeProps = Record<string, unknown> & {
-    on?: string | readonly string[] | object | ((sources: object) => unknown);
+    on?: object | readonly object[];
     initial?: unknown;
   };
 
   function CustomEventsEventElement(
     handle: Handle<RuntimeProps>,
   ) {
-    let configuredSource = handle.props.on ?? ALL_EVENTS;
-    let source = typeof configuredSource === "function"
-      ? configuredSource(stateSources ?? Object.create(null))
-      : configuredSource;
-    let sources = Array.isArray(source) ? source : [source];
-    let stateEventSources = sources.flatMap((source) => {
-      let metadata = getStateEventSourceMetadata(source);
+    let configuredSource = handle.props.on;
+    let sources = configuredSource === undefined
+      ? []
+      : Array.isArray(configuredSource) ? configuredSource : [configuredSource];
+    let eventSources = sources.flatMap((source) => {
+      let metadata = getEventSourceMetadata(source);
       return metadata ? [metadata] : [];
     });
-    let stateEventSource = stateEventSources[0];
-    for (let source of stateEventSources) {
-      if (source.owner !== stateOwner) {
+    if (eventSources.length !== sources.length) {
+      throw new TypeError("Event-aware element on accepts event sources.");
+    }
+    for (let source of eventSources) {
+      if (source.owner !== sourceOwner) {
         throw new TypeError(
-          "State event sources must belong to this event model.",
+          "Event sources must belong to this event model.",
         );
       }
     }
-    let currentInput = stateEventSource
-      ? createStateEvent(stateEventSource)
+    let readableSource = eventSources.find(({ read }) => read !== undefined);
+    let currentInput = readableSource
+      ? createProjectionEvent(readableSource)
       : handle.props.initial;
-    let occurrenceTypes = sources.filter((source): source is string =>
-      typeof source === "string"
-    );
-    let eventTypes = occurrenceTypes.includes(ALL_EVENTS)
+    let eventTypes = configuredSource === undefined
       ? null
-      : new Set([
-        ...occurrenceTypes,
-        ...stateEventSources.map(({ type }) => type),
-      ]);
+      : new Set(eventSources.map(({ type }) => type));
     let addresses = new Map<string, readonly unknown[]>();
-    let stateSourceByType = new Map<string, StateEventSourceMetadata>();
-    for (let source of stateEventSources) {
-      if (stateSourceByType.has(source.type)) {
+    let sourceByType = new Map<string, EventSourceMetadata>();
+    for (let source of eventSources) {
+      if (sourceByType.has(source.type)) {
         throw new TypeError(
-          "An event-aware element accepts one source per state property.",
+          "An event-aware element accepts one source per event type.",
         );
       }
-      stateSourceByType.set(source.type, source);
+      sourceByType.set(source.type, source);
       addresses.set(source.type, source.path);
     }
     let projectionMix = ref((element, signal) => {
@@ -169,9 +159,9 @@ function createCustomEventsEventElement<
           eventTypes,
           ...(addresses.size ? { addresses } : {}),
           notify(event) {
-            let matchedSource = stateSourceByType.get(event.type);
-            currentInput = matchedSource
-              ? createStateEvent(matchedSource, event)
+            let matchedSource = sourceByType.get(event.type);
+            currentInput = matchedSource?.read
+              ? createProjectionEvent(matchedSource, event)
               : event;
             return handle.update();
           },
@@ -220,8 +210,7 @@ export function createEventElementFactory<
   State extends EventDetails | never = never,
 >(
   runtime: CustomEventsRuntimeState,
-  stateOwner?: object,
-  stateSources?: object,
+  sourceOwner: object,
 ) {
   let elements = new Map<string, unknown>();
 
@@ -231,8 +220,7 @@ export function createEventElementFactory<
       element = createCustomEventsEventElement<Events, State, Tag>(
         tag,
         runtime,
-        stateOwner,
-        stateSources,
+        sourceOwner,
       );
       elements.set(tag, element);
     }

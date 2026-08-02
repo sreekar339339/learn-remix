@@ -130,8 +130,8 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
             <section key={columnId} mix={columnCss}>
               <header>
                 <h2>{column.title}</h2>
-                <board.events.output
-                  on={(event) => event.columns.get(columnId)}
+                <board.view.output
+                  on={board.events.columns.get(columnId)}
                   aria-label={`${column.title} projection`}
                 >
                   {({ detail: current }) => {
@@ -143,15 +143,13 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                       columnId,
                     )}×`;
                   }}
-                </board.events.output>
+                </board.view.output>
               </header>
               {column.cards
                 .entries()
                 .map(([cardId, initialCard]) => (
-                  <board.events.article
-                    on={(event) =>
-                      event.columns.get(columnId).cards.get(cardId)
-                    }
+                  <board.view.article
+                    on={board.events.columns.get(columnId).cards.get(cardId)}
                     key={cardId}
                     aria-label={initialCard.title}
                     data-urgent={(event) => event.detail?.urgent}
@@ -188,7 +186,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                         </>
                       );
                     }}
-                  </board.events.article>
+                  </board.view.article>
                 ))
                 .toArray()}
             </section>

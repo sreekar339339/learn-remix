@@ -3,7 +3,6 @@ import {
   ALL_EVENTS,
   canonicalAddressSegment,
   createCustomEventsRuntimeState,
-  createCurrentTargetEvent,
   customEventsRuntime,
   type CustomEventsBatchRuntimeEntry,
   type CustomEventsRuntimeState,
@@ -12,16 +11,14 @@ import {
   createEventElementFactory,
   customEventsOnMixin,
 } from "./remix.tsx";
+import { createEventSource } from "./eventSources.ts";
 import {
   type CustomEventsOptions,
   type CustomEventsBatchItem,
   type CustomEventsDispatch,
   type CustomEventsFactory,
   type CustomEventsDescriptor,
-  type CustomEventsEventType,
   type CustomEventsInit,
-  type CustomEventsObserveFunction,
-  type CustomEventsObserverOptions,
   type CustomEventsOnFunction,
   type EventDetails,
 } from "./types.ts";
@@ -40,7 +37,7 @@ type InternalEntryOptions = CustomEventsInit & {
 
 type StateEventContext = {
   owner: object;
-  sources: object;
+  getState(): EventDetails;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -50,10 +47,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isCustomEventsInit(value: unknown): value is CustomEventsInit {
   return isRecord(value) &&
     Object.keys(value).every((key) => customEventsInitKeys.has(key));
-}
-
-function isEventTarget(value: unknown): value is EventTarget {
-  return typeof EventTarget !== "undefined" && value instanceof EventTarget;
 }
 
 function getEventInit(init: CustomEventsInit | undefined): EventInit {
@@ -69,8 +62,6 @@ function getEventInit(init: CustomEventsInit | undefined): EventInit {
   };
 }
 
-// Event elements are proxy-backed so their type-shaped API does not require
-// duplicating runtime keys.
 export function createCustomEventsDescriptor<
   Events extends EventDetails,
   State extends EventDetails | never = never,
@@ -80,6 +71,7 @@ export function createCustomEventsDescriptor<
 ): CustomEventsDescriptor<Events, State> {
   let runtime: CustomEventsRuntimeState | undefined;
   let getRuntime = () => runtime ??= createCustomEventsRuntimeState();
+  let sourceOwner = state?.owner ?? {};
 
   function createEntry(
     type: string,
@@ -130,11 +122,7 @@ export function createCustomEventsDescriptor<
   }
 
   let on = ((...args: unknown[]) => {
-    let typeOrTypes = args[0] as
-      | typeof ALL_EVENTS
-      | CustomEventsEventType<Events>
-      | readonly CustomEventsEventType<Events>[];
-    let listener = args[1] as
+    let listener = args[0] as
       | ((event: Event) => void | Promise<unknown>)
       | undefined;
     if (!listener) {
@@ -142,33 +130,12 @@ export function createCustomEventsDescriptor<
     }
     return customEventsOnMixin(
       getRuntime(),
-      typeOrTypes as string | readonly string[],
+      undefined,
       listener,
     );
   }) as CustomEventsOnFunction<Events>;
 
-  let observe = ((...args: unknown[]) => {
-    let explicitTarget = isEventTarget(args[0]);
-    let target = explicitTarget ? args[0] as EventTarget : options?.host;
-    if (!target) {
-      throw new TypeError(
-        "customEvents observe() requires a target or configured host.",
-      );
-    }
-    let offset = explicitTarget ? 1 : 0;
-    let observer = args[offset] as (event: Event) => void | Promise<unknown>;
-    let observerOptions = args[offset + 1] as
-      | CustomEventsObserverOptions
-      | undefined;
-    return customEventsRuntime.observe(
-      getRuntime(),
-      target,
-      (event) => observer(createCurrentTargetEvent(event, target)),
-      observerOptions?.signal,
-    );
-  }) as CustomEventsObserveFunction<Events>;
-
-  let events = ((...args: Array<unknown>) => {
+  let create = ((...args: Array<unknown>) => {
     let [typeOrEvents, detailOrInit, maybeInit] = args as [
       | string
       | readonly CustomEventsBatchItem<Events>[],
@@ -210,41 +177,63 @@ export function createCustomEventsDescriptor<
     throw new TypeError("customEvents expects an event name or event array.");
   }) as CustomEventsFactory<Events>;
 
-  let eventElement:
+  let eventElements:
     | ReturnType<typeof createEventElementFactory<Events, State>>
     | undefined;
-  let getEventElement = () => eventElement ??= createEventElementFactory<
+  let getEventElements = () => eventElements ??= createEventElementFactory<
     Events,
     State
-  >(getRuntime(), state?.owner, state?.sources);
+  >(getRuntime(), sourceOwner);
+  let view = new Proxy(Object.create(null), {
+    get(_, property) {
+      if (typeof property !== "string") return undefined;
+      return getEventElements()(property as keyof JSX.IntrinsicElements);
+    },
+  });
   let dispatch = ((
     target: EventTarget,
     ...args: unknown[]
   ) => {
-    let createEvent = events as (...args: unknown[]) => Event;
+    let createEvent = create as (...args: unknown[]) => Event;
     let event = createEvent(...args);
     return customEventsRuntime.dispatch(getRuntime(), target, event);
   }) as CustomEventsDispatch<Events>;
   let host = ref((target, signal) => {
     customEventsRuntime.registerHost(getRuntime(), target, signal);
   });
-  let descriptorTarget = Object.assign(events, {
+  let descriptorTarget = Object.assign(Object.create(null), {
+    create,
     dispatch,
     on,
-    observe,
     host,
+    view,
   });
   if (options?.host) {
     customEventsRuntime.registerHost(getRuntime(), options.host);
   }
 
+  let sources = new Map<string, object>();
   return new Proxy(descriptorTarget, {
     get(target, property, receiver) {
       if (Reflect.has(target, property)) {
         return Reflect.get(target, property, receiver);
       }
       if (typeof property !== "string") return undefined;
-      return getEventElement()(property as keyof JSX.IntrinsicElements);
+      let source = sources.get(property);
+      if (!source) {
+        let readRoot = state && Object.hasOwn(state.getState(), property)
+          ? () => state.getState()[property]
+          : undefined;
+        source = createEventSource(
+          sourceOwner,
+          property,
+          readRoot,
+          (metadata, listener) =>
+            customEventsOnMixin(getRuntime(), metadata, listener),
+        );
+        sources.set(property, source);
+      }
+      return source;
     },
   }) as unknown as CustomEventsDescriptor<Events, State>;
 }

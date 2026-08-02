@@ -30,8 +30,8 @@ export const KeyedSelection = clientEntry(
         </p>
         <div mix={rowCss}>
           {items.map((item) => (
-            <selection.events.button
-              on={(event) => event.selectedId}
+            <selection.view.button
+              on={selection.events.selectedId}
               key={item.id}
               id={item.id}
               type="button"
@@ -57,14 +57,14 @@ export const KeyedSelection = clientEntry(
               ]}
             >
               {item.label}
-            </selection.events.button>
+            </selection.view.button>
           ))}
         </div>
         <p>
           Selected:{" "}
-          <selection.events.output on={(event) => event.selectedId}>
+          <selection.view.output on={selection.events.selectedId}>
             {(event) => event.detail}
-          </selection.events.output>
+          </selection.view.output>
         </p>
       </section>
     );

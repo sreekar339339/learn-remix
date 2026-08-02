@@ -5,9 +5,10 @@ import type {
   RemixNode,
 } from "remix/ui";
 import type {
-  StateEventSource,
-  StateEventSources,
-} from "./stateEventSources.ts";
+  EventSource,
+  EventSourceHasCurrent,
+  EventSources,
+} from "./eventSources.ts";
 
 export type EventDetails = Record<string, unknown>;
 
@@ -39,6 +40,18 @@ type NativeNamesIn<Definition> = Extract<
   NativeDOMEventName
 >;
 
+type ReservedCustomEventsName =
+  | "create"
+  | "dispatch"
+  | "host"
+  | "on"
+  | "view"
+  | "withState";
+type ReservedNamesIn<Definition> = Extract<
+  EventNames<Definition>,
+  ReservedCustomEventsName
+>;
+
 type NativeEventNameError<Names extends string> = {
   readonly __customEventsNativeEventNameError:
     "customEvents names cannot overlap native DOM event names.";
@@ -47,7 +60,13 @@ type NativeEventNameError<Names extends string> = {
 
 export type CustomEventsFactoryArgs<Definition> =
   [NativeNamesIn<Definition>] extends [never]
-    ? [options?: CustomEventsOptions]
+    ? [ReservedNamesIn<Definition>] extends [never]
+      ? [options?: CustomEventsOptions]
+      : [error: {
+          readonly __customEventsReservedNameError:
+            "customEvents names cannot overwrite its API.";
+          readonly reservedEventNames: ReservedNamesIn<Definition>;
+        }]
     : [error: NativeEventNameError<NativeNamesIn<Definition>>];
 
 /**
@@ -144,60 +163,22 @@ type CustomEventsInputProps<
   Tag
 > & (Initialized extends true ? { initial: Input } : { initial?: never });
 
-type EventNameSource<Events extends EventDetails> =
-  | "*"
-  | CustomEventsEventType<Events>;
-
-type EventForName<
-  Events extends EventDetails,
-  Source extends EventNameSource<Events>,
-> = Source extends "*"
-  ? CustomEventsEventMap<Events>[CustomEventsEventType<Events>]
-  : Source extends CustomEventsEventType<Events>
-    ? CustomEventsEventMap<Events>[Source]
-  : never;
-
 type SourceSelection<Source> = Source | readonly Source[];
 
 type CustomEventsSourceItem<
   Events extends EventDetails,
-  State extends EventDetails,
-> =
-  | EventNameSource<Events>
-  | StateEventSource<unknown, keyof State & string>;
+  _State extends EventDetails,
+> = EventSource<any, keyof Events & string, boolean>;
 
-type CustomEventsSource<
-  Events extends EventDetails,
-  State extends EventDetails,
-> =
-  | StateEventSource<unknown, keyof State & string>
-  | readonly [
-    StateEventSource<unknown, keyof State & string>,
-    ...CustomEventsSourceItem<Events, State>[],
-  ];
-
-type CustomEventsStateSources<
-  Events extends EventDetails,
-  State extends EventDetails,
-> =
-  & StateEventSources<State>
-  & {
-    readonly [Type in Exclude<
-      CustomEventsEventType<Events>,
-      keyof State & string
-    >]: Type;
-  };
-
-type CustomEventsSourceEvent<
-  Events extends EventDetails,
-  Source,
-> = Source extends readonly (infer Item)[]
-  ? CustomEventsSourceEvent<Events, Item>
-  : Source extends StateEventSource<infer Value, infer Type>
+type CustomEventsSourceEvent<Source> = Source extends readonly (infer Item)[]
+  ? CustomEventsSourceEvent<Item>
+  : Source extends EventSource<infer Value, infer Type, boolean>
     ? CustomEvent<Value> & { readonly type: Type }
-  : Source extends EventNameSource<Events>
-    ? EventForName<Events, Source>
   : never;
+
+type SourceHasCurrent<Source> = Source extends readonly (infer Item)[]
+  ? true extends SourceHasCurrent<Item> ? true : false
+  : EventSourceHasCurrent<Source>;
 
 type CustomEventsDefaultElementProps<
   Events extends EventDetails,
@@ -211,19 +192,21 @@ type CustomEventsDefaultElementProps<
     Initialized
   >,
   "on"
-> & { on?: "*" };
+> & { on?: never };
 
 type CustomEventsOccurrenceProps<
-  Events extends EventDetails,
-  Source extends SourceSelection<EventNameSource<Events>>,
+  Source,
   Tag extends keyof JSX.IntrinsicElements,
   Initialized extends boolean,
-> = CustomEventsInputProps<
+> = CustomEventsElementProps<
   Source,
-  CustomEventsSourceEvent<Events, Source>,
-  Tag,
-  Initialized
->;
+  | CustomEventsSourceEvent<Source>
+  | (Initialized extends true ? never
+    : SourceHasCurrent<Source> extends true ? never
+    : undefined),
+  Tag
+> & (Initialized extends true ? { initial: CustomEventsSourceEvent<Source> }
+  : { initial?: never });
 
 /** Event-aware intrinsic element with declarative reactive attributes. */
 export type CustomEventsEventElement<
@@ -233,21 +216,13 @@ export type CustomEventsEventElement<
 > = GenericJSXComponent & {
   (props: CustomEventsDefaultElementProps<Events, Tag, true>): RemixNode;
   (props: CustomEventsDefaultElementProps<Events, Tag, false>): RemixNode;
-  <const Source extends SourceSelection<EventNameSource<Events>>>(
-    props: CustomEventsOccurrenceProps<Events, Source, Tag, true>,
+  <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
+    props: CustomEventsOccurrenceProps<Source, Tag, true>,
   ): RemixNode;
-  <const Source extends SourceSelection<EventNameSource<Events>>>(
-    props: CustomEventsOccurrenceProps<Events, Source, Tag, false>,
+  <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
+    props: CustomEventsOccurrenceProps<Source, Tag, false>,
   ): RemixNode;
-} & ([State] extends [never] ? unknown : {
-  <const Source extends CustomEventsSource<Events, State>>(
-    props: CustomEventsElementProps<
-      (event: CustomEventsStateSources<Events, State>) => Source,
-      CustomEventsSourceEvent<Events, Source>,
-      Tag
-    > & { initial?: never },
-  ): RemixNode;
-});
+};
 
 export type CustomEventsEventElements<
   Events extends EventDetails,
@@ -354,11 +329,6 @@ export type CustomEventsListenerEvent<
   }
   : never;
 
-export type CustomEventsObserverOptions = {
-  /** Removes the observation when aborted. */
-  signal?: AbortSignal;
-};
-
 type CustomEventsListener<
   Events extends EventDetails,
   Type extends CustomEventsEventType<Events>,
@@ -369,69 +339,33 @@ type CustomEventsListener<
 
 export type CustomEventsOnFunction<Events extends EventDetails> = {
   <HostElement extends Element = Element>(
-    type: "*",
     listener: CustomEventsListener<
       Events,
       CustomEventsEventType<Events>,
       HostElement
     >,
   ): MixinDescriptor<HostElement, any>;
-  <
-    const Types extends readonly [
-      CustomEventsEventType<Events>,
-      ...CustomEventsEventType<Events>[],
-    ],
-    HostElement extends Element = Element,
-  >(
-    types: Types,
-    listener: CustomEventsListener<Events, Types[number], HostElement>,
-  ): MixinDescriptor<HostElement, any>;
-  <
-    HostElement extends Element = Element,
-    Type extends CustomEventsEventType<Events> = CustomEventsEventType<Events>,
-  >(
-    type: Type,
-    listener: CustomEventsListener<Events, Type, HostElement>,
-  ): MixinDescriptor<HostElement, any>;
-};
-
-export type CustomEventsObserveFunction<Events extends EventDetails> = {
-  (
-    listener: CustomEventsListener<
-      Events,
-      CustomEventsEventType<Events>,
-      EventTarget
-    >,
-    options?: CustomEventsObserverOptions,
-  ): () => void;
-  <Target extends EventTarget>(
-    target: Target,
-    listener: CustomEventsListener<
-      Events,
-      CustomEventsEventType<Events>,
-      Target
-    >,
-    options?: CustomEventsObserverOptions,
-  ): () => void;
 };
 
 export type CustomEventsDescriptor<
   Events extends EventDetails,
   State extends EventDetails | never = never,
 > =
-  & CustomEventsFactory<
-    [State] extends [never] ? Events : Omit<Events, keyof State>
-  >
+  & EventSources<Events, State>
   & {
-    /** Dispatches and resolves after projections, effects, and observers settle. */
+    /** Creates one occurrence event or an occurrence transaction. */
+    create: CustomEventsFactory<
+      [State] extends [never] ? Events : Omit<Events, keyof State>
+    >;
+    /** Dispatches and resolves after projections and effects settle. */
     dispatch: CustomEventsDispatch<
       [State] extends [never] ? Events : Omit<Events, keyof State>
     >;
-    /** Runs post-projection effects for selected events. */
+    /** Runs a mounted-element effect for every descriptor event. */
     on: CustomEventsOnFunction<Events>;
-    /** Observes every descriptor-owned event on one exact target. */
-    observe: CustomEventsObserveFunction<Events>;
     /** Makes an element the local boundary for this descriptor. */
     host: MixinDescriptor<Element, any>;
+    /** Event-aware intrinsic elements for this descriptor. */
+    view: CustomEventsEventElements<Events, State>;
   }
-  & CustomEventsEventElements<Events, State>;
+;

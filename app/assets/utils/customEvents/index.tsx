@@ -21,11 +21,10 @@ import type {
   NormalizeCustomEventsDefinition,
 } from "./types.ts";
 import {
-  createStateEventSources,
   defaultArrayKey,
   isPropertyKey,
   samePropertyKey,
-} from "./stateEventSources.ts";
+} from "./eventSources.ts";
 export type { CustomEventsEventMap } from "./types.ts";
 
 enablePatches();
@@ -74,7 +73,7 @@ type StateInput<
     | Exclude<keyof Value, keyof Events>
     | Extract<
       keyof Value,
-      keyof EventTarget | "events" | "update"
+      keyof EventTarget | "events" | "update" | "view"
     >,
 > = [InvalidKeys] extends [never] ? Value : Value & {
   readonly __customEventsStateError:
@@ -114,6 +113,10 @@ type StateModel<
       StateModelEvents<Events, State>,
       Immutable<State>
     >;
+    readonly view: CustomEventsDescriptor<
+      StateModelEvents<Events, State>,
+      Immutable<State>
+    >["view"];
     update(recipe: (draft: Draft<State>) => undefined): void;
   };
 
@@ -247,13 +250,13 @@ function createStateModel(
 ) {
   let state = freeze(initialState, true) as EventDetails;
   let target = new EventTarget();
-  let stateSources = createStateEventSources(target, () => state);
   let events = createCustomEventsDescriptor<EventDetails, EventDetails>(
     { host: target },
-    { owner: target, sources: stateSources },
+    { owner: target, getState: () => state },
   );
   return Object.assign(target, state, {
     events,
+    view: events.view,
     update(recipe: (draft: Draft<EventDetails>) => void) {
       let [nextState, patches] = produceWithPatches(state, (draft) => {
         let result = recipe(draft);
@@ -293,7 +296,7 @@ function createStateModel(
 
       state = nextState;
       target.dispatchEvent(
-        (events as (...args: unknown[]) => Event)(entries),
+        (events.create as (...args: unknown[]) => Event)(entries),
       );
     },
   });
