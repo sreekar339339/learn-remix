@@ -10,29 +10,24 @@ type DispatchTargetRegistration = {
 type ElementSubscription = {
   element: Element;
   eventTypes: ReadonlySet<string> | null;
-  statePaths?: ReadonlyMap<string, readonly unknown[]>;
+  addresses?: ReadonlyMap<string, EventAddress>;
   notify(event: CustomEvent): unknown;
 };
 
-type IndexedSubscription = ElementSubscription & {
-  routingId: string;
-};
-
-type RoutedSubscriptions = {
-  all: Set<IndexedSubscription>;
-  byId: Map<string, Set<IndexedSubscription>>;
+type AddressNode = {
+  subscriptions: Set<ElementSubscription>;
+  children: Map<unknown, AddressNode>;
 };
 
 type SubscriptionIndex = Record<
   SubscriptionPhase,
-  Map<string, RoutedSubscriptions>
+  Map<string, AddressNode>
 >;
 
 export type CustomEventsBatchRuntimeEntry = {
   type: string;
   detail: unknown;
-  routingKeys?: readonly PropertyKey[];
-  changedPaths?: readonly (readonly unknown[])[];
+  addresses?: readonly EventAddress[];
 };
 
 type ProductEventMetadata = {
@@ -42,14 +37,16 @@ type ProductEventMetadata = {
 
 type TransactionEvent = {
   event: CustomEvent;
-  routingKeys?: readonly PropertyKey[];
-  changedPaths?: readonly (readonly unknown[])[];
+  addresses?: readonly EventAddress[];
 };
 
-function pathsOverlap(left: readonly unknown[], right: readonly unknown[]) {
-  return left.values()
-    .take(Math.min(left.length, right.length))
-    .every((segment, index) => Object.is(segment, right[index]));
+export type EventAddress = readonly unknown[];
+
+export function canonicalAddressSegment(value: unknown) {
+  return typeof value === "symbol" ? value
+    : typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : value;
 }
 
 function isElement(value: unknown): value is Element {
@@ -67,44 +64,82 @@ function setEventProperty(
   });
 }
 
-function addToRoute(
-  route: RoutedSubscriptions,
-  subscription: IndexedSubscription,
+function createAddressNode(): AddressNode {
+  return { subscriptions: new Set(), children: new Map() };
+}
+
+function walkAddress(
+  root: AddressNode,
+  address: EventAddress,
+  create = false,
 ) {
-  route.all.add(subscription);
-  let byId = route.byId.get(subscription.routingId);
-  if (!byId) {
-    byId = new Set();
-    route.byId.set(subscription.routingId, byId);
+  let nodes = [root];
+  let node = root;
+  for (let segment of address) {
+    let child = node.children.get(segment);
+    if (!child && create) {
+      child = createAddressNode();
+      node.children.set(segment, child);
+    }
+    if (!child) break;
+    node = child;
+    nodes.push(node);
   }
-  byId.add(subscription);
+  return nodes;
+}
+
+function addToRoute(
+  root: AddressNode,
+  subscription: ElementSubscription,
+  address: EventAddress,
+) {
+  walkAddress(root, address, true).at(-1)!.subscriptions.add(subscription);
 }
 
 function removeFromRoute(
-  route: RoutedSubscriptions,
-  subscription: IndexedSubscription,
+  root: AddressNode,
+  subscription: ElementSubscription,
+  address: EventAddress,
 ) {
-  route.all.delete(subscription);
-  let byId = route.byId.get(subscription.routingId);
-  byId?.delete(subscription);
-  if (byId?.size === 0) route.byId.delete(subscription.routingId);
+  let nodes = walkAddress(root, address);
+  if (nodes.length !== address.length + 1) return;
+  nodes.at(-1)!.subscriptions.delete(subscription);
+  for (let index = address.length; index > 0; index--) {
+    let child = nodes[index];
+    if (child.subscriptions.size || child.children.size) break;
+    nodes[index - 1].children.delete(address[index - 1]);
+  }
 }
 
-function* selectRoute(
-  route: RoutedSubscriptions,
-  routingKeys: readonly PropertyKey[] | undefined,
+function collectBranch(
+  selected: Set<ElementSubscription>,
+  node: AddressNode,
 ) {
-  if (routingKeys === undefined) {
-    yield* route.all;
-    return;
-  }
+  for (let subscription of node.subscriptions) selected.add(subscription);
+  for (let child of node.children.values()) collectBranch(selected, child);
+}
 
-  yield* route.byId.get("") ?? [];
-  let routingIds = new Set(routingKeys.values().map(String));
-  routingIds.delete("");
-  for (let routingId of routingIds) {
-    yield* route.byId.get(routingId) ?? [];
+function selectRoute(
+  root: AddressNode,
+  addresses: readonly EventAddress[] | undefined,
+) {
+  let selected = new Set<ElementSubscription>();
+  if (addresses === undefined) {
+    collectBranch(selected, root);
+    return selected;
   }
+  for (let address of addresses) {
+    let nodes = walkAddress(root, address);
+    for (let node of nodes) {
+      for (let subscription of node.subscriptions) {
+        selected.add(subscription);
+      }
+    }
+    if (nodes.length === address.length + 1) {
+      collectBranch(selected, nodes.at(-1)!);
+    }
+  }
+  return selected;
 }
 
 function ownCleanup(cleanup: () => void, signal?: AbortSignal) {
@@ -161,390 +196,397 @@ export function createCurrentTargetEvent(
   return callbackEvent;
 }
 
-/**
- * Private mechanics owned by one descriptor.
- *
- * Product events are the only events dispatched through the DOM. Once one
- * reaches a local subscription or explicit host, the runtime turns its entries into
- * in-memory snapshots and notifies indexed projections and effects.
- */
-export class CustomEventsRuntime {
-  #eventTypes = new Set<string>();
-  #eventTypeListeners = new Set<(type: string) => void>();
-  #eventMetadata = new WeakMap<Event, ProductEventMetadata>();
-  #subscriptions: SubscriptionIndex = {
-    projection: new Map(),
-    effect: new Map(),
+/** Descriptor-local data consumed by the shared runtime kernel. */
+export type CustomEventsRuntimeState = {
+  eventTypes: Set<string>;
+  eventTypeListeners: Set<(type: string) => void>;
+  eventMetadata: WeakMap<Event, ProductEventMetadata>;
+  subscriptions: SubscriptionIndex;
+  observers: WeakMap<EventTarget, Set<(event: CustomEvent) => unknown>>;
+  dispatchTargets: WeakMap<EventTarget, DispatchTargetRegistration>;
+  hosts: WeakMap<Element, number>;
+  defaultHost?: EventTarget;
+};
+
+/** Creates only the mutable state that must remain descriptor-local. */
+export function createCustomEventsRuntimeState(): CustomEventsRuntimeState {
+  return {
+    eventTypes: new Set(),
+    eventTypeListeners: new Set(),
+    eventMetadata: new WeakMap(),
+    subscriptions: {
+      projection: new Map(),
+      effect: new Map(),
+    },
+    observers: new WeakMap(),
+    dispatchTargets: new WeakMap(),
+    hosts: new WeakMap(),
   };
-  #observers = new WeakMap<
-    EventTarget,
-    Set<(event: CustomEvent) => unknown>
-  >();
-  #dispatchTargets = new WeakMap<EventTarget, DispatchTargetRegistration>();
-  #hosts = new WeakMap<Element, number>();
-  #defaultHost: EventTarget | undefined;
+}
 
-  #addEventType(type: string) {
-    if (this.#eventTypes.has(type)) return;
-    this.#eventTypes.add(type);
-    for (let listener of this.#eventTypeListeners) listener(type);
-  }
+function addEventType(runtime: CustomEventsRuntimeState, type: string) {
+  if (runtime.eventTypes.has(type)) return;
+  runtime.eventTypes.add(type);
+  for (let listener of runtime.eventTypeListeners) listener(type);
+}
 
-  createProductEvent(
-    carrierType: string,
-    detail: unknown,
-    init: EventInit,
-    entries: CustomEventsBatchRuntimeEntry[],
-  ) {
-    this.#addEventType(carrierType);
-    for (let { type } of entries) this.#addEventType(type);
-    let event = new CustomEvent(carrierType, { ...init, detail });
-    if (detail === undefined) setEventProperty(event, "detail", undefined);
-    this.#eventMetadata.set(event, { entries });
-    return event;
-  }
+function createProductEvent(
+  runtime: CustomEventsRuntimeState,
+  carrierType: string,
+  detail: unknown,
+  init: EventInit,
+  entries: CustomEventsBatchRuntimeEntry[],
+) {
+  addEventType(runtime, carrierType);
+  for (let { type } of entries) addEventType(runtime, type);
+  let event = new CustomEvent(carrierType, { ...init, detail });
+  if (detail === undefined) setEventProperty(event, "detail", undefined);
+  runtime.eventMetadata.set(event, { entries });
+  return event;
+}
 
-  dispatch(target: EventTarget, event: Event) {
-    let metadata = this.#eventMetadata.get(event);
-    target.dispatchEvent(event);
-    return metadata?.completion ?? Promise.resolve();
-  }
+function dispatch(
+  runtime: CustomEventsRuntimeState,
+  target: EventTarget,
+  event: Event,
+) {
+  let metadata = runtime.eventMetadata.get(event);
+  target.dispatchEvent(event);
+  return metadata?.completion ?? Promise.resolve();
+}
 
-  subscribe(
-    phaseName: SubscriptionPhase,
-    subscription: ElementSubscription,
-    signal?: AbortSignal,
-  ) {
-    let indexed: IndexedSubscription = {
-      ...subscription,
-      routingId: subscription.element.id,
-    };
-    let phase = this.#subscriptions[phaseName];
-    let selectors = subscription.eventTypes ?? [ALL_EVENTS];
-    let routes: Array<[string, RoutedSubscriptions]> = [];
+function subscribe(
+  runtime: CustomEventsRuntimeState,
+  phaseName: SubscriptionPhase,
+  subscription: ElementSubscription,
+  signal?: AbortSignal,
+) {
+  let phase = runtime.subscriptions[phaseName];
+  let selectors = subscription.eventTypes ?? [ALL_EVENTS];
+  let routes: Array<[string, AddressNode, EventAddress]> = [];
 
-    for (let selector of selectors) {
-      if (selector !== ALL_EVENTS) this.#addEventType(selector);
-      let route = phase.get(selector);
-      if (!route) {
-        route = { all: new Set(), byId: new Map() };
-        phase.set(selector, route);
-      }
-      addToRoute(route, indexed);
-      routes.push([selector, route]);
+  for (let selector of selectors) {
+    if (selector !== ALL_EVENTS) addEventType(runtime, selector);
+    let route = phase.get(selector);
+    if (!route) {
+      route = createAddressNode();
+      phase.set(selector, route);
     }
+    let selectedAddress = subscription.addresses?.get(selector);
+    let address = selectedAddress?.length || !subscription.element.id
+      ? selectedAddress ?? []
+      : [canonicalAddressSegment(subscription.element.id)];
+    addToRoute(route, subscription, address);
+    routes.push([selector, route, address]);
+  }
 
-    let unregisterTarget = this.#registerDispatchTarget(subscription.element);
+  let unregisterTarget = registerDispatchTarget(runtime, subscription.element);
+  return ownCleanup(() => {
+    unregisterTarget();
+    for (let [selector, route, address] of routes) {
+      removeFromRoute(route, subscription, address);
+      if (!route.subscriptions.size && !route.children.size) {
+        phase.delete(selector);
+      }
+    }
+  }, signal);
+}
+
+function observe(
+  runtime: CustomEventsRuntimeState,
+  target: EventTarget,
+  notify: (event: CustomEvent) => unknown,
+  signal?: AbortSignal,
+) {
+  let targetObservers = runtime.observers.get(target);
+  if (!targetObservers) {
+    targetObservers = new Set();
+    runtime.observers.set(target, targetObservers);
+  }
+  targetObservers.add(notify);
+  let unregisterTarget = registerDispatchTarget(runtime, target);
+
+  return ownCleanup(() => {
+    unregisterTarget();
+    targetObservers.delete(notify);
+    if (targetObservers.size === 0) runtime.observers.delete(target);
+  }, signal);
+}
+
+function registerHost(
+  runtime: CustomEventsRuntimeState,
+  target: EventTarget,
+  signal?: AbortSignal,
+) {
+  let unregisterTarget = registerDispatchTarget(runtime, target);
+
+  if (isElement(target)) {
+    runtime.hosts.set(target, (runtime.hosts.get(target) ?? 0) + 1);
     return ownCleanup(() => {
       unregisterTarget();
-      for (let [selector, route] of routes) {
-        removeFromRoute(route, indexed);
-        if (route.all.size === 0) phase.delete(selector);
-      }
+      let count = runtime.hosts.get(target) ?? 0;
+      if (count <= 1) runtime.hosts.delete(target);
+      else runtime.hosts.set(target, count - 1);
     }, signal);
   }
 
-  observe(
-    target: EventTarget,
-    notify: (event: CustomEvent) => unknown,
-    signal?: AbortSignal,
+  runtime.defaultHost = target;
+  return ownCleanup(() => {
+    unregisterTarget();
+    if (runtime.defaultHost === target) runtime.defaultHost = undefined;
+  }, signal);
+}
+
+function findHost(
+  runtime: CustomEventsRuntimeState,
+  element: Element | undefined,
+) {
+  for (
+    let current = element;
+    current;
+    current = current.parentElement ?? undefined
   ) {
-    let observers = this.#observers.get(target);
-    if (!observers) {
-      observers = new Set();
-      this.#observers.set(target, observers);
-    }
-    observers.add(notify);
-    let unregisterTarget = this.#registerDispatchTarget(target);
-
-    return ownCleanup(() => {
-      unregisterTarget();
-      observers.delete(notify);
-      if (observers.size === 0) this.#observers.delete(target);
-    }, signal);
+    if (runtime.hosts.has(current)) return current;
   }
+}
 
-  registerHost(target: EventTarget, signal?: AbortSignal) {
-    let unregisterTarget = this.#registerDispatchTarget(target);
+function scopeFor(
+  runtime: CustomEventsRuntimeState,
+  element: Element | undefined,
+) {
+  return findHost(runtime, element) ?? runtime.defaultHost;
+}
 
-    if (isElement(target)) {
-      this.#hosts.set(target, (this.#hosts.get(target) ?? 0) + 1);
-      return ownCleanup(() => {
-        unregisterTarget();
-        let count = this.#hosts.get(target) ?? 0;
-        if (count <= 1) this.#hosts.delete(target);
-        else this.#hosts.set(target, count - 1);
-      }, signal);
-    }
-
-    this.#defaultHost = target;
-    return ownCleanup(() => {
-      unregisterTarget();
-      if (this.#defaultHost === target) this.#defaultHost = undefined;
-    }, signal);
-  }
-
-  #findHost(element: Element | undefined) {
-    for (
-      let current = element;
-      current;
-      current = current.parentElement ?? undefined
-    ) {
-      if (this.#hosts.has(current)) return current;
-    }
-  }
-
-  #scopeFor(element: Element | undefined) {
-    return this.#findHost(element) ?? this.#defaultHost;
-  }
-
-  #matchesScope(
-    subscription: IndexedSubscription,
-    event: CustomEvent,
-    originScope: EventTarget,
-    originTarget: EventTarget,
+function matchesScope(
+  runtime: CustomEventsRuntimeState,
+  subscription: ElementSubscription,
+  event: CustomEvent,
+  originScope: EventTarget,
+  originTarget: EventTarget,
+) {
+  if (
+    !event.bubbles &&
+    isElement(originTarget) &&
+    subscription.element !== originTarget
   ) {
-    if (
-      !event.bubbles &&
-      isElement(originTarget) &&
-      subscription.element !== originTarget
-    ) {
-      return false;
-    }
-
-    let subscriptionScope =
-      this.#scopeFor(subscription.element) ?? subscription.element;
-    return subscriptionScope === originScope ||
-      (
-        event.composed &&
-        isElement(subscriptionScope) &&
-        isElement(originScope) &&
-        subscriptionScope.contains(originScope)
-      );
+    return false;
   }
 
-  *#matchingSubscriptions(
-    phase: SubscriptionPhase,
-    transactionEvent: TransactionEvent,
-  ) {
-    let index = this.#subscriptions[phase];
-    let wildcard = index.get(ALL_EVENTS);
-    if (wildcard) {
-      for (let subscription of selectRoute(
-        wildcard,
-        transactionEvent.routingKeys,
-      )) {
-        if (this.#matchesUpdatePath(subscription, transactionEvent)) {
-          yield subscription;
-        }
-      }
-    }
-    let typed = index.get(transactionEvent.event.type);
-    if (typed) {
-      for (let subscription of selectRoute(
-        typed,
-        transactionEvent.routingKeys,
-      )) {
-        if (this.#matchesUpdatePath(subscription, transactionEvent)) {
-          yield subscription;
-        }
-      }
-    }
-  }
-
-  #matchesUpdatePath(
-    subscription: IndexedSubscription,
-    transactionEvent: TransactionEvent,
-  ) {
-    let statePath = subscription.statePaths?.get(
-      transactionEvent.event.type,
+  let subscriptionScope =
+    scopeFor(runtime, subscription.element) ?? subscription.element;
+  return subscriptionScope === originScope ||
+    (
+      event.composed &&
+      isElement(subscriptionScope) &&
+      isElement(originScope) &&
+      subscriptionScope.contains(originScope)
     );
-    if (!statePath) return true;
-    return transactionEvent.changedPaths?.some((changedPath) =>
-      pathsOverlap(statePath, changedPath)
-    ) ?? false;
+}
+
+function* matchingSubscriptions(
+  runtime: CustomEventsRuntimeState,
+  phase: SubscriptionPhase,
+  transactionEvent: TransactionEvent,
+) {
+  let index = runtime.subscriptions[phase];
+  let wildcard = index.get(ALL_EVENTS);
+  if (wildcard) yield* selectRoute(wildcard, transactionEvent.addresses);
+  let typed = index.get(transactionEvent.event.type);
+  if (typed) yield* selectRoute(typed, transactionEvent.addresses);
+}
+
+function notifyEntries(
+  runtime: CustomEventsRuntimeState,
+  entries: CustomEventsBatchRuntimeEntry[],
+  originScope: EventTarget,
+  originTarget: EventTarget,
+  carrier: CustomEvent,
+) {
+  let events: TransactionEvent[] = entries.map((entry) => ({
+    event: createEventSnapshot(entry, originTarget, carrier),
+    ...(entry.addresses === undefined ? {} : { addresses: entry.addresses }),
+  }));
+
+  let observerResults: unknown[] = [];
+  for (let notify of runtime.observers.get(originTarget) ?? []) {
+    for (let { event } of events) collect(observerResults, () => notify(event));
   }
 
-  #notify(
-    entries: CustomEventsBatchRuntimeEntry[],
-    originScope: EventTarget,
-    originTarget: EventTarget,
-    carrier: CustomEvent,
-  ) {
-    let events: TransactionEvent[] = entries.map((entry) => ({
-      event: createEventSnapshot(entry, originTarget, carrier),
-      ...(entry.routingKeys === undefined
-        ? {}
-        : { routingKeys: entry.routingKeys }),
-      ...(entry.changedPaths === undefined
-        ? {}
-        : { changedPaths: entry.changedPaths }),
-    }));
-
-    // Observers run synchronously; returned promises join the transaction.
-    let observerResults: unknown[] = [];
-    for (let notify of this.#observers.get(originTarget) ?? []) {
-      for (let { event } of events) {
-        collect(observerResults, () => notify(event));
+  let matches = new Map<ElementSubscription, TransactionEvent>();
+  for (let transactionEvent of events) {
+    for (
+      let subscription of matchingSubscriptions(
+        runtime,
+        "projection",
+        transactionEvent,
+      )
+    ) {
+      if (
+        matchesScope(
+          runtime,
+          subscription,
+          transactionEvent.event,
+          originScope,
+          originTarget,
+        )
+      ) {
+        matches.set(subscription, transactionEvent);
       }
     }
+  }
 
-    // A transaction commits each projection once using its final match.
-    let matches = new Map<IndexedSubscription, TransactionEvent>();
+  let source: Array<[ElementSubscription, TransactionEvent]> = [];
+  let remaining: Array<[ElementSubscription, TransactionEvent]> = [];
+  for (let match of matches) {
+    (match[0].element === originTarget ? source : remaining).push(match);
+  }
+  let commit = (selected: typeof source) =>
+    Promise.all(
+      selected.values().map(([subscription, match]) =>
+        subscription.notify(match.event)
+      ),
+    );
+  let projectionsCommitted = source.length
+    ? commit(source).then(() => commit(remaining))
+    : commit(remaining);
+
+  let projectionsAndEffectsSettled = projectionsCommitted.then(() => {
+    let effectResults: unknown[] = [];
     for (let transactionEvent of events) {
       for (
-        let subscription of this.#matchingSubscriptions(
-          "projection",
+        let subscription of matchingSubscriptions(
+          runtime,
+          "effect",
           transactionEvent,
         )
       ) {
         if (
-          this.#matchesScope(
+          matchesScope(
+            runtime,
             subscription,
             transactionEvent.event,
             originScope,
             originTarget,
           )
         ) {
-          matches.set(subscription, transactionEvent);
+          collect(
+            effectResults,
+            () => subscription.notify(transactionEvent.event),
+          );
         }
       }
     }
+    return Promise.all(effectResults);
+  });
 
-    let source: Array<[IndexedSubscription, TransactionEvent]> = [];
-    let remaining: Array<[IndexedSubscription, TransactionEvent]> = [];
-    for (let match of matches) {
-      (match[0].element === originTarget ? source : remaining).push(match);
-    }
-    let commit = (selected: typeof source) =>
-      Promise.all(
-        selected.values().map(([subscription, match]) =>
-          subscription.notify(match.event)
-        ),
-      );
-    let projectionsCommitted = source.length
-      ? commit(source).then(() => commit(remaining))
-      : commit(remaining);
+  return Promise.all([
+    Promise.all(observerResults),
+    projectionsAndEffectsSettled,
+  ]).then(() => {});
+}
 
-    let projectionsAndEffectsSettled = projectionsCommitted.then(() => {
-      let effectResults: unknown[] = [];
-      for (let transactionEvent of events) {
-        for (
-          let subscription of this.#matchingSubscriptions(
-            "effect",
-            transactionEvent,
-          )
-        ) {
-          if (
-            this.#matchesScope(
-              subscription,
-              transactionEvent.event,
-              originScope,
-              originTarget,
-            )
-          ) {
-            collect(
-              effectResults,
-              () => subscription.notify(transactionEvent.event),
-            );
-          }
-        }
-      }
-      return Promise.all(effectResults);
-    });
+function process(
+  runtime: CustomEventsRuntimeState,
+  event: Event,
+  fallbackScope: EventTarget,
+) {
+  if (!(event instanceof CustomEvent)) return;
+  let metadata = runtime.eventMetadata.get(event);
+  if (!metadata) return;
+  runtime.eventMetadata.delete(event);
 
-    return Promise.all([
-      Promise.all(observerResults),
-      projectionsAndEffectsSettled,
-    ]).then(() => {});
-  }
-
-  #process(event: Event, fallbackScope: EventTarget) {
-    if (!(event instanceof CustomEvent)) return;
-    let metadata = this.#eventMetadata.get(event);
-    if (!metadata) return;
-    this.#eventMetadata.delete(event);
-
-    let originTarget = event.target;
-    if (!originTarget) return;
-    if (
-      isElement(fallbackScope) &&
-      this.#hosts.has(fallbackScope) &&
-      event.composed !== true
-    ) {
-      event.stopPropagation();
-    }
-    let isBatch =
-      metadata.entries.length !== 1 ||
-      metadata.entries[0]?.type !== event.type;
-    if (isBatch && fallbackScope === this.#defaultHost) {
-      for (let entry of metadata.entries) {
-        fallbackScope.dispatchEvent(
-          new CustomEvent(entry.type, {
-            bubbles: event.bubbles,
-            cancelable: false,
-            composed: event.composed,
-            detail: entry.detail,
-          }),
-        );
-      }
-    }
-
-    let originScope = this.#scopeFor(
-      isElement(originTarget) ? originTarget : undefined,
-    ) ?? fallbackScope;
-    try {
-      metadata.completion = this.#notify(
-        metadata.entries,
-        originScope,
-        originTarget,
-        event,
-      );
-    } catch (error) {
-      metadata.completion = Promise.reject(error);
-    }
-  }
-
-  #registerDispatchTarget(target: EventTarget) {
-    let existing = this.#dispatchTargets.get(target);
-    if (existing) {
-      existing.count += 1;
-      return ownCleanup(() => this.#releaseDispatchTarget(target, existing));
-    }
-
-    let controller = new AbortController();
-    let listenedTypes = new Set<string>();
-    let listen = (type: string) => {
-      if (listenedTypes.has(type)) return;
-      listenedTypes.add(type);
-      target.addEventListener(
-        type,
-        (event) => this.#process(event, target),
-        { signal: controller.signal },
-      );
-    };
-    this.#eventTypeListeners.add(listen);
-    for (let type of this.#eventTypes) listen(type);
-
-    let registration: DispatchTargetRegistration = {
-      count: 1,
-      cleanup: () => {
-        this.#eventTypeListeners.delete(listen);
-        controller.abort();
-      },
-    };
-    this.#dispatchTargets.set(target, registration);
-
-    return ownCleanup(() => this.#releaseDispatchTarget(target, registration));
-  }
-
-  #releaseDispatchTarget(
-    target: EventTarget,
-    registration: DispatchTargetRegistration,
+  let originTarget = event.target;
+  if (!originTarget) return;
+  if (
+    isElement(fallbackScope) &&
+    runtime.hosts.has(fallbackScope) &&
+    event.composed !== true
   ) {
-    registration.count -= 1;
-    if (registration.count > 0) return;
-    registration.cleanup();
-    this.#dispatchTargets.delete(target);
+    event.stopPropagation();
+  }
+  let isBatch = metadata.entries.length !== 1 ||
+    metadata.entries[0]?.type !== event.type;
+  if (isBatch && fallbackScope === runtime.defaultHost) {
+    for (let entry of metadata.entries) {
+      fallbackScope.dispatchEvent(
+        new CustomEvent(entry.type, {
+          bubbles: event.bubbles,
+          cancelable: false,
+          composed: event.composed,
+          detail: entry.detail,
+        }),
+      );
+    }
+  }
+
+  let originScope = scopeFor(
+    runtime,
+    isElement(originTarget) ? originTarget : undefined,
+  ) ?? fallbackScope;
+  try {
+    metadata.completion = notifyEntries(
+      runtime,
+      metadata.entries,
+      originScope,
+      originTarget,
+      event,
+    );
+  } catch (error) {
+    metadata.completion = Promise.reject(error);
   }
 }
+
+function registerDispatchTarget(
+  runtime: CustomEventsRuntimeState,
+  target: EventTarget,
+) {
+  let existing = runtime.dispatchTargets.get(target);
+  if (existing) {
+    existing.count += 1;
+    return ownCleanup(() => releaseDispatchTarget(runtime, target, existing));
+  }
+
+  let controller = new AbortController();
+  let listenedTypes = new Set<string>();
+  let listen = (type: string) => {
+    if (listenedTypes.has(type)) return;
+    listenedTypes.add(type);
+    target.addEventListener(
+      type,
+      (event) => process(runtime, event, target),
+      { signal: controller.signal },
+    );
+  };
+  runtime.eventTypeListeners.add(listen);
+  for (let type of runtime.eventTypes) listen(type);
+
+  let registration: DispatchTargetRegistration = {
+    count: 1,
+    cleanup: () => {
+      runtime.eventTypeListeners.delete(listen);
+      controller.abort();
+    },
+  };
+  runtime.dispatchTargets.set(target, registration);
+  return ownCleanup(() => releaseDispatchTarget(runtime, target, registration));
+}
+
+function releaseDispatchTarget(
+  runtime: CustomEventsRuntimeState,
+  target: EventTarget,
+  registration: DispatchTargetRegistration,
+) {
+  registration.count -= 1;
+  if (registration.count > 0) return;
+  registration.cleanup();
+  runtime.dispatchTargets.delete(target);
+}
+
+/** Shared operations over descriptor-local runtime state. */
+export const customEventsRuntime = {
+  createProductEvent,
+  dispatch,
+  subscribe,
+  observe,
+  registerHost,
+};

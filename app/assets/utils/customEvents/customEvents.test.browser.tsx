@@ -3,7 +3,10 @@ import { describe, it } from "remix/test";
 import { on, ref } from "remix/ui";
 import { render } from "remix/ui/test";
 import { customEvents } from "./index.tsx";
-import { CustomEventsRuntime } from "./runtime.ts";
+import {
+  createCustomEventsRuntimeState,
+  customEventsRuntime,
+} from "./runtime.ts";
 import type { CustomEventsOptions } from "./types.ts";
 
 type TestEvents = {
@@ -1405,12 +1408,12 @@ describe("customEvents", () => {
     );
   });
 
-  it("indexes subscriptions by phase, type, and routing id", async () => {
-    let runtime = new CustomEventsRuntime();
+  it("indexes subscriptions by phase, type, and event address", async () => {
+    let runtime = createCustomEventsRuntimeState();
     let host = document.createElement("section");
     let origin = document.createElement("button");
     host.append(origin);
-    let unregisterHost = runtime.registerHost(host);
+    let unregisterHost = customEventsRuntime.registerHost(runtime, host);
     let calls: string[] = [];
     let cleanups: Array<() => void> = [];
     let assertCalls = (...expected: string[]) => {
@@ -1435,8 +1438,12 @@ describe("customEvents", () => {
       };
       let cleanup =
         phase === "effect"
-          ? runtime.subscribe("effect", subscription)
-          : runtime.subscribe("projection", subscription);
+          ? customEventsRuntime.subscribe(runtime, "effect", subscription)
+          : customEventsRuntime.subscribe(
+            runtime,
+            "projection",
+            subscription,
+          );
       cleanups.push(cleanup);
       return cleanup;
     }
@@ -1449,16 +1456,20 @@ describe("customEvents", () => {
 
     function event(key?: string) {
       let init = { bubbles: true, cancelable: false };
-      return runtime.createProductEvent("updated", null, init, [
-        {
+      return customEventsRuntime.createProductEvent(
+        runtime,
+        "updated",
+        null,
+        init,
+        [{
           type: "updated",
           detail: null,
-          ...(key === undefined ? {} : { routingKeys: [key] }),
-        },
-      ]);
+          ...(key === undefined ? {} : { addresses: [[String(key)]] }),
+        }],
+      );
     }
 
-    await runtime.dispatch(origin, event("first"));
+    await customEventsRuntime.dispatch(runtime, origin, event("first"));
     assertCalls(
       "broad:updated",
       "exact:updated",
@@ -1467,11 +1478,11 @@ describe("customEvents", () => {
     );
 
     calls = [];
-    await runtime.dispatch(origin, event("second"));
+    await customEventsRuntime.dispatch(runtime, origin, event("second"));
     assertCalls("broad:updated", "other-key:updated");
 
     calls = [];
-    await runtime.dispatch(origin, event());
+    await customEventsRuntime.dispatch(runtime, origin, event());
     assertCalls(
       "exact:updated",
       "broad:updated",
@@ -1483,7 +1494,7 @@ describe("customEvents", () => {
     removeExact();
     removeBroad();
     calls = [];
-    await runtime.dispatch(origin, event("first"));
+    await customEventsRuntime.dispatch(runtime, origin, event("first"));
     assertCalls("wildcard:updated", "effect:updated");
 
     for (let cleanup of cleanups) cleanup();
@@ -1491,7 +1502,7 @@ describe("customEvents", () => {
   });
 
   it("derives host containment independently of registration order", () => {
-    let runtime = new CustomEventsRuntime();
+    let runtime = createCustomEventsRuntimeState();
     let parent = document.createElement("main");
     let host = document.createElement("section");
     parent.append(host);
@@ -1500,15 +1511,15 @@ describe("customEvents", () => {
       reachedParent = true;
     });
 
-    let unsubscribe = runtime.subscribe("projection", {
+    let unsubscribe = customEventsRuntime.subscribe(runtime, "projection", {
       element: host,
       eventTypes: new Set(["updated"]),
       notify() {},
     });
-    let unregisterHost = runtime.registerHost(host);
+    let unregisterHost = customEventsRuntime.registerHost(runtime, host);
     let init = { bubbles: true, cancelable: false };
     host.dispatchEvent(
-      runtime.createProductEvent("updated", null, init, [
+      customEventsRuntime.createProductEvent(runtime, "updated", null, init, [
         {
           type: "updated",
           detail: null,

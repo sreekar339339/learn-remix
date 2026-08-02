@@ -189,8 +189,9 @@ The single public `columns` event routes privately to both `columnId` and
 an aggregate such as its urgent-card count; unrelated columns and cards receive
 nothing. Nested `Map` keys and nested array item IDs are identity boundaries.
 Plain object field names such as `cards` and `urgent` remain storage structure,
-not routing identities or generated event names. Use globally distinct IDs—or
-prefix them by entity kind—when several identity levels consume the same event.
+not separately dispatched event names or identities. Their position in the
+complete address distinguishes nested identity levels without requiring
+globally unique IDs.
 
 For conventional entity arrays, use the same `id` for JSX reconciliation and
 update addressing. No configuration is needed:
@@ -211,7 +212,6 @@ drawing.circles.map((circle) => (
   <drawing.events.circle
     on={(event) => event.circles[circle.id]}
     key={circle.id}
-    id={String(circle.id)}
     r={(event) => (event.detail?.diameter ?? 0) / 2}
   />
 ));
@@ -689,11 +689,11 @@ The state path selected by an event-aware element's `on` prop is its primary
 address. Do not add a DOM `id` when that path already distinguishes the
 projection; nested object properties and `Map.get(key)` paths work without one.
 
-Keys are an optional delivery prefilter, not domain data. Match a routing
-identity to the DOM `id` when several elements select the same state path and
-the identity chooses its previous or next owner, or when an `events.on()`
-effect or keyed occurrence has no state path to match. JSX `key` remains the
-reconciliation identity and is independent of event routing.
+State updates and keyed occurrences use the same canonical event-address
+representation. A root state subscription is `[]`; nested objects, collection
+identities, and fields extend that address. An explicit occurrence `{ key }`
+becomes a one-segment address. JSX `key` remains the reconciliation identity
+and is independent of event routing.
 
 State updates derive routing automatically where the changed structure exposes
 an identity:
@@ -716,24 +716,24 @@ model's declarative value-routing policy; `update()` cannot override it. This
 keeps delivery policy out of mutation sites and ensures identity transitions
 can address both their previous and next owners.
 
-Only matching routing IDs pass the keyed prefilter. Subscriptions without an
-`id` pass that prefilter broadly; event-aware elements then apply their exact
-state-path match, while pathless occurrence projections and `events.on()`
-effects remain broad consumers.
+One address trie per phase and event type performs delivery. A changed address
+matches subscriptions at that address and its ancestors. When an ancestor was
+replaced, its descendant subscriptions also match. This one prefix rule covers
+deep state updates, collection identities, old/new value ownership, and keyed
+occurrences without separate key and path filters.
 
-One state property event may address several identities when a recipe changes
+One state property event may carry several addresses when a recipe changes
 several collection members. This remains one observable event and one
-transaction; the routing set is private runtime metadata rather than event
+transaction; the address set is private runtime metadata rather than event
 detail.
 
-When supplied, the routing `id` is captured as the subscription mounts and must
-remain stable for that mounted element. Remount the element when its routing
-identity changes. Arrays with an item `id` preserve logical paths across
-movement; arrays without one use positional paths. Use JSX `key` for stable DOM
-reconciliation, adding a DOM `id` only when routing or ordinary DOM behavior
-actually needs it.
-The runtime indexes subscriptions by phase, event type, and routing ID, so a
-keyed dispatch does not scan unrelated keyed subscriptions.
+The selected state address normally supplies all routing information. A DOM
+`id` is used only as the fallback address for a keyed occurrence, effect, or
+root value-routing subscription. When used, it is captured as the subscription
+mounts and must remain stable for that mounted element. Arrays with an item
+`id` preserve logical addresses across movement; arrays without one use
+positional addresses. The trie prevents an addressed dispatch from scanning
+unrelated branches.
 
 Routing metadata stays private: callback events do not expose `key` or
 `originTarget`.
@@ -751,9 +751,10 @@ The `on` prop establishes what invalidates an event-aware element:
 The callback receives a typed event-source proxy. It runs once during element
 setup: ordinary property access records object and record keys, array brackets
 record an item ID or positional index, `Map.get()` records a map key, and
-`Set.has()` records membership. It does not read state or recompute a selector:
-Examples name this contextual parameter `event`; the surrounding model
-descriptor already communicates its domain.
+`Set.has()` records membership. It establishes an address rather than storing a
+selector to recompute after every event. Examples name this contextual
+parameter `event`; the surrounding model descriptor already communicates its
+domain.
 
 ```tsx
 <model.events.output on={(event) => event.profile.name} />
@@ -768,6 +769,21 @@ ancestor was replaced. Unrelated paths are rejected before an element callback
 runs. Model-update projections therefore need neither selector recomputation
 nor previous-value comparison. Each matching element runs once per transaction
 and receives the final value at its subscribed address in `event.detail`.
+
+Internally, a selected source is only `{ owner, event type, address }`. Immer
+patches and explicitly keyed occurrences produce that same address shape, and
+one trie per projection phase and event type performs prefix matching. There is
+no parallel key index, selector cache, previous-value store, or persistent tree
+of source proxies. This small internal algebra is what keeps deep routing and
+ordinary occurrence events on one delivery path.
+
+Runtime operations are a shared stateless kernel. Each active descriptor owns
+only the mutable data required for isolation: its event metadata, subscription
+tries, observers, hosts, and dispatch-target registrations. Descriptors create
+that state lazily when an event, listener, host, observer, or event-aware
+element first needs it. Consequently, a descriptor used only as a reusable
+`withState()` factory does not allocate a second, unused runtime; every returned
+state model still receives its own isolated runtime state.
 
 Prefer one cohesive state event when several values jointly describe the input
 to a projection. Naively declaring sibling roots makes `on` resemble a render

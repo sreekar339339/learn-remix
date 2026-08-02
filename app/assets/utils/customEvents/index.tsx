@@ -10,6 +10,7 @@ import {
 } from "immer";
 import type { TypedEventTarget } from "remix/ui";
 import { createCustomEventsDescriptor } from "./descriptor.tsx";
+import { canonicalAddressSegment } from "./runtime.ts";
 import type {
   CustomEventsDescriptor,
   CustomEventsDefinition,
@@ -116,28 +117,18 @@ type StateModel<
     update(recipe: (draft: Draft<State>) => undefined): void;
   };
 
-function canonicalPropertyKey(key: PropertyKey) {
-  return typeof key === "symbol" ? key : String(key);
-}
-
 function resolvePatchPath(
   state: EventDetails,
   rootKey: string,
   segments: readonly unknown[],
-  routingKeys?: Set<PropertyKey>,
 ): readonly unknown[] | undefined {
-  let logicalPath: unknown[] = [rootKey];
-  let route = routingKeys;
+  let logicalPath: unknown[] = [];
   let value = state[rootKey];
   for (let segment of segments) {
     if (value instanceof Map) {
       if (!value.has(segment)) return;
       let item = value.get(segment);
-      logicalPath.push(segment);
-      if (route) {
-        if (!isPropertyKey(segment)) route = undefined;
-        else route.add(segment);
-      }
+      logicalPath.push(canonicalAddressSegment(segment));
       value = item;
       continue;
     }
@@ -147,8 +138,7 @@ function resolvePatchPath(
       }
       let item = value[segment];
       let identity = defaultArrayKey(item, segment);
-      logicalPath.push(canonicalPropertyKey(identity));
-      route?.add(identity);
+      logicalPath.push(canonicalAddressSegment(identity));
       value = item;
       continue;
     }
@@ -173,59 +163,51 @@ function normalizePatches(
 ) {
   let rootKey = patches[0]?.path[0];
   if (typeof rootKey !== "string") {
-    return { changedPaths: [], routingKeys: undefined };
+    return [];
   }
   let previous = previousState[rootKey];
   let next = nextState[rootKey];
-  let paths: Array<readonly unknown[]> = [];
-  let keys = new Set<PropertyKey>();
-  let routingValid = routeByValue ||
-    (previous !== null && typeof previous === "object" &&
-      patches.every(({ path }) => path.length >= 2));
+  let addresses: Array<readonly unknown[]> = [];
+
+  let addAddress = (address: readonly unknown[] | undefined) => {
+    if (!address) return;
+    let duplicate = addresses.some((candidate) =>
+      candidate.length === address.length &&
+      candidate.every((segment, index) => Object.is(segment, address[index]))
+    );
+    if (!duplicate) addresses.push(address);
+  };
+
   if (routeByValue) {
-    if (isPropertyKey(previous)) keys.add(previous);
-    if (isPropertyKey(next)) keys.add(next);
+    if (isPropertyKey(previous)) {
+      addAddress([canonicalAddressSegment(previous)]);
+    }
+    if (isPropertyKey(next)) addAddress([canonicalAddressSegment(next)]);
+    return addresses;
   }
 
-  let addPath = (path: readonly unknown[] | undefined) => {
-    if (!path) return;
-    let duplicate = paths.some((candidate) =>
-      candidate.length === path.length &&
-      candidate.every((segment, index) => Object.is(segment, path[index]))
-    );
-    if (!duplicate) paths.push(path);
-  };
   for (let patch of patches) {
-    let pathCount = paths.length;
+    let addressCount = addresses.length;
     let segments = (patch.path as unknown[]).slice(1);
 
     if (previous instanceof Set || next instanceof Set) {
       if (!Object.hasOwn(patch, "value")) {
-        routingValid = false;
-        addPath([rootKey]);
+        addAddress([]);
         continue;
       }
-      let item = patch.value;
-      if (routingValid && !routeByValue) {
-        if (isPropertyKey(item)) keys.add(item);
-        else routingValid = false;
-      }
-      addPath([rootKey, item]);
+      addAddress([canonicalAddressSegment(patch.value)]);
       continue;
     }
 
-    let collectedKeys = routingValid && !routeByValue ? keys : undefined;
     let previousPath = resolvePatchPath(
       previousState,
       rootKey,
       segments,
-      collectedKeys,
     );
     let nextPath = resolvePatchPath(
       nextState,
       rootKey,
       segments,
-      collectedKeys,
     );
 
     if (
@@ -245,23 +227,18 @@ function normalizePatches(
             ) && Object.is(candidate, item)
           )
         );
-        if (!stable) addPath([rootKey, canonicalPropertyKey(identity)]);
+        if (!stable) addAddress([canonicalAddressSegment(identity)]);
       }
-      if (paths.length === pathCount) {
-        addPath([rootKey, COLLECTION_STRUCTURE]);
+      if (addresses.length === addressCount) {
+        addAddress([COLLECTION_STRUCTURE]);
       }
       continue;
     }
-    addPath(previousPath);
-    addPath(nextPath);
-    if (paths.length === pathCount) addPath([rootKey]);
+    addAddress(previousPath);
+    addAddress(nextPath);
+    if (addresses.length === addressCount) addAddress([]);
   }
-  return {
-    changedPaths: paths,
-    routingKeys: routingValid && keys.size
-      ? keys.values().toArray()
-      : undefined,
-  };
+  return addresses;
 }
 
 function createStateModel(
@@ -300,7 +277,7 @@ function createStateModel(
         } else {
           Reflect.deleteProperty(target, key);
         }
-        let { routingKeys, changedPaths } = normalizePatches(
+        let addresses = normalizePatches(
           state,
           nextState,
           keyPatches,
@@ -309,7 +286,7 @@ function createStateModel(
         entries.push({
           [key]: {
             detail: nextState[key],
-            options: { routingKeys, changedPaths },
+            options: { addresses },
           },
         });
       }

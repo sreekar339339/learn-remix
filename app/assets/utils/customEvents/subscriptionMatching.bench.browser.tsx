@@ -1,17 +1,20 @@
 import * as assert from "remix/assert";
 import { it } from "remix/test";
-import { CustomEventsRuntime } from "./runtime.ts";
+import {
+  createCustomEventsRuntimeState,
+  customEventsRuntime,
+} from "./runtime.ts";
 
 const subscriptionCount = 5_000;
 const dispatchCount = 500;
 const targetKey = String(subscriptionCount - 1);
 
-it("benchmarks keyed subscription matching", async () => {
-  let runtime = new CustomEventsRuntime();
+it("benchmarks addressed subscription matching", async () => {
+  let runtime = createCustomEventsRuntimeState();
   let host = document.createElement("section");
   let origin = document.createElement("button");
   host.append(origin);
-  let unregisterHost = runtime.registerHost(host);
+  let unregisterHost = customEventsRuntime.registerHost(runtime, host);
   let cleanups: Array<() => void> = [];
   let notifications = 0;
 
@@ -20,7 +23,7 @@ it("benchmarks keyed subscription matching", async () => {
     element.id = String(index);
     host.append(element);
     cleanups.push(
-      runtime.subscribe("projection", {
+      customEventsRuntime.subscribe(runtime, "projection", {
         element,
         eventTypes: new Set(["itemUpdated"]),
         notify() {
@@ -32,30 +35,31 @@ it("benchmarks keyed subscription matching", async () => {
 
   function createKeyedEvent() {
     let init = { bubbles: true, cancelable: false };
-    return runtime.createProductEvent(
+    return customEventsRuntime.createProductEvent(
+      runtime,
       "itemUpdated",
       null,
       init,
       [{
         type: "itemUpdated",
         detail: null,
-        routingKeys: [targetKey],
+        addresses: [[String(targetKey)]],
       }],
     );
   }
 
   for (let index = 0; index < 20; index++) {
-    await runtime.dispatch(origin, createKeyedEvent());
+    await customEventsRuntime.dispatch(runtime, origin, createKeyedEvent());
   }
   notifications = 0;
 
   let started = performance.now();
   for (let index = 0; index < dispatchCount; index++) {
-    await runtime.dispatch(origin, createKeyedEvent());
+    await customEventsRuntime.dispatch(runtime, origin, createKeyedEvent());
   }
   let duration = performance.now() - started;
 
-  console.log("[customEvents keyed matching]", {
+  console.log("[customEvents address matching]", {
     subscriptions: subscriptionCount,
     dispatches: dispatchCount,
     durationMs: Number(duration.toFixed(2)),

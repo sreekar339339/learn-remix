@@ -1,9 +1,12 @@
 import { ref } from "remix/ui";
 import {
   ALL_EVENTS,
+  canonicalAddressSegment,
+  createCustomEventsRuntimeState,
   createCurrentTargetEvent,
+  customEventsRuntime,
   type CustomEventsBatchRuntimeEntry,
-  CustomEventsRuntime,
+  type CustomEventsRuntimeState,
 } from "./runtime.ts";
 import {
   createEventElementFactory,
@@ -32,8 +35,7 @@ const customEventsInitKeys = new Set([
 ]);
 
 type InternalEntryOptions = CustomEventsInit & {
-  routingKeys?: readonly PropertyKey[];
-  changedPaths?: readonly (readonly unknown[])[];
+  addresses?: readonly (readonly unknown[])[];
 };
 
 type StateEventContext = {
@@ -76,20 +78,8 @@ export function createCustomEventsDescriptor<
   options?: CustomEventsOptions,
   state?: StateEventContext,
 ): CustomEventsDescriptor<Events, State> {
-  let runtime = new CustomEventsRuntime();
-
-  function createBatchEvent(
-    entries: CustomEventsBatchRuntimeEntry[],
-    transactionOptions?: CustomEventsInit,
-  ) {
-    transactionOptions?.signal?.throwIfAborted();
-    return runtime.createProductEvent(
-      CUSTOM_EVENTS_TRANSACTION,
-      undefined,
-      getEventInit(transactionOptions),
-      entries,
-    );
-  }
+  let runtime: CustomEventsRuntimeState | undefined;
+  let getRuntime = () => runtime ??= createCustomEventsRuntimeState();
 
   function createEntry(
     type: string,
@@ -100,15 +90,14 @@ export function createCustomEventsDescriptor<
     if (type === ALL_EVENTS) {
       throw new TypeError('customEvents reserves "*" for subscriptions.');
     }
-    let routingKeys = options?.routingKeys ??
-      (options?.key === undefined ? undefined : [options.key]);
+    let addresses = options?.addresses ??
+      (options?.key === undefined
+        ? undefined
+        : [[canonicalAddressSegment(options.key)]]);
     return {
       type,
       detail,
-      ...(routingKeys === undefined ? {} : { routingKeys }),
-      ...(options?.changedPaths === undefined
-        ? {}
-        : { changedPaths: options.changedPaths }),
+      ...(addresses === undefined ? {} : { addresses }),
     };
   }
 
@@ -152,7 +141,7 @@ export function createCustomEventsDescriptor<
       throw new TypeError("customEvents on() requires an event listener.");
     }
     return customEventsOnMixin(
-      runtime,
+      getRuntime(),
       typeOrTypes as string | readonly string[],
       listener,
     );
@@ -171,7 +160,8 @@ export function createCustomEventsDescriptor<
     let observerOptions = args[offset + 1] as
       | CustomEventsObserverOptions
       | undefined;
-    return runtime.observe(
+    return customEventsRuntime.observe(
+      getRuntime(),
       target,
       (event) => observer(createCurrentTargetEvent(event, target)),
       observerOptions?.signal,
@@ -193,7 +183,8 @@ export function createCustomEventsDescriptor<
         ? detailOrInit as CustomEventsInit
         : maybeInit;
       let entry = createEntry(typeOrEvents, detail, init);
-      return runtime.createProductEvent(
+      return customEventsRuntime.createProductEvent(
+        getRuntime(),
         typeOrEvents,
         detail,
         getEventInit(init),
@@ -205,30 +196,37 @@ export function createCustomEventsDescriptor<
       let entries = normalizeConfiguredBatch(
         typeOrEvents as readonly CustomEventsBatchItem<Events>[],
       );
-      return createBatchEvent(
+      let init = detailOrInit as CustomEventsInit | undefined;
+      init?.signal?.throwIfAborted();
+      return customEventsRuntime.createProductEvent(
+        getRuntime(),
+        CUSTOM_EVENTS_TRANSACTION,
+        undefined,
+        getEventInit(init),
         entries,
-        detailOrInit as CustomEventsInit | undefined,
       );
     }
 
     throw new TypeError("customEvents expects an event name or event array.");
   }) as CustomEventsFactory<Events>;
 
-  let eventElement = createEventElementFactory<Events, State>(
-    runtime,
-    state?.owner,
-    state?.sources,
-  );
+  let eventElement:
+    | ReturnType<typeof createEventElementFactory<Events, State>>
+    | undefined;
+  let getEventElement = () => eventElement ??= createEventElementFactory<
+    Events,
+    State
+  >(getRuntime(), state?.owner, state?.sources);
   let dispatch = ((
     target: EventTarget,
     ...args: unknown[]
   ) => {
     let createEvent = events as (...args: unknown[]) => Event;
     let event = createEvent(...args);
-    return runtime.dispatch(target, event);
+    return customEventsRuntime.dispatch(getRuntime(), target, event);
   }) as CustomEventsDispatch<Events>;
   let host = ref((target, signal) => {
-    runtime.registerHost(target, signal);
+    customEventsRuntime.registerHost(getRuntime(), target, signal);
   });
   let descriptorTarget = Object.assign(events, {
     dispatch,
@@ -237,7 +235,7 @@ export function createCustomEventsDescriptor<
     host,
   });
   if (options?.host) {
-    runtime.registerHost(options.host);
+    customEventsRuntime.registerHost(getRuntime(), options.host);
   }
 
   return new Proxy(descriptorTarget, {
@@ -246,7 +244,7 @@ export function createCustomEventsDescriptor<
         return Reflect.get(target, property, receiver);
       }
       if (typeof property !== "string") return undefined;
-      return eventElement(property as keyof JSX.IntrinsicElements);
+      return getEventElement()(property as keyof JSX.IntrinsicElements);
     },
   }) as unknown as CustomEventsDescriptor<Events, State>;
 }

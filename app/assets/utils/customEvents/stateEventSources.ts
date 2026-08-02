@@ -1,10 +1,18 @@
-declare const stateEventSourceBrand: unique symbol;
+import { canonicalAddressSegment } from "./runtime.ts";
+
+const stateEventSourceMetadata: unique symbol = Symbol("stateEventSource");
+
+export type StateEventSourceMetadata<
+  Value = unknown,
+  Type extends string = string,
+> = {
+  owner: object;
+  type: Type;
+  path: readonly unknown[];
+};
 
 export type StateEventSource<Value, Type extends string> = {
-  readonly [stateEventSourceBrand]: {
-    value: Value;
-    type: Type;
-  };
+  readonly [stateEventSourceMetadata]: StateEventSourceMetadata<Value, Type>;
 };
 
 type Defined<Value> = Exclude<Value, null | undefined>;
@@ -43,18 +51,11 @@ export type StateEventSources<State extends Record<string, unknown>> = {
   >;
 };
 
-export type StateEventSourceMetadata = {
-  owner: object;
-  type: string;
-  path: readonly unknown[];
-  read(): unknown;
-};
-
-let metadataBySource = new WeakMap<object, StateEventSourceMetadata>();
-
 export function getStateEventSourceMetadata(value: unknown) {
   return value !== null && typeof value === "object"
-    ? metadataBySource.get(value)
+    ? Reflect.get(value, stateEventSourceMetadata) as
+      | StateEventSourceMetadata
+      | undefined
     : undefined;
 }
 
@@ -81,80 +82,67 @@ export function samePropertyKey(left: unknown, right: unknown) {
       String(left) === String(right));
 }
 
-function readProperty(
-  parent: unknown,
-  property: PropertyKey,
-) {
-  if (Array.isArray(parent)) {
-    let index = parent.findIndex((item, index) =>
-      samePropertyKey(defaultArrayKey(item, index), property)
-    );
-    return index < 0 ? undefined : parent[index];
+export function readStateEventSource({
+  owner,
+  type,
+  path,
+}: StateEventSourceMetadata) {
+  let value = Reflect.get(owner, type);
+  for (let segment of path) {
+    if (value instanceof Map) {
+      let entry = value.entries().find(([key]) =>
+        samePropertyKey(key, segment)
+      );
+      value = entry?.[1];
+    } else if (value instanceof Set) {
+      value = value.values().some((item) => samePropertyKey(item, segment));
+    } else if (Array.isArray(value)) {
+      value = value.find((item, index) =>
+        samePropertyKey(defaultArrayKey(item, index), segment)
+      );
+    } else {
+      value = value === null || value === undefined
+        ? undefined
+        : Reflect.get(Object(value), segment as PropertyKey);
+    }
   }
-
-  return parent === null || parent === undefined
-    ? undefined
-    : Reflect.get(Object(parent), property);
+  return value;
 }
 
 function createEventSource(
   owner: object,
   type: string,
   path: readonly unknown[],
-  read: () => unknown,
 ): object {
-  let children = new Map<unknown, object>();
+  let metadata: StateEventSourceMetadata = { owner, type, path };
   let node = new Proxy(Object.create(null), {
     get(_, property) {
-      let current = read();
+      if (property === stateEventSourceMetadata) return metadata;
+      let current = readStateEventSource(metadata);
       if (property === "get" && current instanceof Map) {
-        return (key: unknown) => {
-          let cached = children.get(key);
-          if (cached) return cached;
-          let child = createEventSource(
+        return (key: unknown) =>
+          createEventSource(
             owner,
             type,
-            [...path, key],
-            () => {
-              let value = read();
-              return value instanceof Map ? value.get(key) : undefined;
-            },
+            [...path, canonicalAddressSegment(key)],
           );
-          children.set(key, child);
-          return child;
-        };
       }
       if (property === "has" && current instanceof Set) {
-        return (value: unknown) => {
-          let cached = children.get(value);
-          if (cached) return cached;
-          let child = createEventSource(
+        return (value: unknown) =>
+          createEventSource(
             owner,
             type,
-            [...path, value],
-            () => {
-              let set = read();
-              return set instanceof Set ? set.has(value) : false;
-            },
+            [...path, canonicalAddressSegment(value)],
           );
-          children.set(value, child);
-          return child;
-        };
       }
 
-      let cached = children.get(property);
-      if (cached) return cached;
-      let child = createEventSource(
+      return createEventSource(
         owner,
         type,
         [...path, property],
-        () => readProperty(read(), property),
       );
-      children.set(property, child);
-      return child;
     },
   });
-  metadataBySource.set(node, { owner, type, path, read });
   return node;
 }
 
@@ -163,21 +151,15 @@ export function createStateEventSources<State extends Record<string, unknown>>(
   getState: () => State,
 ): StateEventSources<State> {
   let stateKeys = new Set(Object.keys(getState()));
-  let children = new Map<string, object>();
   return new Proxy(Object.create(null), {
     get(_, property) {
       if (typeof property !== "string") return undefined;
       if (!stateKeys.has(property)) return property;
-      let cached = children.get(property);
-      if (cached) return cached;
-      let child = createEventSource(
+      return createEventSource(
         owner,
         property,
-        [property],
-        () => getState()[property],
+        [],
       );
-      children.set(property, child);
-      return child;
     },
   }) as StateEventSources<State>;
 }

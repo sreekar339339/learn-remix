@@ -133,21 +133,16 @@ type CustomEventsElementProps<
       | CustomEventsElementProjection<NoInfer<Input>, RemixNode>;
   };
 
-type CustomEventsUninitializedElementProps<
+type CustomEventsInputProps<
   On,
   Input,
   Tag extends keyof JSX.IntrinsicElements,
-> = CustomEventsElementProps<On, Input | undefined, Tag> & {
-  initial?: never;
-};
-
-type CustomEventsInitializedElementProps<
+  Initialized extends boolean,
+> = CustomEventsElementProps<
   On,
-  Input,
-  Tag extends keyof JSX.IntrinsicElements,
-> = CustomEventsElementProps<On, Input, Tag> & {
-  initial: Input;
-};
+  Input | (Initialized extends true ? never : undefined),
+  Tag
+> & (Initialized extends true ? { initial: Input } : { initial?: never });
 
 type EventNameSource<Events extends EventDetails> =
   | "*"
@@ -208,36 +203,27 @@ type CustomEventsDefaultElementProps<
   Events extends EventDetails,
   Tag extends keyof JSX.IntrinsicElements,
   Initialized extends boolean,
-> = (Initialized extends true ? CustomEventsInitializedElementProps<
+> = Omit<
+  CustomEventsInputProps<
     "*",
     CustomEventsEventMap<Events>[CustomEventsEventType<Events>],
-    Tag
-  >
-  : CustomEventsUninitializedElementProps<
-    "*",
-    CustomEventsEventMap<Events>[CustomEventsEventType<Events>],
-    Tag
-  >) extends infer ElementProps
-  ? ElementProps extends { on: "*" }
-    ? Omit<ElementProps, "on"> & { on?: "*" }
-  : never
-  : never;
+    Tag,
+    Initialized
+  >,
+  "on"
+> & { on?: "*" };
 
 type CustomEventsOccurrenceProps<
   Events extends EventDetails,
   Source extends SourceSelection<EventNameSource<Events>>,
   Tag extends keyof JSX.IntrinsicElements,
   Initialized extends boolean,
-> = Initialized extends true ? CustomEventsInitializedElementProps<
-    Source,
-    CustomEventsSourceEvent<Events, Source>,
-    Tag
-  >
-  : CustomEventsUninitializedElementProps<
-    Source,
-    CustomEventsSourceEvent<Events, Source>,
-    Tag
-  >;
+> = CustomEventsInputProps<
+  Source,
+  CustomEventsSourceEvent<Events, Source>,
+  Tag,
+  Initialized
+>;
 
 /** Event-aware intrinsic element with declarative reactive attributes. */
 export type CustomEventsEventElement<
