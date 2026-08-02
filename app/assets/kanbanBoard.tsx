@@ -141,7 +141,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                       .reduce((count, card) => count + Number(card.urgent), 0);
                     return `${urgent} urgent · projected ${nextProjectionCount(
                       columnId,
-                    )}×`;
+                    )}`;
                   }}
                 </board.view.output>
               </header>
@@ -155,16 +155,14 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                     data-urgent={(event) => event.detail?.urgent}
                     mix={cardCss}
                   >
-                    {({ detail: card }) => {
-                      if (!card) return null;
-                      let projections = nextProjectionCount(cardId);
-                      return (
+                    {({ detail: card }) =>
+                      card ? (
                         <>
                           <strong>{card.title}</strong>
                           <span>
-                            {`${card.urgent ? "Urgent" : "Normal"} · projected ${
-                              projections
-                            }×`}
+                            {`${card.urgent ? "Urgent" : "Normal"} · projected ${nextProjectionCount(
+                              cardId,
+                            )}×`}
                           </span>
                           <button
                             type="button"
@@ -184,8 +182,8 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                             Toggle urgency
                           </button>
                         </>
-                      );
-                    }}
+                      ) : null
+                    }
                   </board.view.article>
                 ))
                 .toArray()}
