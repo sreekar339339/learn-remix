@@ -199,7 +199,8 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[todoActionButtonCss, completeTodoButtonCss]}
               name="intent"
               value="update"
-              children={(event) =>
+            >
+              {(event) =>
                 (
                   event.type === "actionSubmitted" ||
                   event.type === "actionSucceeded"
@@ -209,7 +210,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
                   ? "✓"
                   : ""
               }
-            />
+            </events.button>
           </form>
         </li>
       ))}

@@ -53,10 +53,9 @@ export function EventUserDisplay(handle: Handle) {
 
   return () => (
     <div>
-      <appContext.events.div
-        on={(event) => event.user.name}
-        children={(event) => event.detail ?? "Not logged in"}
-      />
+      <appContext.events.div on={(event) => event.user.name}>
+        {(event) => event.detail ?? "Not logged in"}
+      </appContext.events.div>
     </div>
   );
 }
@@ -83,11 +82,10 @@ export function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.pre
-      on={(event) => event.settings}
-      children={({ detail: settings }) =>
+    <appContext.events.pre on={(event) => event.settings}>
+      {({ detail: settings }) =>
         `Layout: ${settings.layout}, Theme: ${settings.theme}`
       }
-    />
+    </appContext.events.pre>
   );
 }

@@ -16,11 +16,9 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle) {
           }),
         ]}
       >
-        <events.span
-          on="countIncremented"
-          initial={events("countIncremented")}
-          children={() => count}
-        />
+        <events.span on="countIncremented" initial={events("countIncremented")}>
+          {() => count}
+        </events.span>
       </button>
       <label>
         Increment by{" "}

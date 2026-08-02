@@ -13,9 +13,12 @@ export const KeyedSelection = clientEntry(
   function KeyedSelection() {
     let selection = customEvents<{
       selectedId: string;
-    }>().withState({ selectedId: items[0]!.id }, {
-      keyBy: { selectedId: "value" },
-    });
+    }>().withState(
+      { selectedId: items[0]!.id },
+      {
+        keyBy: { selectedId: "value" },
+      },
+    );
     let projectionCounts = new Map<string, number>();
 
     return () => (
@@ -58,11 +61,10 @@ export const KeyedSelection = clientEntry(
           ))}
         </div>
         <p>
-          Selected: {" "}
-          <selection.events.output
-            on={(event) => event.selectedId}
-            children={(event) => event.detail}
-          />
+          Selected:{" "}
+          <selection.events.output on={(event) => event.selectedId}>
+            {(event) => event.detail}
+          </selection.events.output>
         </p>
       </section>
     );

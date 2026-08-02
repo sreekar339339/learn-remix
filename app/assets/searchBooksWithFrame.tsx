@@ -48,9 +48,8 @@ export const SearchBooksWithFrame = clientEntry(
             />
           </label>
         </form>
-        <events.div
-          initial={initialEvent}
-          children={(event) => {
+        <events.div initial={initialEvent}>
+          {(event) => {
             switch (event.type) {
               case "queryEmpty":
                 return <p>Enter the title of any book.</p>;
@@ -66,7 +65,7 @@ export const SearchBooksWithFrame = clientEntry(
                 );
             }
           }}
-        />
+        </events.div>
       </div>
     );
   },

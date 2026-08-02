@@ -49,131 +49,152 @@ const buttonCss = css({
 
 function initialColumns() {
   return new Map<string, Column>([
-    ["column:backlog", {
-      title: "Backlog",
-      cards: new Map([
-        ["card:design", {
-          title: "Review interaction design",
-          urgent: false,
-        }],
-        ["card:metrics", {
-          title: "Define success metrics",
-          urgent: false,
-        }],
-      ]),
-    }],
-    ["column:building", {
-      title: "Building",
-      cards: new Map([
-        ["card:routing", {
-          title: "Prototype deep patch routing",
-          urgent: true,
-        }],
-      ]),
-    }],
+    [
+      "column:backlog",
+      {
+        title: "Backlog",
+        cards: new Map([
+          [
+            "card:design",
+            {
+              title: "Review interaction design",
+              urgent: false,
+            },
+          ],
+          [
+            "card:metrics",
+            {
+              title: "Define success metrics",
+              urgent: false,
+            },
+          ],
+        ]),
+      },
+    ],
+    [
+      "column:building",
+      {
+        title: "Building",
+        cards: new Map([
+          [
+            "card:routing",
+            {
+              title: "Prototype deep patch routing",
+              urgent: true,
+            },
+          ],
+        ]),
+      },
+    ],
   ]);
 }
 
-export const KanbanBoard = clientEntry(
-  import.meta.url,
-  function KanbanBoard() {
-    let board = customEvents<{
-      columns: Map<string, Column>;
-    }>().withState({ columns: initialColumns() });
-    let projectionCounts = new Map<string, number>();
+export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
+  let board = customEvents<{
+    columns: Map<string, Column>;
+  }>().withState({ columns: initialColumns() });
+  let projectionCounts = new Map<string, number>();
 
-    function nextProjectionCount(id: string) {
-      let count = (projectionCounts.get(id) ?? 0) + 1;
-      projectionCounts.set(id, count);
-      return count;
-    }
+  function nextProjectionCount(id: string) {
+    let count = (projectionCounts.get(id) ?? 0) + 1;
+    projectionCounts.set(id, count);
+    return count;
+  }
 
-    return () => (
-      <section
+  return () => (
+    <section
+      mix={css({
+        width: "min(900px, 100%)",
+        display: "grid",
+        gap: 16,
+      })}
+    >
+      <header>
+        <h1>Deep identity routing experiment</h1>
+        <p>
+          Toggle a card. Its deep Immer patch updates only that card and its
+          owning column; projection counters make the boundary visible.
+        </p>
+      </header>
+      <div
         mix={css({
-          width: "min(900px, 100%)",
           display: "grid",
-          gap: 16,
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 14,
+          alignItems: "start",
         })}
       >
-        <header>
-          <h1>Deep identity routing experiment</h1>
-          <p>
-            Toggle a card. Its deep Immer patch updates only that card and its
-            owning column; projection counters make the boundary visible.
-          </p>
-        </header>
-        <div
-          mix={css({
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
-            alignItems: "start",
-          })}
-        >
-          {board.columns.entries().map(([columnId, column]) => (
+        {board.columns
+          .entries()
+          .map(([columnId, column]) => (
             <section key={columnId} mix={columnCss}>
               <header>
                 <h2>{column.title}</h2>
                 <board.events.output
                   on={(event) => event.columns.get(columnId)}
                   aria-label={`${column.title} projection`}
-                  children={({ detail: current }) => {
+                >
+                  {({ detail: current }) => {
                     if (!current) return null;
-                    let urgent = current.cards.values().reduce(
-                      (count, card) => count + Number(card.urgent),
-                      0,
-                    );
-                    return `${urgent} urgent · projected ${
-                      nextProjectionCount(columnId)
-                    }×`;
+                    let urgent = current.cards
+                      .values()
+                      .reduce((count, card) => count + Number(card.urgent), 0);
+                    return `${urgent} urgent · projected ${nextProjectionCount(
+                      columnId,
+                    )}×`;
                   }}
-                />
+                </board.events.output>
               </header>
-              {column.cards.entries().map(([cardId, initialCard]) => (
-                <board.events.article
-                  on={(event) =>
-                    event.columns.get(columnId).cards.get(cardId)}
-                  key={cardId}
-                  aria-label={initialCard.title}
-                  data-urgent={(event) => event.detail?.urgent}
-                  mix={cardCss}
-                  children={({ detail: card }) => {
-                    if (!card) return null;
-                    let projections = nextProjectionCount(cardId);
-                    return (
-                      <>
-                        <strong>{card.title}</strong>
-                        <span>
-                          {`${card.urgent ? "Urgent" : "Normal"} · projected ${
-                            projections
-                          }×`}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Toggle ${card.title} urgency`}
-                          mix={[
-                            buttonCss,
-                            on("click", () => {
-                              board.update((draft) => {
-                                let card = draft.columns
-                                  .get(columnId)?.cards.get(cardId);
-                                if (card) card.urgent = !card.urgent;
-                              });
-                            }),
-                          ]}
-                        >
-                          Toggle urgency
-                        </button>
-                      </>
-                    );
-                  }}
-                />
-              )).toArray()}
+              {column.cards
+                .entries()
+                .map(([cardId, initialCard]) => (
+                  <board.events.article
+                    on={(event) =>
+                      event.columns.get(columnId).cards.get(cardId)
+                    }
+                    key={cardId}
+                    aria-label={initialCard.title}
+                    data-urgent={(event) => event.detail?.urgent}
+                    mix={cardCss}
+                  >
+                    {({ detail: card }) => {
+                      if (!card) return null;
+                      let projections = nextProjectionCount(cardId);
+                      return (
+                        <>
+                          <strong>{card.title}</strong>
+                          <span>
+                            {`${card.urgent ? "Urgent" : "Normal"} · projected ${
+                              projections
+                            }×`}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Toggle ${card.title} urgency`}
+                            mix={[
+                              buttonCss,
+                              on("click", () => {
+                                board.update((draft) => {
+                                  let card = draft.columns
+                                    .get(columnId)
+                                    ?.cards.get(cardId);
+                                  if (card) card.urgent = !card.urgent;
+                                });
+                              }),
+                            ]}
+                          >
+                            Toggle urgency
+                          </button>
+                        </>
+                      );
+                    }}
+                  </board.events.article>
+                ))
+                .toArray()}
             </section>
-          )).toArray()}
-        </div>
-      </section>
-    );
-  },
-);
+          ))
+          .toArray()}
+      </div>
+    </section>
+  );
+});

@@ -75,9 +75,7 @@ export const TicTacToeCustomEvents = clientEntry(
               if (!(target instanceof HTMLButtonElement)) return;
               let cellId = Number(target.id);
               if (game.position.has(cellId) || game.result !== null) return;
-              let nextPlayer: Player = game.position.size % 2 === 0
-                ? "X"
-                : "O";
+              let nextPlayer: Player = game.position.size % 2 === 0 ? "X" : "O";
               game.update((draft) => {
                 draft.position.set(cellId, nextPlayer);
                 draft.result = deriveResult(draft.position);
@@ -120,14 +118,10 @@ export const TicTacToeCustomEvents = clientEntry(
         >
           {Array.from({ length: 9 }, (_, index) => (
             <game.events.button
-              on={(event) => [
-                event.position.get(index),
-                event.result,
-              ]}
+              on={(event) => [event.position.get(index), event.result]}
               key={index}
               id={String(index)}
-              disabled={() =>
-                game.position.has(index) || game.result !== null}
+              disabled={() => game.position.has(index) || game.result !== null}
               class={() => game.position.get(index)}
               mix={[
                 css({
@@ -141,12 +135,9 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                game.events.on(
-                  "focusTargetId",
-                  ({ currentTarget }) => {
-                    currentTarget.focus();
-                  },
-                ),
+                game.events.on("focusTargetId", ({ currentTarget }) => {
+                  currentTarget.focus();
+                }),
                 ref((currentTarget, signal) => {
                   if (index !== 0) return;
                   queueMicrotask(() => {
@@ -154,8 +145,9 @@ export const TicTacToeCustomEvents = clientEntry(
                   });
                 }),
               ]}
-              children={() => game.position.get(index)}
-            />
+            >
+              {() => game.position.get(index)}
+            </game.events.button>
           ))}
         </div>
         <button
@@ -184,15 +176,14 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <game.events.span
-            on={(event) => event.result}
-            children={(event) => {
+          <game.events.span on={(event) => event.result}>
+            {(event) => {
               let result = event.detail;
               if (!result) return "Game in progress";
               if (result === "Draw") return "Game is drawn.";
               return `${result} has won!`;
             }}
-          />
+          </game.events.span>
         </p>
       </div>
     );

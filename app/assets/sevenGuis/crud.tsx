@@ -65,11 +65,7 @@ export const SevenGuisCrud = clientEntry(
           ]}
         >
           <model.events.select
-            on={(event) => [
-              event.people,
-              event.prefix,
-              event.selectedId,
-            ]}
+            on={(event) => [event.people, event.prefix, event.selectedId]}
             size={7}
             aria-label="People"
             value={() => model.selectedId ?? ""}
@@ -87,23 +83,20 @@ export const SevenGuisCrud = clientEntry(
                 });
               }),
             ]}
-            children={() =>
-              visiblePeople(model.people, model.prefix).map(
-                (person) => (
-                  <option value={person.id}>
-                    {person.surname}, {person.name}
-                  </option>
-                ),
-              )
+          >
+            {() =>
+              visiblePeople(model.people, model.prefix).map((person) => (
+                <option value={person.id}>
+                  {person.surname}, {person.name}
+                </option>
+              ))
             }
-          />
+          </model.events.select>
           <model.events.div
-            on={(event) => [
-              event.draft,
-              event.selectedId,
-            ]}
+            on={(event) => [event.draft, event.selectedId]}
             mix={css({ display: "grid", gap: 8 })}
-            children={() => (
+          >
+            {() => (
               <>
                 <label>
                   Name{" "}
@@ -139,10 +132,7 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      !(
-                        model.draft.name.trim() &&
-                        model.draft.surname.trim()
-                      )
+                      !(model.draft.name.trim() && model.draft.surname.trim())
                     }
                     mix={[
                       buttonCss,
@@ -164,10 +154,7 @@ export const SevenGuisCrud = clientEntry(
                     type="button"
                     disabled={
                       model.selectedId === null ||
-                      !(
-                        model.draft.name.trim() &&
-                        model.draft.surname.trim()
-                      )
+                      !(model.draft.name.trim() && model.draft.surname.trim())
                     }
                     mix={[
                       buttonCss,
@@ -208,7 +195,7 @@ export const SevenGuisCrud = clientEntry(
                 </div>
               </>
             )}
-          />
+          </model.events.div>
         </div>
       </section>
     );

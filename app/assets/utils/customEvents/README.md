@@ -86,17 +86,18 @@ copying ceremony:
 
 ```tsx
 type TimerEvents = {
-  elapsed: number;
-  duration: number;
+  timing: {
+    elapsed: number;
+    duration: number;
+  };
 };
 
 let timer = customEvents<TimerEvents>().withState({
-  elapsed: 0,
-  duration: 10,
+  timing: { elapsed: 0, duration: 10 },
 });
 
 timer.update((draft) => {
-  draft.elapsed = 1;
+  draft.timing.elapsed = 1;
 });
 
 timer.events.observe(() => handle.update());
@@ -107,13 +108,12 @@ consumption:
 
 ```tsx
 timer.update((draft) => {
-  draft.elapsed = 1;
+  draft.timing.elapsed = 1;
 });
 
-<timer.events.output
-  on={(event) => event.elapsed}
-  children={(event) => `${event.detail}s`}
-/>;
+<timer.events.output on={(event) => event.timing.elapsed}>
+  {(event) => `${event.detail}s`}
+</timer.events.output>;
 ```
 
 `update()` is the mutation command. An event-aware element's `on` callback
@@ -173,11 +173,7 @@ For example:
 
 ```tsx
 board.update((draft) => {
-  draft.columns
-    .get(columnId)!
-    .cards
-    .get(cardId)!
-    .urgent = true;
+  draft.columns.get(columnId)!.cards.get(cardId)!.urgent = true;
 });
 ```
 
@@ -230,9 +226,12 @@ focus-target ID:
 ```tsx
 let selection = customEvents<{
   selectedId: number | null;
-}>().withState({ selectedId: null }, {
-  keyBy: { selectedId: "value" },
-});
+}>().withState(
+  { selectedId: null },
+  {
+    keyBy: { selectedId: "value" },
+  },
+);
 ```
 
 Changing `selectedId` from `7` to `8` routes the property event to both
@@ -276,10 +275,9 @@ confirmedFlight = {
 };
 flight.dispatchEvent(flight.events("bookingConfirmed"));
 
-<flight.events.output
-  on="bookingConfirmed"
-  children={() => "Booking confirmed"}
-/>;
+<flight.events.output on="bookingConfirmed">
+  {() => "Booking confirmed"}
+</flight.events.output>;
 ```
 
 Here `update()` exposes `kind`, `startDate`, and `returnDate` through its draft,
@@ -320,9 +318,7 @@ export type AppContext = ReturnType<
   typeof appContextEvents.withState<AppContextValue>
 >;
 
-function AppProvider(
-  handle: Handle<{ children?: RemixNode }, AppContext>,
-) {
+function AppProvider(handle: Handle<{ children?: RemixNode }, AppContext>) {
   let appContext = appContextEvents.withState({
     user: null,
     settings: { theme: "system", layout: "normal" },
@@ -344,9 +340,7 @@ shape to the type-level method application; string members remain occurrences:
 ```tsx
 const flightEvents = customEvents<Flight | "bookingConfirmed">();
 
-type FlightModel = ReturnType<
-  typeof flightEvents.withState<Flight>
->;
+type FlightModel = ReturnType<typeof flightEvents.withState<Flight>>;
 ```
 
 #### Practical DX wins
@@ -355,15 +349,15 @@ State producers always call `update()`; occurrence producers use the same
 model's `events()` descriptor. Each consumer independently chooses the smallest
 rendering policy appropriate to what it owns:
 
-| Consumer need | API | DX benefit |
-| --- | --- | --- |
-| A cohesive component derives most of its UI from the model | `model.events.observe(() => handle.update())` | Centralizes invalidation once; event handlers only mutate state |
-| One native element depends on nested state | `<model.events.input on={(event) => event.property}>` | Infers `event.detail` and matches the exact Immer update address without recomputing a selector |
-| One element reacts to occurrences | `<model.events.output on={["saved", "failed"]}>` | Narrows the callback event union without a second element API |
-| A context consumer needs one domain value | `addEventListeners(model, signal, { property() {} })` | Uses normal typed `EventTarget` subscriptions without a store adapter |
-| An array item, `Map` entry, or primitive `Set` member changes | `model.update(recipe)` | Derives `id`, index, key, or value routing from the Immer patch |
-| A property value is itself a routing identity | `withState(value, { keyBy: { selectedId: "value" } })` | Routes old and new owners declaratively without annotating mutations |
-| An occurrence intrinsically addresses one entity | `events("itemFocusRequested", { key: itemId })` | Expresses the occurrence's natural destination without putting routing metadata in its detail |
+| Consumer need                                                 | API                                                    | DX benefit                                                                                      |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| A cohesive component derives most of its UI from the model    | `model.events.observe(() => handle.update())`          | Centralizes invalidation once; event handlers only mutate state                                 |
+| One native element depends on nested state                    | `<model.events.input on={(event) => event.property}>`  | Infers `event.detail` and matches the exact Immer update address without recomputing a selector |
+| One element reacts to occurrences                             | `<model.events.output on={["saved", "failed"]}>`       | Narrows the callback event union without a second element API                                   |
+| A context consumer needs one domain value                     | `addEventListeners(model, signal, { property() {} })`  | Uses normal typed `EventTarget` subscriptions without a store adapter                           |
+| An array item, `Map` entry, or primitive `Set` member changes | `model.update(recipe)`                                 | Derives `id`, index, key, or value routing from the Immer patch                                 |
+| A property value is itself a routing identity                 | `withState(value, { keyBy: { selectedId: "value" } })` | Routes old and new owners declaratively without annotating mutations                            |
+| An occurrence intrinsically addresses one entity              | `events("itemFocusRequested", { key: itemId })`        | Expresses the occurrence's natural destination without putting routing metadata in its detail   |
 
 This lets a model begin with the low-ceremony component-wide strategy and move
 only proven hot or independent regions to granular projections. Producers do
@@ -409,9 +403,12 @@ should focus next”; it does not claim to mirror `document.activeElement`:
 ```tsx
 let model = customEvents<{
   focusTargetId: string | null;
-}>().withState({ focusTargetId: null }, {
-  keyBy: { focusTargetId: "value" },
-});
+}>().withState(
+  { focusTargetId: null },
+  {
+    keyBy: { focusTargetId: "value" },
+  },
+);
 
 model.update((draft) => {
   draft.focusTargetId = nextId;
@@ -467,16 +464,21 @@ form.dispatchEvent(events("saveSucceeded", { revision }, { key: revision }));
 form.dispatchEvent(events(["listUpdated", "editorUpdated"]));
 
 // One transaction with independently routed entries.
-form.dispatchEvent(events([
-  "listUpdated",
-  { editorUpdated: { options: { key: editorId } } },
-  {
-    saveSucceeded: {
-      detail: { revision },
-      options: { key: revision },
-    },
-  },
-], { composed: true }));
+form.dispatchEvent(
+  events(
+    [
+      "listUpdated",
+      { editorUpdated: { options: { key: editorId } } },
+      {
+        saveSucceeded: {
+          detail: { revision },
+          options: { key: revision },
+        },
+      },
+    ],
+    { composed: true },
+  ),
+);
 ```
 
 A batch is one dispatch containing several declared entries. On DOM targets,
@@ -534,11 +536,11 @@ event only after the transition has completed.
 
 The API has three deliberately separate consumption roles:
 
-| Role | API | Ownership and timing |
-| --- | --- | --- |
-| Projection | `<events.tag on={source}>` | Declaratively updates one existing element from model updates or occurrences; omitting `on` observes every occurrence |
-| Effect | `events.on(event, listener)` | Runs on the mixin element after matching projections commit |
-| Observer | `events.observe(listener)` | Imperatively sees every descriptor event on one exact target before projections commit |
+| Role       | API                          | Ownership and timing                                                                                                  |
+| ---------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Projection | `<events.tag on={source}>`   | Declaratively updates one existing element from model updates or occurrences; omitting `on` observes every occurrence |
+| Effect     | `events.on(event, listener)` | Runs on the mixin element after matching projections commit                                                           |
+| Observer   | `events.observe(listener)`   | Imperatively sees every descriptor event on one exact target before projections commit                                |
 
 Use `events.on()` for a post-render DOM effect such as focus, selection, or
 measurement on the element hosting the mixin. It participates in element host
@@ -558,12 +560,13 @@ choose model updates or narrow the occurrence vocabulary:
   on={["saveStarted", "saveSucceeded"]}
   class={(event) => event.type === "saveStarted" ? "pending" : ""}
   aria-busy={(event) => event.type === "saveStarted"}
-  children={(event) =>
+>
+  {(event) =>
     event.type === "saveSucceeded"
       ? <p>Saved revision {event.detail.revision}</p>
       : <p>Not saved yet.</p>
   }
-/>
+</events.form>
 
 <model.events.input
   on={(event) => event.profile.name}
@@ -594,8 +597,9 @@ events.observe(form, (event) => console.log(event.type), { signal });
 
 <events.output
   on={["saveSucceeded", "saveFailed"]}
-  children={(event) => event.type === "saveSucceeded" ? "Saved" : "Save failed"}
-/>
+>
+  {(event) => event.type === "saveSucceeded" ? "Saved" : "Save failed"}
+</events.output>
 ```
 
 For reusable domain objects, derive Remix's `TypedEventTarget` map from the
@@ -633,17 +637,20 @@ This is especially useful for repeated elements. A keyed event can update one
 existing item without rerunning the parent's render function or `.map()`:
 
 ```tsx
-{items.map((item) => (
-  <model.events.button
-    on={(event) => event.items[item.id]}
-    id={String(item.id)}
-    value={(event) => String(event.detail?.id ?? "")}
-    disabled={(event) => event.detail?.pending ?? true}
-    class={(event) => event.detail?.pending ? "pending" : ""}
-    data-state={(event) => event.detail?.pending ? "saving" : "ready"}
-    children={(event) => event.detail?.label}
-  />
-))}
+{
+  items.map((item) => (
+    <model.events.button
+      on={(event) => event.items[item.id]}
+      id={String(item.id)}
+      value={(event) => String(event.detail?.id ?? "")}
+      disabled={(event) => event.detail?.pending ?? true}
+      class={(event) => (event.detail?.pending ? "pending" : "")}
+      data-state={(event) => (event.detail?.pending ? "saving" : "ready")}
+    >
+      {(event) => event.detail?.label}
+    </model.events.button>
+  ));
+}
 
 model.update((draft) => {
   draft.items[index]!.pending = true;
@@ -749,8 +756,9 @@ runs. Model-update projections therefore need neither selector recomputation
 nor previous-value comparison. Each matching element runs once per transaction
 and receives the final value at its subscribed address in `event.detail`.
 
-Several independent state properties or occurrences may invalidate one derived
-projection. Subscribe to them together and read the committed model:
+Prefer one cohesive state event when several values jointly describe the input
+to a projection. Naively declaring sibling roots makes `on` resemble a render
+dependency list and leaves the callback reading hidden function-scoped values:
 
 ```tsx
 <timer.events.progress
@@ -759,30 +767,46 @@ projection. Subscribe to them together and read the committed model:
 />
 ```
 
-When several dependencies belong to the same root property, subscribe to their
-nearest shared update address instead of listing sibling addresses:
+Model the values as one meaningful product state instead. Its parent path is a
+real event whose detail contains the complete projection input, while nested
+paths remain available to narrower consumers:
 
 ```tsx
-<model.events.output
-  on={(event) => event.profile}
-  children={() => `${model.profile.firstName} ${model.profile.lastName}`}
+type TimerModel = {
+  timing: { elapsed: number; duration: number };
+};
+
+<timer.events.progress
+  on={(event) => event.timing}
+  value={({ detail }) => Math.min(1, detail.elapsed / detail.duration)}
 />
+
+<timer.events.output on={(event) => event.timing.elapsed}>
+  {(event) => event.detail}
+</timer.events.output>
 ```
 
+This preserves event-listener semantics: on the `timing` event, run the
+projection with that event's complete detail. It also makes the relationship
+between related values explicit in the domain model, removes dependency-array
+ceremony, avoids hidden reads, and keeps updates atomic.
+
+Do not group unrelated state merely because one view happens to combine it.
+Several genuinely independent state properties or occurrences may still be
+subscribed to together; in that exceptional case, the source list is an
+invalidation contract and the callback reads the committed model. When several
+needed fields already belong to one root property, subscribe to their nearest
+shared update address rather than listing sibling addresses.
+
 One event-aware element accepts at most one update address per root state
-property. The shared ancestor expresses the invalidation boundary without
+property. A shared ancestor expresses the invalidation boundary without
 manufacturing several variants of the same root event.
 
 A state-update source may also be combined with an occurrence when both project
 through one element:
 
 ```tsx
-<sheet.events.input
-  on={(event) => [
-    event.values[cellId],
-    event.cellDrafted,
-  ]}
-/>
+<sheet.events.input on={(event) => [event.values[cellId], event.cellDrafted]} />
 ```
 
 State and occurrence sources share the same callback namespace. State entries
@@ -890,11 +914,11 @@ simultaneously true. Occurrences fall into several useful families:
 
 Keep these domain roles distinct even though they share one API:
 
-| Role | Meaning | Typical shape |
-| --- | --- | --- |
-| State | What is true now | Readable property updated by `update()` |
-| Fact | What happened | Past-tense occurrence such as `saveSucceeded` |
-| Intent | What another owner should do | Request occurrence or latest-target state |
+| Role   | Meaning                      | Typical shape                                 |
+| ------ | ---------------------------- | --------------------------------------------- |
+| State  | What is true now             | Readable property updated by `update()`       |
+| Fact   | What happened                | Past-tense occurrence such as `saveSucceeded` |
+| Intent | What another owner should do | Request occurrence or latest-target state     |
 
 The lifecycle decides whether intent is state or an occurrence. A focus target
 is state when only its latest value matters; a request is an occurrence when
@@ -956,15 +980,15 @@ preserved.
 
 Use this decision table at the producer boundary:
 
-| Question | Model it as |
-| --- | --- |
-| Must code read the value before or after the transition that produced it? | State |
-| Does the value participate in validation, history, later calculations, or a multi-property atomic transition? | State |
-| Is only the latest target or intent meaningful? | State |
-| Must two identical publications still be observed as two separate happenings? | Occurrence |
-| Is the payload an immutable snapshot used only because this transition happened? | Occurrence detail |
-| Must several pending requests survive instead of replacing one another? | Durable queue state |
-| Does a durable transition also produce an independently meaningful outcome or lifecycle fact? | State plus occurrence |
+| Question                                                                                                      | Model it as           |
+| ------------------------------------------------------------------------------------------------------------- | --------------------- |
+| Must code read the value before or after the transition that produced it?                                     | State                 |
+| Does the value participate in validation, history, later calculations, or a multi-property atomic transition? | State                 |
+| Is only the latest target or intent meaningful?                                                               | State                 |
+| Must two identical publications still be observed as two separate happenings?                                 | Occurrence            |
+| Is the payload an immutable snapshot used only because this transition happened?                              | Occurrence detail     |
+| Must several pending requests survive instead of replacing one another?                                       | Durable queue state   |
+| Does a durable transition also produce an independently meaningful outcome or lifecycle fact?                 | State plus occurrence |
 
 #### When the split is useful
 
@@ -993,9 +1017,11 @@ document.update((draft) => {
 });
 
 // Independently meaningful result of an operation.
-form.dispatchEvent(document.events("saveSucceeded", {
-  revision: document.revision,
-}));
+form.dispatchEvent(
+  document.events("saveSucceeded", {
+    revision: document.revision,
+  }),
+);
 ```
 
 The supplied and omitted portions of the map share one descriptor, so
@@ -1099,9 +1125,7 @@ When event state belongs to one rendered element, derive it directly on that
 element:
 
 ```tsx
-<events.form
-  data-action={(event) => event.type}
-/>
+<events.form data-action={(event) => event.type} />
 ```
 
 Introduce keyed external state only when the information must outlive,
@@ -1143,11 +1167,19 @@ function renderSearch(event: SearchEvent) {
     case "querySubmitted":
       return <p>Fetching books containing “{event.detail.query}”…</p>;
     case "booksFound":
-      return <ul>{event.detail.map((book) => <li>{book.title}</li>)}</ul>;
+      return (
+        <ul>
+          {event.detail.map((book) => (
+            <li>{book.title}</li>
+          ))}
+        </ul>
+      );
     case "booksNotFound":
-      return event.detail.reason === "emptyList"
-        ? <p>No books were found.</p>
-        : <p>Could not fetch books: {event.detail.reason.other}</p>;
+      return event.detail.reason === "emptyList" ? (
+        <p>No books were found.</p>
+      ) : (
+        <p>Could not fetch books: {event.detail.reason.other}</p>
+      );
     case "errorOccurred":
       return <p>Unexpected error: {event.detail.message}</p>;
   }
@@ -1210,9 +1242,8 @@ defines the component projection. A component mixing structural and granular
 events should subscribe only to its structural invalidators:
 
 ```tsx
-events.on(
-  ["itemAdded", "itemRemoved", "itemsReordered"],
-  () => handle.update(),
+events.on(["itemAdded", "itemRemoved", "itemsReordered"], () =>
+  handle.update(),
 );
 ```
 

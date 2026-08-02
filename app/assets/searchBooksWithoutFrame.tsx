@@ -102,9 +102,8 @@ export const SearchBooksWithoutFrame = clientEntry(
             ]}
           />
         </label>
-        <events.div
-          initial={initialEvent}
-          children={(event) => {
+        <events.div initial={initialEvent}>
+          {(event) => {
             switch (event.type) {
               case "queryEmpty":
                 return <p>Enter the title of any book.</p>;
@@ -143,7 +142,7 @@ export const SearchBooksWithoutFrame = clientEntry(
                 );
             }
           }}
-        />
+        </events.div>
       </div>
     );
   },
