@@ -10,7 +10,7 @@ export const SearchBooksWithFrame = clientEntry(
     let initialEvent = events(query ? "querySubmitted" : "queryEmpty");
 
     return () => (
-      <div mix={events.host()}>
+      <div mix={events.host}>
         <form
           action={routes.searchBooks.books.href()}
           mix={[
@@ -49,7 +49,8 @@ export const SearchBooksWithFrame = clientEntry(
           </label>
         </form>
         <events.div
-          child={(event = initialEvent) => {
+          initial={initialEvent}
+          children={(event) => {
             switch (event.type) {
               case "queryEmpty":
                 return <p>Enter the title of any book.</p>;

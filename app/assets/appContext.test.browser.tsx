@@ -17,7 +17,7 @@ async function settleEvents() {
 }
 
 describe("AppContext", () => {
-  it("patches its model and emits only the affected events", () => {
+  it("updates its model and emits only the affected events", () => {
     let context = appContextEvents.withState({
       user: null,
       settings: { layout: "normal", theme: "system" },
@@ -43,14 +43,16 @@ describe("AppContext", () => {
       calls.push(`all:${event.type}`);
     });
 
-    context.patch({ user: { name: "Ada", age: 37 } });
+    context.update((draft) => {
+      draft.user = { name: "Ada", age: 37 };
+    });
 
     assert.deepEqual(context.user, { name: "Ada", age: 37 });
     assert.equal(calls.join(","), "named:Ada,all:user");
 
-    context.patch({
-      user: { name: "Grace", age: 85 },
-      settings: { layout: "zen", theme: "dark" },
+    context.update((draft) => {
+      draft.user = { name: "Grace", age: 85 };
+      draft.settings = { layout: "zen", theme: "dark" };
     });
 
     assert.deepEqual(context.user, { name: "Grace", age: 85 });
@@ -82,18 +84,18 @@ describe("AppContext", () => {
       },
     });
 
-    context.patch({
-      user: { name: "Ada", age: 37 },
-      settings: { layout: "zen", theme: "light" },
+    context.update((draft) => {
+      draft.user = { name: "Ada", age: 37 };
+      draft.settings = { layout: "zen", theme: "light" };
     });
     assert.equal(cleanedCalls, 1);
     assert.equal(abortedCalls, 1);
 
     userController.abort();
     settingsController.abort();
-    context.patch({
-      user: null,
-      settings: { layout: "normal", theme: "system" },
+    context.update((draft) => {
+      draft.user = null;
+      draft.settings = { layout: "normal", theme: "system" };
     });
     assert.equal(cleanedCalls, 1);
     assert.equal(abortedCalls, 1);
@@ -108,7 +110,9 @@ describe("AppContext", () => {
           <button
             data-action="user"
             mix={on("click", () => {
-              context.patch({ user: { name: "Ada", age: 37 } });
+              context.update((draft) => {
+                draft.user = { name: "Ada", age: 37 };
+              });
             })}
           >
             Set user
@@ -116,8 +120,8 @@ describe("AppContext", () => {
           <button
             data-action="settings"
             mix={on("click", () => {
-              context.patch({
-                settings: { layout: "normal", theme: "dark" },
+              context.update((draft) => {
+                draft.settings = { layout: "normal", theme: "dark" };
               });
             })}
           >

@@ -10,8 +10,6 @@ export const SevenGuisTimer = clientEntry(
       elapsed: 0,
       duration: 10,
     });
-    let progressEvents = timer.events.on(["elapsed", "duration"]);
-
     return () => (
       <section
         mix={[
@@ -23,8 +21,11 @@ export const SevenGuisTimer = clientEntry(
               let delta = (now - last) / 1000;
               last = now;
               if (timer.elapsed >= timer.duration) return;
-              timer.patch({
-                elapsed: Math.min(timer.duration, timer.elapsed + delta),
+              timer.update((draft) => {
+                draft.elapsed = Math.min(
+                  draft.duration,
+                  draft.elapsed + delta,
+                );
               });
             }, 100);
             signal.addEventListener("abort", () => window.clearInterval(id), {
@@ -35,12 +36,14 @@ export const SevenGuisTimer = clientEntry(
       >
         <h2>Timer</h2>
         <div>
-          <progressEvents.progress
+          <timer.events.progress
+            on={(event) => [event.elapsed, event.duration]}
             value={() => Math.min(1, timer.elapsed / timer.duration)}
             max={1}
           />
-          <timer.events.on.elapsed.output
-            child={() => `${timer.elapsed.toFixed(1)}s elapsed`}
+          <timer.events.output
+            on={(event) => event.elapsed}
+            children={(event) => `${event.detail.toFixed(1)}s elapsed`}
           />
         </div>
         <label mix={rowCss}>
@@ -55,15 +58,16 @@ export const SevenGuisTimer = clientEntry(
               inputCss,
               on("input", ({ currentTarget }) => {
                 let duration = currentTarget.valueAsNumber;
-                timer.patch({
-                  duration,
-                  elapsed: Math.min(timer.elapsed, duration),
+                timer.update((draft) => {
+                  draft.duration = duration;
+                  draft.elapsed = Math.min(draft.elapsed, duration);
                 });
               }),
             ]}
           />
-          <timer.events.on.duration.span
-            child={() => `${timer.duration.toFixed(1)}s`}
+          <timer.events.span
+            on={(event) => event.duration}
+            children={(event) => `${event.detail.toFixed(1)}s`}
           />
         </label>
         <button
@@ -71,7 +75,9 @@ export const SevenGuisTimer = clientEntry(
           mix={[
             buttonCss,
             on("click", () => {
-              timer.patch({ elapsed: 0 });
+              timer.update((draft) => {
+                draft.elapsed = 0;
+              });
             }),
           ]}
         >

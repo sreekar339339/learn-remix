@@ -16,6 +16,7 @@ import { SearchBooksWithoutFramePage } from "./searchBooksWithoutFramePage.tsx";
 import { SearchBooksWithFramePage } from "./searchBooksWithFramePage.tsx";
 import { KistchenSinkPage } from "./kitchenSinkPage.tsx";
 import { SevenGuisPage } from "./sevenGuisPage.tsx";
+import { KanbanPage } from "./kanbanPage.tsx";
 
 export const rootController = createController(routes, {
   actions: {
@@ -36,6 +37,9 @@ export const rootController = createController(routes, {
     },
     sevenGuis({ render }) {
       return render(<SevenGuisPage />);
+    },
+    kanban({ render }) {
+      return render(<KanbanPage />);
     }
   },
 });

@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: false
+patchedDependencies:
+  '@remix-run/ui@0.4.0': patches/@remix-run__ui@0.4.0.patch

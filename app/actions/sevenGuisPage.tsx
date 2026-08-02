@@ -4,6 +4,7 @@ import { SevenGuisCircleDrawer } from "../assets/sevenGuis/circleDrawer.tsx";
 import { SevenGuisCounter } from "../assets/sevenGuis/counter.tsx";
 import { SevenGuisCrud } from "../assets/sevenGuis/crud.tsx";
 import { SevenGuisFlightBooker } from "../assets/sevenGuis/flightBooker.tsx";
+import { KeyedSelection } from "../assets/sevenGuis/keyedSelection.tsx";
 import { SevenGuisTemperatureConverter } from "../assets/sevenGuis/temperatureConverter.tsx";
 import { SevenGuisTimer } from "../assets/sevenGuis/timer.tsx";
 import { Layout } from "../ui/layout.tsx";
@@ -33,6 +34,7 @@ export function SevenGuisPage() {
         <SevenGuisCrud />
         <SevenGuisCircleDrawer />
         <SevenGuisCells />
+        <KeyedSelection />
       </section>
     </Layout>
   );

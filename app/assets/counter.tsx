@@ -9,14 +9,18 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle) {
     <>
       <button
         mix={[
-          events.host(),
+          events.host,
           on("click", ({ currentTarget }) => {
             count = count + incrementOffset;
             currentTarget.dispatchEvent(events("countIncremented"));
           }),
         ]}
       >
-        <events.span child={() => count} />
+        <events.span
+          on="countIncremented"
+          initial={events("countIncremented")}
+          children={() => count}
+        />
       </button>
       <label>
         Increment by{" "}

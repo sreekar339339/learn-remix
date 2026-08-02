@@ -1,6 +1,6 @@
-const ALL_EVENTS = "*";
+export const ALL_EVENTS = "*";
 
-type Phase = "projection" | "effect";
+export type SubscriptionPhase = "projection" | "effect";
 
 type DispatchTargetRegistration = {
   count: number;
@@ -10,6 +10,7 @@ type DispatchTargetRegistration = {
 type ElementSubscription = {
   element: Element;
   eventTypes: ReadonlySet<string> | null;
+  statePaths?: ReadonlyMap<string, readonly unknown[]>;
   notify(event: CustomEvent): unknown;
 };
 
@@ -23,15 +24,15 @@ type RoutedSubscriptions = {
 };
 
 type SubscriptionIndex = Record<
-  Phase,
+  SubscriptionPhase,
   Map<string, RoutedSubscriptions>
 >;
 
 export type CustomEventsBatchRuntimeEntry = {
   type: string;
   detail: unknown;
-  init: EventInit;
-  key?: PropertyKey;
+  routingKeys?: readonly PropertyKey[];
+  changedPaths?: readonly (readonly unknown[])[];
 };
 
 type ProductEventMetadata = {
@@ -41,8 +42,15 @@ type ProductEventMetadata = {
 
 type TransactionEvent = {
   event: CustomEvent;
-  key?: PropertyKey;
+  routingKeys?: readonly PropertyKey[];
+  changedPaths?: readonly (readonly unknown[])[];
 };
+
+function pathsOverlap(left: readonly unknown[], right: readonly unknown[]) {
+  return left.values()
+    .take(Math.min(left.length, right.length))
+    .every((segment, index) => Object.is(segment, right[index]));
+}
 
 function isElement(value: unknown): value is Element {
   return typeof Element !== "undefined" && value instanceof Element;
@@ -57,13 +65,6 @@ function setEventProperty(
     configurable: true,
     value,
   });
-}
-
-function createRoutedSubscriptions(): RoutedSubscriptions {
-  return {
-    all: new Set(),
-    byId: new Map(),
-  };
 }
 
 function addToRoute(
@@ -91,16 +92,19 @@ function removeFromRoute(
 
 function* selectRoute(
   route: RoutedSubscriptions,
-  key: PropertyKey | undefined,
+  routingKeys: readonly PropertyKey[] | undefined,
 ) {
-  if (key === undefined) {
+  if (routingKeys === undefined) {
     yield* route.all;
     return;
   }
 
   yield* route.byId.get("") ?? [];
-  let routingId = String(key);
-  if (routingId !== "") yield* route.byId.get(routingId) ?? [];
+  let routingIds = new Set(routingKeys.values().map(String));
+  routingIds.delete("");
+  for (let routingId of routingIds) {
+    yield* route.byId.get(routingId) ?? [];
+  }
 }
 
 function ownCleanup(cleanup: () => void, signal?: AbortSignal) {
@@ -130,9 +134,12 @@ function collect(
 function createEventSnapshot(
   entry: CustomEventsBatchRuntimeEntry,
   target: EventTarget,
+  carrier: CustomEvent,
 ) {
   let event = new CustomEvent(entry.type, {
-    ...entry.init,
+    bubbles: carrier.bubbles,
+    cancelable: false,
+    composed: carrier.composed,
     detail: entry.detail,
   });
   setEventProperty(event, "target", target);
@@ -177,7 +184,7 @@ export class CustomEventsRuntime {
   #hosts = new WeakMap<Element, number>();
   #defaultHost: EventTarget | undefined;
 
-  addEventType(type: string) {
+  #addEventType(type: string) {
     if (this.#eventTypes.has(type)) return;
     this.#eventTypes.add(type);
     for (let listener of this.#eventTypeListeners) listener(type);
@@ -189,7 +196,8 @@ export class CustomEventsRuntime {
     init: EventInit,
     entries: CustomEventsBatchRuntimeEntry[],
   ) {
-    this.addEventType(carrierType);
+    this.#addEventType(carrierType);
+    for (let { type } of entries) this.#addEventType(type);
     let event = new CustomEvent(carrierType, { ...init, detail });
     if (detail === undefined) setEventProperty(event, "detail", undefined);
     this.#eventMetadata.set(event, { entries });
@@ -202,22 +210,8 @@ export class CustomEventsRuntime {
     return metadata?.completion ?? Promise.resolve();
   }
 
-  subscribeProjection(
-    subscription: ElementSubscription,
-    signal?: AbortSignal,
-  ) {
-    return this.#subscribeElement("projection", subscription, signal);
-  }
-
-  subscribeEffect(
-    subscription: ElementSubscription,
-    signal?: AbortSignal,
-  ) {
-    return this.#subscribeElement("effect", subscription, signal);
-  }
-
-  #subscribeElement(
-    phaseName: Phase,
+  subscribe(
+    phaseName: SubscriptionPhase,
     subscription: ElementSubscription,
     signal?: AbortSignal,
   ) {
@@ -230,10 +224,10 @@ export class CustomEventsRuntime {
     let routes: Array<[string, RoutedSubscriptions]> = [];
 
     for (let selector of selectors) {
-      if (selector !== ALL_EVENTS) this.addEventType(selector);
+      if (selector !== ALL_EVENTS) this.#addEventType(selector);
       let route = phase.get(selector);
       if (!route) {
-        route = createRoutedSubscriptions();
+        route = { all: new Set(), byId: new Map() };
         phase.set(selector, route);
       }
       addToRoute(route, indexed);
@@ -330,24 +324,61 @@ export class CustomEventsRuntime {
   }
 
   *#matchingSubscriptions(
-    phase: Phase,
+    phase: SubscriptionPhase,
     transactionEvent: TransactionEvent,
   ) {
     let index = this.#subscriptions[phase];
     let wildcard = index.get(ALL_EVENTS);
-    if (wildcard) yield* selectRoute(wildcard, transactionEvent.key);
+    if (wildcard) {
+      for (let subscription of selectRoute(
+        wildcard,
+        transactionEvent.routingKeys,
+      )) {
+        if (this.#matchesUpdatePath(subscription, transactionEvent)) {
+          yield subscription;
+        }
+      }
+    }
     let typed = index.get(transactionEvent.event.type);
-    if (typed) yield* selectRoute(typed, transactionEvent.key);
+    if (typed) {
+      for (let subscription of selectRoute(
+        typed,
+        transactionEvent.routingKeys,
+      )) {
+        if (this.#matchesUpdatePath(subscription, transactionEvent)) {
+          yield subscription;
+        }
+      }
+    }
+  }
+
+  #matchesUpdatePath(
+    subscription: IndexedSubscription,
+    transactionEvent: TransactionEvent,
+  ) {
+    let statePath = subscription.statePaths?.get(
+      transactionEvent.event.type,
+    );
+    if (!statePath) return true;
+    return transactionEvent.changedPaths?.some((changedPath) =>
+      pathsOverlap(statePath, changedPath)
+    ) ?? false;
   }
 
   #notify(
     entries: CustomEventsBatchRuntimeEntry[],
     originScope: EventTarget,
     originTarget: EventTarget,
+    carrier: CustomEvent,
   ) {
     let events: TransactionEvent[] = entries.map((entry) => ({
-      event: createEventSnapshot(entry, originTarget),
-      ...(entry.key === undefined ? {} : { key: entry.key }),
+      event: createEventSnapshot(entry, originTarget, carrier),
+      ...(entry.routingKeys === undefined
+        ? {}
+        : { routingKeys: entry.routingKeys }),
+      ...(entry.changedPaths === undefined
+        ? {}
+        : { changedPaths: entry.changedPaths }),
     }));
 
     // Observers run synchronously; returned promises join the transaction.
@@ -387,7 +418,7 @@ export class CustomEventsRuntime {
     }
     let commit = (selected: typeof source) =>
       Promise.all(
-        selected.map(([subscription, match]) =>
+        selected.values().map(([subscription, match]) =>
           subscription.notify(match.event)
         ),
       );
@@ -450,7 +481,9 @@ export class CustomEventsRuntime {
       for (let entry of metadata.entries) {
         fallbackScope.dispatchEvent(
           new CustomEvent(entry.type, {
-            ...entry.init,
+            bubbles: event.bubbles,
+            cancelable: false,
+            composed: event.composed,
             detail: entry.detail,
           }),
         );
@@ -465,6 +498,7 @@ export class CustomEventsRuntime {
         metadata.entries,
         originScope,
         originTarget,
+        event,
       );
     } catch (error) {
       metadata.completion = Promise.reject(error);

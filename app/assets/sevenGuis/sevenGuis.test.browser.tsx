@@ -6,6 +6,7 @@ import { SevenGuisCircleDrawer } from "./circleDrawer.tsx";
 import { SevenGuisCounter } from "./counter.tsx";
 import { SevenGuisCrud } from "./crud.tsx";
 import { SevenGuisFlightBooker } from "./flightBooker.tsx";
+import { KeyedSelection } from "./keyedSelection.tsx";
 import { SevenGuisTemperatureConverter } from "./temperatureConverter.tsx";
 import { SevenGuisTimer } from "./timer.tsx";
 
@@ -19,6 +20,30 @@ async function settle(result: RenderResult) {
 }
 
 describe("7GUIs custom-event choreography", () => {
+  it("updates both sides of an identity-valued selection", async (t) => {
+    let result = render(<KeyedSelection />);
+    t.after(() => result.cleanup());
+
+    let alpha = result.$("#alpha") as HTMLButtonElement;
+    let bravo = result.$("#bravo") as HTMLButtonElement;
+    let charlie = result.$("#charlie") as HTMLButtonElement;
+    assert.equal(alpha.getAttribute("aria-pressed"), "true");
+    assert.equal(bravo.getAttribute("aria-pressed"), "false");
+    assert.equal(alpha.dataset.projections, "1");
+    assert.equal(bravo.dataset.projections, "1");
+    assert.equal(charlie.dataset.projections, "1");
+
+    await result.act(() => bravo.click());
+    await settle(result);
+
+    assert.equal(alpha.getAttribute("aria-pressed"), "false");
+    assert.equal(bravo.getAttribute("aria-pressed"), "true");
+    assert.equal(alpha.dataset.projections, "2");
+    assert.equal(bravo.dataset.projections, "2");
+    assert.equal(charlie.dataset.projections, "1");
+    assert.equal(result.$("output")?.textContent, "bravo");
+  });
+
   it("increments the counter from its seeded value", async (t) => {
     let result = render(<SevenGuisCounter />);
     t.after(() => result.cleanup());
@@ -524,6 +549,36 @@ describe("7GUIs custom-event choreography", () => {
     );
     let b1 = result.$('input[aria-label="B1"]') as HTMLInputElement;
     assert.equal(document.activeElement, b1);
+  });
+
+  it("rerenders only cells whose calculated values are patched", async (t) => {
+    let result = render(<SevenGuisCells />);
+    t.after(() => result.cleanup());
+
+    let cell = (id: string) =>
+      result.$(`input[aria-label="${id}"]`) as HTMLInputElement;
+    let renderCount = (id: string) => Number(cell(id).dataset.renderCount);
+    let a0 = cell("A0");
+
+    await result.act(() => a0.focus());
+    await settle(result);
+    await result.act(() => {
+      a0.value = "15";
+      a0.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    await settle(result);
+
+    let before = Object.fromEntries(
+      ["A0", "B0", "C0", "D0"].map((id) => [id, renderCount(id)]),
+    );
+
+    await result.act(() => a0.blur());
+    await settle(result);
+
+    assert.equal(renderCount("A0"), before.A0! + 1);
+    assert.equal(renderCount("C0"), before.C0! + 1);
+    assert.equal(renderCount("B0"), before.B0);
+    assert.equal(renderCount("D0"), before.D0);
   });
 
 });

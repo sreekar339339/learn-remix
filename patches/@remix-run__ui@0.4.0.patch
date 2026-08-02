@@ -1,0 +1,142 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 48713d524f8c9f0d75c9d3451394ba04b8f72b83..3a536572befc2314dbd057bc19a9cacb4874f5c7 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -10,7 +10,7 @@ export { Fragment, Frame } from './runtime/component.ts';
+ export type { Task, Handle, Context, FrameHandleEventMap, FrameContent, FrameHandle, FrameProps, } from './runtime/component.ts';
+ export type { LoadModule, ResolveFrame } from './runtime/frame.ts';
+ export { createElement } from './runtime/create-element.ts';
+-export type { ElementType, ElementProps, RemixElement, Renderable, RemixNode, Props, } from './runtime/jsx.ts';
++export type { ElementType, ElementProps, GenericJSXComponent, RemixElement, Renderable, RemixNode, Props, } from './runtime/jsx.ts';
+ export type { HostProps, LayoutAnimationConfig } from './runtime/dom.ts';
+ export { createMixin } from './runtime/mixins/mixin.ts';
+ export type { MixinDescriptor, MixinFactory, MixinHandle, MixinType, MixInput, MixValue, } from './runtime/mixins/mixin.ts';
+diff --git a/dist/runtime/jsx.d.ts b/dist/runtime/jsx.d.ts
+index 4a7e7f1e20cc059385b48ffea26ae2d2e8cb1fc6..03decf47de92f4c4f313861533123493cb9924ab 100644
+--- a/dist/runtime/jsx.d.ts
++++ b/dist/runtime/jsx.d.ts
+@@ -63,6 +63,10 @@ type MixinElementType = ((handle: {
+ }, setup: unknown) => (props: any) => RemixElement) & {
+     __rmxMixinElementType: string;
+ };
++export interface GenericJSXComponent {
++    readonly __rmxGenericJSXComponent: true;
++}
++type GenericJSXElementType = GenericJSXComponent & ((...args: any[]) => unknown);
+ /**
+  * Get the props for a specific element type.
+  *
+@@ -88,14 +92,14 @@ declare global {
+             key?: any;
+         }
+         type Element = RemixElement;
+-        type ElementType = keyof IntrinsicElements | ((handle: Handle<any, any>) => RenderFn) | MixinElementType;
++        type ElementType = keyof IntrinsicElements | ((handle: Handle<any, any>) => RenderFn) | MixinElementType | GenericJSXElementType;
+         type ElementChildrenAttribute = {
+             children: any;
+         };
+         interface ElementAttributesProperty {
+             props: any;
+         }
+-        type LibraryManagedAttributes<component, props> = component extends MixinElementType ? ExpandMixProp<Parameters<ReturnType<component>>[0]> : component extends () => RenderFn ? ExpandMixProp<Record<string, never>> : component extends (handle: Handle<infer P, any>) => RenderFn ? ExpandMixProp<P> : ExpandMixProp<props>;
++        type LibraryManagedAttributes<component, props> = component extends GenericJSXComponent ? ExpandMixProp<props> : component extends MixinElementType ? ExpandMixProp<Parameters<ReturnType<component>>[0]> : component extends () => RenderFn ? ExpandMixProp<Record<string, never>> : component extends (handle: Handle<infer P, any>) => RenderFn ? ExpandMixProp<P> : ExpandMixProp<props>;
+         interface IntrinsicSVGElements {
+             svg: dom.SVGProps<SVGSVGElement>;
+             animate: dom.SVGProps<SVGAnimateElement>;
+diff --git a/src/index.ts b/src/index.ts
+index ce0e8dbb6fee09e4872bc36617988704a14fbf1b..a8ffda649299cd60b3e62de44bf7d327a032a672 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -42,6 +42,7 @@ export { createElement } from './runtime/create-element.ts'
+ export type {
+   ElementType,
+   ElementProps,
++  GenericJSXComponent,
+   RemixElement,
+   Renderable,
+   RemixNode,
+diff --git a/src/runtime/jsx.ts b/src/runtime/jsx.ts
+index fe7176fd965e4dc697940dd5de09f1fa33de2ef7..68557afa57b6cee6ca39ac2db9ddcb2a94f0e0be 100644
+--- a/src/runtime/jsx.ts
++++ b/src/runtime/jsx.ts
+@@ -77,6 +77,13 @@ type MixinElementType = ((
+   __rmxMixinElementType: string
+ }
+ 
++/** Opt-in for components whose call signatures directly describe JSX props. */
++export interface GenericJSXComponent {
++  readonly __rmxGenericJSXComponent: true
++}
++
++type GenericJSXElementType = GenericJSXComponent & ((...args: any[]) => unknown)
++
+ /**
+  * Get the props for a specific element type.
+  *
+@@ -119,6 +126,8 @@ declare global {
+       | ((handle: Handle<any, any>) => RenderFn)
+       // Mixin element used internally by mixin render callbacks
+       | MixinElementType
++      // Generic components whose call signatures preserve JSX inference
++      | GenericJSXElementType
+ 
+     type ElementChildrenAttribute = {
+       children: any
+@@ -128,15 +137,17 @@ declare global {
+       props: any
+     }
+ 
+-    type LibraryManagedAttributes<component, props> = component extends MixinElementType
+-      ? ExpandMixProp<Parameters<ReturnType<component>>[0]>
+-      : component extends () => RenderFn
+-        ? ExpandMixProp<Record<string, never>>
+-        : component extends (handle: Handle<infer P, any>) => RenderFn
+-          ? // It's a ComponentFactory - infer props from the handle
+-            ExpandMixProp<P>
+-          : // Otherwise use props as-is (simple function component)
+-            ExpandMixProp<props>
++    type LibraryManagedAttributes<component, props> =
++      component extends GenericJSXComponent ? ExpandMixProp<props>
++        : component extends MixinElementType
++          ? ExpandMixProp<Parameters<ReturnType<component>>[0]>
++          : component extends () => RenderFn
++            ? ExpandMixProp<Record<string, never>>
++            : component extends (handle: Handle<infer P, any>) => RenderFn
++              ? // It's a ComponentFactory - infer props from the handle
++                ExpandMixProp<P>
++              : // Otherwise use props as-is (simple function component)
++                ExpandMixProp<props>
+ 
+     export interface IntrinsicSVGElements {
+       svg: dom.SVGProps<SVGSVGElement>
+diff --git a/dist/runtime/to-vnode.js b/dist/runtime/to-vnode.js
+--- a/dist/runtime/to-vnode.js
++++ b/dist/runtime/to-vnode.js
+@@ -27,7 +27,10 @@ export function toVNode(node) {
+     }
+     if (isRemixElement(node)) {
+         // When innerHTML is set, ignore children
+-        let children = node.props.innerHTML != null ? [] : flatMapChildrenToVNodes(node);
++        let ownsChildren = typeof node.type === "function" &&
++            "__rmxGenericJSXComponent" in node.type;
++        let children = node.props.innerHTML != null || ownsChildren
++            ? [] : flatMapChildrenToVNodes(node);
+         return { type: node.type, key: node.key, props: node.props, _children: children };
+     }
+     invariant(false, 'Unexpected RemixNode');
+diff --git a/src/runtime/to-vnode.ts b/src/runtime/to-vnode.ts
+--- a/src/runtime/to-vnode.ts
++++ b/src/runtime/to-vnode.ts
+@@ -39,8 +39,11 @@ export function toVNode(node: RemixNode): VNode {
+ 
+   if (isRemixElement(node)) {
+     // When innerHTML is set, ignore children
+-    let children = node.props.innerHTML != null ? [] : flatMapChildrenToVNodes(node)
++    let ownsChildren = typeof node.type === 'function' &&
++      '__rmxGenericJSXComponent' in node.type
++    let children = node.props.innerHTML != null || ownsChildren
++      ? [] : flatMapChildrenToVNodes(node)
+     return { type: node.type, key: node.key, props: node.props, _children: children }
+   }
+ 
+   invariant(false, 'Unexpected RemixNode')

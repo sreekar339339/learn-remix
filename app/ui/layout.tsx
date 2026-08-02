@@ -38,6 +38,7 @@ export function Layout(
           <a href={routes.todolist.index.href()}>Todo list</a>
           <a href={routes.kitchenSink.href()}>Kitchen Sink</a>
           <a href={routes.sevenGuis.href()}>7GUIs</a>
+          <a href={routes.kanban.href()}>Kanban experiment</a>
         </nav>
         <section mix={css({maxWidth: '70%'})}>
           {handle.props.children}

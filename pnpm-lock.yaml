@@ -4,10 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@remix-run/ui@0.4.0': 4ee1c9f9ce4686dc5792a8f7961cd7ce6a0cb20761895a3d8eb6b931b63059cd
+
 importers:
 
   .:
     dependencies:
+      immer:
+        specifier: ^11.1.15
+        version: 11.1.15
       remix:
         specifier: 3.0.0-beta.5
         version: 3.0.0-beta.5(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
@@ -1027,6 +1033,9 @@ packages:
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
 
+  immer@11.1.15:
+    resolution: {integrity: sha512-VrNANlmnWQnh5COXIIOQXM9oOJw7naGKlBT74ZOOR6lpVXc3gFEu9FJLDFcpCJ2j+NWr8TIwtWD//T6ZX6TKiQ==}
+
   istanbul-lib-coverage@3.2.2:
     resolution: {integrity: sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg==}
     engines: {node: '>=8'}
@@ -1793,7 +1802,7 @@ snapshots:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@remix-run/ui@0.4.0':
+  '@remix-run/ui@0.4.0(patch_hash=4ee1c9f9ce4686dc5792a8f7961cd7ce6a0cb20761895a3d8eb6b931b63059cd)':
     dependencies:
       '@types/dom-navigation': 1.0.7
 
@@ -1923,6 +1932,8 @@ snapshots:
   has-flag@4.0.0: {}
 
   html-escaper@2.0.2: {}
+
+  immer@11.1.15: {}
 
   istanbul-lib-coverage@3.2.2: {}
 
@@ -2153,7 +2164,7 @@ snapshots:
       '@remix-run/tar-parser': 0.7.1
       '@remix-run/terminal': 0.1.1
       '@remix-run/test': 0.5.0(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(playwright@1.61.1)
-      '@remix-run/ui': 0.4.0
+      '@remix-run/ui': 0.4.0(patch_hash=4ee1c9f9ce4686dc5792a8f7961cd7ce6a0cb20761895a3d8eb6b931b63059cd)
     optionalDependencies:
       playwright: 1.61.1
     transitivePeerDependencies:

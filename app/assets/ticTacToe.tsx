@@ -48,13 +48,14 @@ export const TicTacToeCustomEvents = clientEntry(
       position: Map<number, Player>;
       result: Result | null;
       focusTargetId: number | null;
-    }>().withState({
-      position: new Map<number, Player>(),
-      result: null as Result | null,
-      focusTargetId: 0 as number | null,
-    });
-    let cellEvents = game.events.on(["position", "result"]);
-
+    }>().withState(
+      {
+        position: new Map<number, Player>(),
+        result: null as Result | null,
+        focusTargetId: 0 as number | null,
+      },
+      { keyBy: { focusTargetId: "value" } },
+    );
     return () => (
       <div
         mix={css({
@@ -77,24 +78,19 @@ export const TicTacToeCustomEvents = clientEntry(
               let nextPlayer: Player = game.position.size % 2 === 0
                 ? "X"
                 : "O";
-              let position = new Map(game.position).set(cellId, nextPlayer);
-              let result = deriveResult(position);
-              game.patch(
-                result === null
-                  ? { position }
-                  : { position, result },
-                result === null ? { key: cellId } : undefined,
-              );
+              game.update((draft) => {
+                draft.position.set(cellId, nextPlayer);
+                draft.result = deriveResult(draft.position);
+              });
               let nextFreeCellIdx = cellId;
-              while (position.has(nextFreeCellIdx)) {
+              while (game.position.has(nextFreeCellIdx)) {
                 nextFreeCellIdx = (nextFreeCellIdx + 1) % 9;
                 if (nextFreeCellIdx === cellId) break;
               }
-              if (result === null) {
-                game.patch(
-                  { focusTargetId: nextFreeCellIdx },
-                  { key: nextFreeCellIdx },
-                );
+              if (game.result === null) {
+                game.update((draft) => {
+                  draft.focusTargetId = nextFreeCellIdx;
+                });
               }
             }),
             on("keydown", ({ key, target }) => {
@@ -116,18 +112,22 @@ export const TicTacToeCustomEvents = clientEntry(
                   break;
                 }
               }
-              game.patch(
-                { focusTargetId: nextFreeCellIdx },
-                { key: nextFreeCellIdx },
-              );
+              game.update((draft) => {
+                draft.focusTargetId = nextFreeCellIdx;
+              });
             }),
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <cellEvents.button
+            <game.events.button
+              on={(event) => [
+                event.position.get(index),
+                event.result,
+              ]}
               key={index}
               id={String(index)}
-              disabled={() => game.position.has(index) || game.result !== null}
+              disabled={() =>
+                game.position.has(index) || game.result !== null}
               class={() => game.position.get(index)}
               mix={[
                 css({
@@ -144,13 +144,17 @@ export const TicTacToeCustomEvents = clientEntry(
                 game.events.on(
                   "focusTargetId",
                   ({ currentTarget }) => {
-                    if (Number(currentTarget.id) === game.focusTargetId) {
-                      currentTarget.focus();
-                    }
+                    currentTarget.focus();
                   },
                 ),
+                ref((currentTarget, signal) => {
+                  if (index !== 0) return;
+                  queueMicrotask(() => {
+                    if (!signal.aborted) currentTarget.focus();
+                  });
+                }),
               ]}
-              child={() => game.position.get(index)}
+              children={() => game.position.get(index)}
             />
           ))}
         </div>
@@ -162,17 +166,10 @@ export const TicTacToeCustomEvents = clientEntry(
               currentTarget.focus();
             }),
             on("click", () => {
-              game.patch({
-                position: new Map<number, Player>(),
-                result: null,
-                focusTargetId: 0,
-              });
-            }),
-            ref((_reset, signal) => {
-              queueMicrotask(() => {
-                if (!signal.aborted) {
-                  game.patch({ focusTargetId: 0 }, { key: 0 });
-                }
+              game.update((draft) => {
+                draft.position.clear();
+                draft.result = null;
+                draft.focusTargetId = 0;
               });
             }),
           ]}
@@ -187,11 +184,13 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <game.events.on.position.span
-            child={() => {
-              if (!game.result) return "Game in progress";
-              if (game.result === "Draw") return "Game is drawn.";
-              return `${game.result} has won!`;
+          <game.events.span
+            on={(event) => event.result}
+            children={(event) => {
+              let result = event.detail;
+              if (!result) return "Game in progress";
+              if (result === "Draw") return "Game is drawn.";
+              return `${result} has won!`;
             }}
           />
         </p>

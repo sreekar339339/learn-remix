@@ -67,13 +67,14 @@ export const SearchBooksWithoutFrame = clientEntry(
     let interacted = false;
 
     return () => (
-      <div mix={events.host()}>
+      <div mix={events.host}>
         <label>
           Search{" "}
           <events.input
+            initial={initialEvent}
             type="text"
             defaultValue={initialQuery}
-            class={(event = initialEvent) =>
+            class={(event) =>
               event.type === "querySubmitted" ? "pending" : ""
             }
             mix={[
@@ -102,7 +103,8 @@ export const SearchBooksWithoutFrame = clientEntry(
           />
         </label>
         <events.div
-          child={(event = initialEvent) => {
+          initial={initialEvent}
+          children={(event) => {
             switch (event.type) {
               case "queryEmpty":
                 return <p>Enter the title of any book.</p>;

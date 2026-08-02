@@ -23,35 +23,37 @@ export const SevenGuisTemperatureConverter = clientEntry(
       <section mix={taskCss}>
         <h2>Temperature Converter</h2>
         <div mix={rowCss}>
-          <temperature.events.on.celsius.input
+          <temperature.events.input
+            on={(event) => event.celsius}
             aria-label="Celsius"
-            value={() => temperature.celsius}
+            value={(event) => event.detail}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.patch({
-                  celsius: value,
-                  fahrenheit: formatTemperature(number * (9 / 5) + 32),
+                temperature.update((draft) => {
+                  draft.celsius = value;
+                  draft.fahrenheit = formatTemperature(number * (9 / 5) + 32);
                 });
               }),
             ]}
           />
           <span>Celsius =</span>
-          <temperature.events.on.fahrenheit.input
+          <temperature.events.input
+            on={(event) => event.fahrenheit}
             aria-label="Fahrenheit"
-            value={() => temperature.fahrenheit}
+            value={(event) => event.detail}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.patch({
-                  celsius: formatTemperature((number - 32) * (5 / 9)),
-                  fahrenheit: value,
+                temperature.update((draft) => {
+                  draft.celsius = formatTemperature((number - 32) * (5 / 9));
+                  draft.fahrenheit = value;
                 });
               }),
             ]}

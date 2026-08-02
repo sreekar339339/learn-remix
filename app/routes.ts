@@ -14,5 +14,6 @@ export const routes = route({
     todos: form('todos')
   }),
   kitchenSink: get('kitchenSink'),
-  sevenGuis: get('sevenGuis')
+  sevenGuis: get('sevenGuis'),
+  kanban: get('kanban')
 })

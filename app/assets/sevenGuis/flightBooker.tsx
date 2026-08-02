@@ -62,7 +62,9 @@ export const SevenGuisFlightBooker = clientEntry(
           mix={[
             inputCss,
             on("change", ({ currentTarget }) => {
-              flight.patch({ kind: currentTarget.value as FlightKind });
+              flight.update((draft) => {
+                draft.kind = currentTarget.value as FlightKind;
+              });
             }),
           ]}
         >
@@ -77,7 +79,9 @@ export const SevenGuisFlightBooker = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.patch({ startDate: currentTarget.value });
+                flight.update((draft) => {
+                  draft.startDate = currentTarget.value;
+                });
               }),
             ]}
           />
@@ -89,7 +93,9 @@ export const SevenGuisFlightBooker = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.patch({ returnDate: currentTarget.value });
+                flight.update((draft) => {
+                  draft.returnDate = currentTarget.value;
+                });
               }),
             ]}
           />
@@ -111,9 +117,10 @@ export const SevenGuisFlightBooker = clientEntry(
         >
           Book
         </button>
-        <flight.events.on.bookingConfirmed.output
-          child={(event) => {
-            if (!event || !confirmedFlight) return null;
+        <flight.events.output
+          on="bookingConfirmed"
+          children={() => {
+            if (!confirmedFlight) return null;
             return confirmedFlight.kind === "one-way flight"
               ? `You have booked a one-way flight on ${confirmedFlight.startDate}.`
               : `You have booked a return flight from ${confirmedFlight.startDate} to ${confirmedFlight.returnDate}.`;

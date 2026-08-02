@@ -36,9 +36,6 @@ export const SevenGuisCrud = clientEntry(
       draft: { name: "", surname: "" },
       nextId: 4,
     });
-    let peopleView = model.events.on(["people", "prefix", "selectedId"]);
-    let draftView = model.events.on(["draft", "selectedId"]);
-
     return () => (
       <section mix={taskCss}>
         <h2>CRUD</h2>
@@ -50,7 +47,9 @@ export const SevenGuisCrud = clientEntry(
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                model.patch({ prefix: currentTarget.value });
+                model.update((draft) => {
+                  draft.prefix = currentTarget.value;
+                });
               }),
             ]}
           />
@@ -65,7 +64,12 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <peopleView.select
+          <model.events.select
+            on={(event) => [
+              event.people,
+              event.prefix,
+              event.selectedId,
+            ]}
             size={7}
             aria-label="People"
             value={() => model.selectedId ?? ""}
@@ -76,13 +80,14 @@ export const SevenGuisCrud = clientEntry(
                   (person) => person.id === Number(currentTarget.value),
                 );
                 if (!selected) return;
-                model.patch({
-                  selectedId: selected.id,
-                  draft: { name: selected.name, surname: selected.surname },
+                model.update((draft) => {
+                  draft.selectedId = selected.id;
+                  draft.draft.name = selected.name;
+                  draft.draft.surname = selected.surname;
                 });
               }),
             ]}
-            child={() =>
+            children={() =>
               visiblePeople(model.people, model.prefix).map(
                 (person) => (
                   <option value={person.id}>
@@ -92,9 +97,13 @@ export const SevenGuisCrud = clientEntry(
               )
             }
           />
-          <draftView.div
+          <model.events.div
+            on={(event) => [
+              event.draft,
+              event.selectedId,
+            ]}
             mix={css({ display: "grid", gap: 8 })}
-            child={() => (
+            children={() => (
               <>
                 <label>
                   Name{" "}
@@ -104,11 +113,8 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.patch({
-                          draft: {
-                            ...model.draft,
-                            name: currentTarget.value,
-                          },
+                        model.update((draft) => {
+                          draft.draft.name = currentTarget.value;
                         });
                       }),
                     ]}
@@ -122,11 +128,8 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.patch({
-                          draft: {
-                            ...model.draft,
-                            surname: currentTarget.value,
-                          },
+                        model.update((draft) => {
+                          draft.draft.surname = currentTarget.value;
                         });
                       }),
                     ]}
@@ -144,14 +147,13 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        let person = {
-                          id: model.nextId,
-                          ...model.draft,
-                        };
-                        model.patch({
-                          people: [...model.people, person],
-                          selectedId: person.id,
-                          nextId: person.id + 1,
+                        model.update((draft) => {
+                          let person = {
+                            id: draft.nextId++,
+                            ...draft.draft,
+                          };
+                          draft.people.push(person);
+                          draft.selectedId = person.id;
                         });
                       }),
                     ]}
@@ -171,12 +173,11 @@ export const SevenGuisCrud = clientEntry(
                       buttonCss,
                       on("click", () => {
                         if (model.selectedId === null) return;
-                        model.patch({
-                          people: model.people.map((person) =>
-                            person.id === model.selectedId
-                              ? { ...person, ...model.draft }
-                              : person
-                          ),
+                        model.update((draft) => {
+                          let person = draft.people.find(
+                            (person) => person.id === draft.selectedId,
+                          );
+                          if (person) Object.assign(person, draft.draft);
                         });
                       }),
                     ]}
@@ -190,12 +191,14 @@ export const SevenGuisCrud = clientEntry(
                       buttonCss,
                       on("click", () => {
                         if (model.selectedId === null) return;
-                        model.patch({
-                          people: model.people.filter(
-                            (person) => person.id !== model.selectedId,
-                          ),
-                          selectedId: null,
-                          draft: { name: "", surname: "" },
+                        model.update((draft) => {
+                          let index = draft.people.findIndex(
+                            (person) => person.id === draft.selectedId,
+                          );
+                          if (index !== -1) draft.people.splice(index, 1);
+                          draft.selectedId = null;
+                          draft.draft.name = "";
+                          draft.draft.surname = "";
                         });
                       }),
                     ]}

@@ -20,7 +20,7 @@ it("benchmarks keyed subscription matching", async () => {
     element.id = String(index);
     host.append(element);
     cleanups.push(
-      runtime.subscribeProjection({
+      runtime.subscribe("projection", {
         element,
         eventTypes: new Set(["itemUpdated"]),
         notify() {
@@ -39,8 +39,7 @@ it("benchmarks keyed subscription matching", async () => {
       [{
         type: "itemUpdated",
         detail: null,
-        init,
-        key: targetKey,
+        routingKeys: [targetKey],
       }],
     );
   }

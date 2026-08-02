@@ -79,10 +79,10 @@ case.
 
 Call `withState()` when some or all entries in an event map are retained model
 properties. The properties supplied to `withState()` become directly readable
-state; every omitted entry remains an occurrence. Each patched state key
+state; every omitted entry remains an occurrence. Each changed state key
 becomes a typed event whose detail is its new value. There is no `.value`
-wrapper, property-specific setter, parallel property-event map, or manual
-`dispatchEvent()` call:
+wrapper, property-specific setter, parallel property-event map, or immutable
+copying ceremony:
 
 ```tsx
 type TimerEvents = {
@@ -95,14 +95,154 @@ let timer = customEvents<TimerEvents>().withState({
   duration: 10,
 });
 
-timer.patch({ elapsed: 1 });
+timer.update((draft) => {
+  draft.elapsed = 1;
+});
 
 timer.events.observe(() => handle.update());
 ```
 
+The singular and plural APIs deliberately separate production from
+consumption:
+
+```tsx
+timer.update((draft) => {
+  draft.elapsed = 1;
+});
+
+<timer.events.output
+  on={(event) => event.elapsed}
+  children={(event) => `${event.detail}s`}
+/>;
+```
+
+`update()` is the mutation command. An event-aware element's `on` callback
+receives a typed event-source proxy for choosing state addresses and occurrence
+events. The proxy is scoped to subscription setup rather than stored on the
+model. `events` and `update` are reserved top-level model properties.
+
+`update()` is the only state mutation boundary. Its Immer draft accepts normal
+mutation syntax at any depth while producing an immutable next value:
+
+```tsx
+model.update((draft) => {
+  draft.editor.name = input.value;
+  draft.people[index].name = input.value;
+});
+```
+
+Immer reports the complete changed paths, such as `["editor", "name"]` and
+`["people", index, "name"]`. The model commits the complete next state, groups
+those patches by their declared root properties, and publishes one `editor`
+event and one `people` event as a single transaction. Each public event detail
+remains the complete resulting root value, so native listeners do not depend on
+storage paths. Event-aware elements additionally receive a projection-local
+event whose detail is the final value at the address selected by `on`;
+these nested notifications are not separately dispatched DOM events. A recipe
+that changes nothing dispatches nothing; a recipe that throws commits and
+publishes nothing. Recipes must be synchronous.
+
+Collection patches can also supply routing identities without burdening the
+producer. Arrays use an item's property-key `id` when present and otherwise use
+its index. `Map` entry keys and primitive `Set` values are already unambiguous,
+so the model derives those directly:
+
+```tsx
+let game = customEvents<{
+  position: Map<number, Player>;
+  result: Result | null;
+}>().withState({
+  position: new Map(),
+  result: null,
+});
+
+game.update((draft) => {
+  draft.position.set(cellId, nextPlayer);
+  draft.result = deriveResult(draft.position);
+});
+```
+
+This publishes one `position` event routed to `cellId` and one unkeyed `result`
+event. Routing is derived independently for each changed property; it is not a
+batch-wide guess. If several map entries change, the property is still
+published once with several internal routing identities. Broad consumers and
+observers therefore see one coherent property transition.
+
+Routing follows deep patch paths through nested identity-bearing collections.
+For example:
+
+```tsx
+board.update((draft) => {
+  draft.columns
+    .get(columnId)!
+    .cards
+    .get(cardId)!
+    .urgent = true;
+});
+```
+
+The single public `columns` event routes privately to both `columnId` and
+`cardId`. The card can update its own projection while the owning column updates
+an aggregate such as its urgent-card count; unrelated columns and cards receive
+nothing. Nested `Map` keys and nested array item IDs are identity boundaries.
+Plain object field names such as `cards` and `urgent` remain storage structure,
+not routing identities or generated event names. Use globally distinct IDs—or
+prefix them by entity kind—when several identity levels consume the same event.
+
+For conventional entity arrays, use the same `id` for JSX reconciliation and
+update addressing. No configuration is needed:
+
+```tsx
+let drawing = customEvents<{
+  circles: Array<Circle>;
+}>().withState({
+  circles: initialCircles,
+});
+
+drawing.update((draft) => {
+  let circle = draft.circles[index];
+  if (circle) circle.diameter = diameter;
+});
+
+drawing.circles.map((circle) => (
+  <drawing.events.circle
+    on={(event) => event.circles[circle.id]}
+    key={circle.id}
+    id={String(circle.id)}
+    r={(event) => (event.detail?.diameter ?? 0) / 2}
+  />
+));
+```
+
+Arrays without a usable `id` fall back to positional routing and match elements
+whose DOM `id` is the array index. Records use their property names as path
+segments, `Map` entries use their map keys, and primitive `Set` members use
+their values. If an array needs non-positional identity, give its items an `id`
+or model the collection as a `Map`; identity is data rather than a hidden
+selector policy.
+
+The model examines both the previous and next collection, so removal, splice,
+and reorder patches retain the identities affected on either side. Replacing a
+whole collection produces a broad event because the patch contains no item
+address. Use `keyBy: "value"` for identity-valued state such as a selected or
+focus-target ID:
+
+```tsx
+let selection = customEvents<{
+  selectedId: number | null;
+}>().withState({ selectedId: null }, {
+  keyBy: { selectedId: "value" },
+});
+```
+
+Changing `selectedId` from `7` to `8` routes the property event to both
+identities: `7` removes its previous projection and `8` applies the new one.
+Changing it to `null` still routes to the previous identity. `null` and
+`undefined` are never routing keys.
+
 The complete generic contextually types the initial values and defines the
 entire vocabulary. `withState()` infers only the supplied keys, so the returned
-model exposes those exact properties through `patch()`. In the example every
+model exposes those exact properties through `update()`. In the example every
 entry is state, so there are no separately dispatchable occurrences.
 
 When the same model owns detail-less occurrences, union their names with the
@@ -126,7 +266,9 @@ let flight = customEvents<FlightEvents>().withState({
   returnDate: today,
 });
 
-flight.patch({ startDate: value });
+flight.update((draft) => {
+  draft.startDate = value;
+});
 confirmedFlight = {
   kind: flight.kind,
   startDate: flight.startDate,
@@ -134,18 +276,22 @@ confirmedFlight = {
 };
 flight.dispatchEvent(flight.events("bookingConfirmed"));
 
-let bookingEvents = flight.events.on(["startDate", "bookingConfirmed"]);
+<flight.events.output
+  on="bookingConfirmed"
+  children={() => "Booking confirmed"}
+/>;
 ```
 
-Here `patch()` accepts `kind`, `startDate`, and `returnDate`, while the callable
-`flight.events()` surface creates only `bookingConfirmed`. Both families share
-one host, routing index, and consumption API. Occurrences do not become readable
-properties. The component-scoped `confirmedFlight` preserves the result of the
-occurrence; the detail-less event only announces it. This lets one event-aware
-element consume durable property events and transition-scoped occurrences
-without manufacturing event detail or coordinating two descriptors.
+Here `update()` exposes `kind`, `startDate`, and `returnDate` through its draft,
+while the callable `flight.events()` surface creates only `bookingConfirmed`.
+Both families share one host, routing index, and consumption API. Occurrences
+do not become readable properties. The component-scoped `confirmedFlight`
+preserves the result of the occurrence; the detail-less event only announces
+it. This lets one event-aware element consume durable property events and
+transition-scoped occurrences without manufacturing event detail or
+coordinating two descriptors.
 
-The call to `patch()` is both the mutation boundary and the publication
+The call to `update()` is both the mutation boundary and the publication
 boundary. One call may update several related properties as one transaction, so
 consumers never need to coordinate separately dispatched “changed” events or
 observe an intentionally half-applied transition. Top-level properties are
@@ -205,28 +351,31 @@ type FlightModel = ReturnType<
 
 #### Practical DX wins
 
-State producers always call `patch()`; occurrence producers use the same
+State producers always call `update()`; occurrence producers use the same
 model's `events()` descriptor. Each consumer independently chooses the smallest
 rendering policy appropriate to what it owns:
 
 | Consumer need | API | DX benefit |
 | --- | --- | --- |
 | A cohesive component derives most of its UI from the model | `model.events.observe(() => handle.update())` | Centralizes invalidation once; event handlers only mutate state |
-| One native element depends on one property | `<model.events.on.property.input>` | Updates native props or children without extracting a component or adding local state |
-| One region has a known dependency set | `model.events.on(["items", "filter", "selection"])` | Makes dependencies explicit and ignores unrelated patches |
+| One native element depends on nested state | `<model.events.input on={(event) => event.property}>` | Infers `event.detail` and matches the exact Immer update address without recomputing a selector |
+| One element reacts to occurrences | `<model.events.output on={["saved", "failed"]}>` | Narrows the callback event union without a second element API |
 | A context consumer needs one domain value | `addEventListeners(model, signal, { property() {} })` | Uses normal typed `EventTarget` subscriptions without a store adapter |
-| One repeated item needs an isolated update | `model.patch(value, { key: item.id })` | Preserves the parent list and sibling DOM nodes without nested state objects |
+| An array item, `Map` entry, or primitive `Set` member changes | `model.update(recipe)` | Derives `id`, index, key, or value routing from the Immer patch |
+| A property value is itself a routing identity | `withState(value, { keyBy: { selectedId: "value" } })` | Routes old and new owners declaratively without annotating mutations |
+| An occurrence intrinsically addresses one entity | `events("itemFocusRequested", { key: itemId })` | Expresses the occurrence's natural destination without putting routing metadata in its detail |
 
 This lets a model begin with the low-ceremony component-wide strategy and move
 only proven hot or independent regions to granular projections. Producers do
 not change when that rendering policy changes.
 
-Multi-property patches are particularly useful for derived and selection state:
+Multi-property recipes are particularly useful for derived and selection state:
 
 ```tsx
-model.patch({
-  selectedId: selected.id,
-  draft: { name: selected.name, surname: selected.surname },
+model.update((draft) => {
+  draft.selectedId = selected.id;
+  draft.draft.name = selected.name;
+  draft.draft.surname = selected.surname;
 });
 ```
 
@@ -238,28 +387,48 @@ For high-frequency editing, keep the working value as explicit draft state and
 commit durable collection state at the interaction boundary:
 
 ```tsx
-model.patch({ draftItem: { ...draftItem, size } }, { key: draftItem.id });
+model.update((draft) => {
+  draft.items[index]!.size = size;
+});
 
 // On form submission:
-model.patch({ items: committedItems, draftItem: null }, { key: draftItem.id });
+model.update((draft) => {
+  recordHistorySnapshot(draft.items, draft.history);
+});
 ```
 
-The keyed draft patch provides live fine-grained projection without rebuilding
-the collection on every input event. The closing transaction updates durable
-state and history once. This also avoids creating one state object per list item
-merely to gain keyed rendering.
+The nested array patch automatically routes the live update using the item's
+`id`; no producer supplies a key. The closing transaction commits history once.
+This avoids rebuilding the collection or creating one state object per item
+merely to gain granular rendering.
 
 A state-backed descriptor may also hold retained intent when its current value
 remains meaningful. For example, `focusTargetId` means “the element the UI
 should focus next”; it does not claim to mirror `document.activeElement`:
 
 ```tsx
-model.patch({ focusTargetId: nextId }, { key: nextId });
+let model = customEvents<{
+  focusTargetId: string | null;
+}>().withState({ focusTargetId: null }, {
+  keyBy: { focusTargetId: "value" },
+});
+
+model.update((draft) => {
+  draft.focusTargetId = nextId;
+});
 
 model.events.on("focusTargetId", ({ currentTarget }) => {
   currentTarget.focus();
 });
 ```
+
+The routing policy is declared once because the retained value itself names a
+DOM destination. When the target changes, listeners for the previous and next
+IDs run in that order. For synchronous effects such as `focus()`, the next
+target therefore wins without a value guard. The same ordering lets the old
+projection clear its state before the new projection applies its state.
+Ordinary visual state should remain broad when it does not carry a natural
+routing identity.
 
 Name intent state after the desired target or outcome, not the effect that may
 eventually occur. A scalar target has latest-value-wins semantics. A property
@@ -268,16 +437,12 @@ named `pendingFocusTargetId` implies acknowledgement and clearing, while a
 named custom event when an occurrence has no meaningful retained value or
 lifecycle; do not manufacture state merely to avoid declaring an event.
 
-Pass a routing key when a patch should update only one addressed projection:
-
-```tsx
-model.patch({ items: nextItems }, { key: item.id });
-```
-
-Unkeyed projections still observe the patch according to the descriptor's
-normal broad-listener semantics. Components that reserve full rerenders for
-structural list changes should call `handle.update()` only in those structural
-mutation paths.
+`update()` deliberately has no routing options. Do not annotate ordinary state
+mutations merely because one current projection could be updated more narrowly.
+That couples domain writes to the present notification topology and is easy to
+get wrong when both old and new entities are affected. For an identity-valued
+property, declare `keyBy: "value"`; otherwise begin with broad property delivery.
+Unkeyed projections still receive keyed transitions as broad consumers.
 
 ## Dispatch
 
@@ -300,7 +465,6 @@ form.dispatchEvent(events("saveSucceeded", { revision }, { key: revision }));
 
 // One transition refreshes two independent regions.
 form.dispatchEvent(events(["listUpdated", "editorUpdated"]));
-form.dispatchEvent(events({ listUpdated: null, editorUpdated: null }));
 
 // One transaction with independently routed entries.
 form.dispatchEvent(events([
@@ -330,6 +494,10 @@ transaction to address several keyed consumers with the same event. Effects
 and observers run for every matching entry; each projection commits once with
 its final matching entry.
 
+The array is the sole batch grammar. It represents ordering, repeated event
+types, detailed entries, and independently keyed entries without a parallel
+object-map form.
+
 ### Await transaction completion
 
 Use `events.dispatch(target, ...eventArgs)` when subsequent code genuinely
@@ -342,8 +510,8 @@ await events.dispatch(form, [
 ]);
 ```
 
-It accepts the same single-event, map, and batch forms as `events()`. Native DOM
-dispatch still runs synchronously. The returned promise resolves after the
+It accepts the same single-event and array-transaction forms as `events()`.
+Native DOM dispatch still runs synchronously. The returned promise resolves after the
 source projection, remaining projections, and returned observer/effect
 promises settle. Target observers are invoked synchronously; their returned
 promises join completion without delaying projection commits. The dispatch
@@ -368,16 +536,16 @@ The API has three deliberately separate consumption roles:
 
 | Role | API | Ownership and timing |
 | --- | --- | --- |
-| Projection | `<events.on.name.tag>` or `<events.tag>` | Declaratively updates one existing element |
-| Effect | `events.on(selector, listener)` | Runs on the mixin element after matching projections commit |
+| Projection | `<events.tag on={source}>` | Declaratively updates one existing element from model updates or occurrences; omitting `on` observes every occurrence |
+| Effect | `events.on(event, listener)` | Runs on the mixin element after matching projections commit |
 | Observer | `events.observe(listener)` | Imperatively sees every descriptor event on one exact target before projections commit |
 
 Use `events.on()` for a post-render DOM effect such as focus, selection, or
 measurement on the element hosting the mixin. It participates in element host
 scope and keyed routing. Keep attributes and child content declarative in JSX.
 
-Use an event-aware intrinsic element such as `<events.on.name.form>` for one
-event, or `<events.form>` when the projection observes every declared event:
+Every event-aware intrinsic observes all occurrences by default. Add `on` to
+choose model updates or narrow the occurrence vocabulary:
 
 ```tsx
 <input
@@ -387,13 +555,20 @@ event, or `<events.form>` when the projection observes every declared event:
 />
 
 <events.form
-  class={(event) => event?.type === "saveStarted" ? "pending" : ""}
-  aria-busy={(event) => event?.type === "saveStarted"}
-  child={(event) =>
-    event?.type === "saveSucceeded"
+  on={["saveStarted", "saveSucceeded"]}
+  class={(event) => event.type === "saveStarted" ? "pending" : ""}
+  aria-busy={(event) => event.type === "saveStarted"}
+  children={(event) =>
+    event.type === "saveSucceeded"
       ? <p>Saved revision {event.detail.revision}</p>
       : <p>Not saved yet.</p>
   }
+/>
+
+<model.events.input
+  on={(event) => event.profile.name}
+  value={(event) => event.detail}
+  disabled={(event) => event.detail.length === 0}
 />
 
 // Observe every event for an imperative post-render effect.
@@ -411,17 +586,15 @@ addEventListeners(model, signal, {
 });
 
 // Observe every descriptor-owned event on a configured host.
-let modelEvents = customEvents<SaveEventsMap>({ host: model });
-modelEvents.observe((event) => console.log(event.type), { signal });
+let event = customEvents<SaveEventsMap>({ host: model });
+event.observe((event) => console.log(event.type), { signal });
 
 // Or observe an explicit target.
 events.observe(form, (event) => console.log(event.type), { signal });
 
-// Subscribe one projection to a precise subset of the event vocabulary.
-let saveOutcome = events.on(["saveSucceeded", "saveFailed"]);
-
-<saveOutcome.output
-  child={(event) => event?.type === "saveSucceeded" ? "Saved" : "Save failed"}
+<events.output
+  on={["saveSucceeded", "saveFailed"]}
+  children={(event) => event.type === "saveSucceeded" ? "Saved" : "Save failed"}
 />
 ```
 
@@ -441,11 +614,13 @@ class Player extends TypedEventTarget<CustomEventsEventMap<PlayerEvents>> {
 }
 ```
 
-On event-aware elements, ordinary attributes accept either a static value or
-`(event) => value`. Read payloads from `event.detail`. `mix`, `ref`, and JSX
-children retain their ordinary Remix meaning. Use Remix's `on()` inside `mix`
-for native DOM handlers. `child` supplies dynamic children, so it cannot be
-combined with static JSX children.
+On event-aware elements, ordinary attributes accept either a static value or a
+callback receiving the matched event. Model-update callbacks infer their detail
+from the address returned by `on`. Occurrence callbacks receive the narrowed
+event union. Both read their value from `event.detail`. `mix` and `ref` retain
+their ordinary Remix meaning. Use Remix's `on()` inside `mix` for native DOM
+handlers. `children` accepts either ordinary static JSX content or a callback
+that derives dynamic content from the matched event.
 
 ### Intrinsic elements as granular projections
 
@@ -459,17 +634,20 @@ existing item without rerunning the parent's render function or `.map()`:
 
 ```tsx
 {items.map((item) => (
-  <events.on.itemUpdated.button
+  <model.events.button
+    on={(event) => event.items[item.id]}
     id={String(item.id)}
-    value={() => String(item.id)}
-    disabled={() => item.pending}
-    class={() => item.pending ? "pending" : ""}
-    data-state={() => item.pending ? "saving" : "ready"}
-    child={() => item.label}
+    value={(event) => String(event.detail?.id ?? "")}
+    disabled={(event) => event.detail?.pending ?? true}
+    class={(event) => event.detail?.pending ? "pending" : ""}
+    data-state={(event) => event.detail?.pending ? "saving" : "ready"}
+    children={(event) => event.detail?.label}
   />
 ))}
 
-button.dispatchEvent(events("itemUpdated", { key: item.id }));
+model.update((draft) => {
+  draft.items[index]!.pending = true;
+});
 ```
 
 Without this boundary, independent updates commonly require extracting a
@@ -487,37 +665,139 @@ event-aware elements for changes within existing items.
 
 ### Keyed routing
 
-Use `key` in the event options and the matching DOM `id` on repeated event-aware
-elements or elements using `events.on()`. Only the addressed projection updates
-and only the addressed DOM-effect listener runs.
+The state path selected by an event-aware element's `on` prop is its primary
+address. Do not add a DOM `id` when that path already distinguishes the
+projection; nested object properties and `Map.get(key)` paths work without one.
 
-The routing `id` is captured when the subscription mounts and must remain stable
-for that mounted element. Remount the element when its routing identity changes.
+Keys are an optional delivery prefilter, not domain data. Match a routing
+identity to the DOM `id` when several elements select the same state path and
+the identity chooses its previous or next owner, or when an `events.on()`
+effect or keyed occurrence has no state path to match. JSX `key` remains the
+reconciliation identity and is independent of event routing.
+
+State updates derive routing automatically where the changed structure exposes
+an identity:
+
+- an array item uses its property-key `id` by default;
+- an array item without a usable `id` falls back to its numeric index;
+- a `Map` entry uses its map key;
+- a primitive `Set` member uses its value;
+- a record uses its property key as its nested event address; and
+- identity-valued state can declare `keyBy: { property: "value" }`.
+
+This derivation uses Immer's nested patches and considers both the previous and
+next collection values. A removal or reorder can therefore address the entities
+on both sides of the transition. Replacing an entire collection is structural
+and remains broad because the patch does not identify one member.
+
+Use an explicit `{ key }` only for an occurrence whose meaning already
+addresses one entity. State routing is always derived from structure or the
+model's declarative value-routing policy; `update()` cannot override it. This
+keeps delivery policy out of mutation sites and ensures identity transitions
+can address both their previous and next owners.
+
+Only matching routing IDs pass the keyed prefilter. Subscriptions without an
+`id` pass that prefilter broadly; event-aware elements then apply their exact
+state-path match, while pathless occurrence projections and `events.on()`
+effects remain broad consumers.
+
+One state property event may address several identities when a recipe changes
+several collection members. This remains one observable event and one
+transaction; the routing set is private runtime metadata rather than event
+detail.
+
+When supplied, the routing `id` is captured as the subscription mounts and must
+remain stable for that mounted element. Remount the element when its routing
+identity changes. Arrays with an item `id` preserve logical paths across
+movement; arrays without one use positional paths. Use JSX `key` for stable DOM
+reconciliation, adding a DOM `id` only when routing or ordinary DOM behavior
+actually needs it.
 The runtime indexes subscriptions by phase, event type, and routing ID, so a
 keyed dispatch does not scan unrelated keyed subscriptions.
 
-Projections and listeners without an `id` continue to receive keyed events as
-broad consumers. The DOM `id` is the explicit runtime address because JSX
-reconciliation keys are not exposed to component props. Routing metadata stays
-private: callback events do not expose `key` or `originTarget`.
+Routing metadata stays private: callback events do not expose `key` or
+`originTarget`.
 
-### Groups and wildcards
+### Model updates and occurrence matching
 
-Use `events.on(["eventA", "eventB"])` without a listener to create an
-event-aware element group for a known subset. Pass a listener as the
-second argument to create an element effect for that subset instead. In either
-callback, `event.type` identifies which member triggered it.
+The `on` prop establishes what invalidates an event-aware element:
 
-Name a stored group after the UI or domain scope it serves, followed by
-`Events`: `cellEvents`, `editorEvents`, or `saveOutcomeEvents`. This uses
-familiar frontend vocabulary and makes `<cellEvents.button>` read as an element
-subscribed to cell-relevant events. Avoid suffixes such as `State`, because the
-group owns no state, and framework-internal terms such as `Projection` when a
-plain event-oriented name communicates the public role.
+- an omitted `on` observes the complete occurrence vocabulary;
+- `on="eventA"` observes one occurrence;
+- `on={["eventA", "eventB"]}` observes a narrowed occurrence union;
+- explicit `on="*"` has the same meaning as omitting it; and
+- `on={(event) => event.property.nested}` observes one logical model address.
 
-Use `<events.tag>` for a projection that observes the complete vocabulary and
-`events.on("*", ...)` for an effect that observes it. `*` is a subscription
-selector, not a dispatchable event name.
+The callback receives a typed event-source proxy. It runs once during element
+setup: ordinary property access records object and record keys, array brackets
+record an item ID or positional index, `Map.get()` records a map key, and
+`Set.has()` records membership. It does not read state or recompute a selector:
+Examples name this contextual parameter `event`; the surrounding model
+descriptor already communicates its domain.
+
+```tsx
+<model.events.output on={(event) => event.profile.name} />
+<model.events.output on={(event) => event.items[item.id].status} />
+<model.events.output on={(event) => event.columns.get(columnId).title} />
+<model.events.output on={(event) => event.selected.has(itemId)} />
+```
+
+Immer patches are normalized into the same logical addresses. A changed path
+matches its exact subscription, its ancestors, and its descendants when an
+ancestor was replaced. Unrelated paths are rejected before an element callback
+runs. Model-update projections therefore need neither selector recomputation
+nor previous-value comparison. Each matching element runs once per transaction
+and receives the final value at its subscribed address in `event.detail`.
+
+Several independent state properties or occurrences may invalidate one derived
+projection. Subscribe to them together and read the committed model:
+
+```tsx
+<timer.events.progress
+  on={(event) => [event.elapsed, event.duration]}
+  value={() => Math.min(1, timer.elapsed / timer.duration)}
+/>
+```
+
+When several dependencies belong to the same root property, subscribe to their
+nearest shared update address instead of listing sibling addresses:
+
+```tsx
+<model.events.output
+  on={(event) => event.profile}
+  children={() => `${model.profile.firstName} ${model.profile.lastName}`}
+/>
+```
+
+One event-aware element accepts at most one update address per root state
+property. The shared ancestor expresses the invalidation boundary without
+manufacturing several variants of the same root event.
+
+A state-update source may also be combined with an occurrence when both project
+through one element:
+
+```tsx
+<sheet.events.input
+  on={(event) => [
+    event.values[cellId],
+    event.cellDrafted,
+  ]}
+/>
+```
+
+State and occurrence sources share the same callback namespace. State entries
+produce update-address tokens; occurrence-only entries produce their typed
+event-name tokens. Name the callback parameter for its domain—such as
+`event` or `event`—because it describes the model's event sources,
+not an event being delivered.
+
+Occurrence callbacks begin with the first matching event. Supply `initial`
+when server or component input already defines a meaningful initial event. The
+initial event is type-checked against the observed occurrence vocabulary and
+removes defensive optional-event branches from callbacks.
+
+`events.on(event, listener)` remains the element-effect API. `*` is a
+subscription wildcard, not a dispatchable event name.
 
 Use native `addEventListener()` or Remix `addEventListeners()` for named events.
 Use `events.observe()` only when one callback must observe every
@@ -530,18 +810,18 @@ post-projection effect that participates in host scope and keyed routing. The
 latter is an exact-target monitor invoked synchronously before projection
 commits; it receives keyed entries without filtering them by element ID.
 `observe()` implicitly means “all,” so it does not accept a redundant `"*"`
-selector.
+argument.
 
 ### Callback semantics
 
-Child callbacks receive the event. Before the first matching event, `event` is
-`undefined`; a dispatched signal event has `event.detail === null`.
+Model-update callbacks receive a typed event whose detail is the final value at
+the subscribed update address. Occurrence callbacks receive a resolved,
+narrowed event snapshot. Projection events do not synthesize `currentTarget`.
+A signal event has `event.detail === null`.
 
-Projection callbacks receive a resolved event snapshot but do not synthesize
-`currentTarget`. Handle the empty branch or use a local event as the default
-parameter. `events.on()` remains listener-like, so its event identifies the
-listener element through `currentTarget`; observer events identify the observed
-target in the same way.
+`events.on()` remains listener-like, so its event identifies the listener
+element through `currentTarget`; observer events identify the observed target
+in the same way.
 
 Custom-event effects and observers do not create per-invocation reentry
 signals. Their returned promises join `events.dispatch()` completion, and
@@ -569,7 +849,7 @@ An event-aware element also processes events dispatched directly on itself, so
 ### Hosts and propagation
 
 An event stays local to its event-aware element unless the component declares
-`mix={events.host()}` on a shared ancestor. Use that explicit host when sibling
+`mix={events.host}` on a shared ancestor. Use that explicit host when sibling
 branches coordinate; there is no implicit page or window route.
 
 Non-composed events stay inside that host. `{ composed: true }` allows them to
@@ -590,7 +870,7 @@ model.
 Use `customEvents<EventMap>().withState(initialState)` for **what is true now**.
 Its returned object is product state: several durable properties coexist,
 remain readable between transitions, and can be published together with
-`patch()`. Consumers may observe one property, a known subset, or the whole
+`update()`. Consumers may observe one property, a known subset, or the whole
 model.
 
 Use entries omitted from `withState()`, or a descriptor without state, for
@@ -612,7 +892,7 @@ Keep these domain roles distinct even though they share one API:
 
 | Role | Meaning | Typical shape |
 | --- | --- | --- |
-| State | What is true now | Readable property updated by `patch()` |
+| State | What is true now | Readable property updated by `update()` |
 | Fact | What happened | Past-tense occurrence such as `saveSucceeded` |
 | Intent | What another owner should do | Request occurrence or latest-target state |
 
@@ -635,13 +915,15 @@ let model = customEvents<{ status: SaveStatus }>().withState({
   status: { type: "idle" } as SaveStatus,
 });
 
-model.patch({ status: { type: "pending" } });
+model.update((draft) => {
+  draft.status = { type: "pending" };
+});
 ```
 
-`patch()` is the lightweight transition boundary: related product-state fields
-change together, while a discriminated-union property changes from one valid
-variant to another. Consumers should never need to reconstruct a transition
-from a sequence of partially applied property events.
+`update()` is the transition boundary: related product-state fields change
+together, while a discriminated-union property changes from one valid variant
+to another. Consumers should never need to reconstruct a transition from a
+sequence of partially applied property events.
 
 Mutual exclusivity belongs to a consumer and its scope, not to the descriptor.
 One result element may treat a search vocabulary as mutually exclusive phases:
@@ -706,7 +988,9 @@ let document = customEvents<DocumentEvents>().withState({
 });
 
 // Retained, directly readable model transition.
-document.patch({ draft: input.value });
+document.update((draft) => {
+  draft.draft = input.value;
+});
 
 // Independently meaningful result of an operation.
 form.dispatchEvent(document.events("saveSucceeded", {
@@ -718,15 +1002,16 @@ The supplied and omitted portions of the map share one descriptor, so
 projections and effects can subscribe to either family or to a deliberate
 subset. Their write APIs remain intentionally different:
 
-- `model.patch({ property: value }, { key })` mutates retained state and
-  publishes its property events as one transaction;
+- `model.update(recipe)` mutates retained state, derives collection routing
+  and declared value routing, and publishes its property events as one
+  transaction;
 - `target.dispatchEvent(model.events("eventName", detail, { key }))` publishes
   a fire-once occurrence; and
 - `model.events.dispatch(target, ...)` is the awaitable occurrence form when
   later code depends on projection and effect completion.
 
 Do not split when an occurrence would merely repeat a property event already
-published by `patch()`. A property such as an active draft remains state when
+published by `update()`. A property such as an active draft remains state when
 later handlers read it, repeated input updates replace its current value, and
 closing the interaction clears it. Adding an `editRequested` occurrence solely
 to assign that property creates dispatch choreography without adding a
@@ -805,14 +1090,18 @@ Choose the render boundary before adding event names:
 - Use `handle.update()` when a structural transition affects most of the
   component.
 - Use one custom event when one stable projection changes.
-- Use a keyed event when one repeated entity changes. The key addresses the
-  consumer; detail carries only additional transition data it needs.
+- Use keyed routing when one repeated entity changes and its identity is
+  structurally derivable, or when an occurrence intrinsically addresses that
+  entity. The key addresses the consumer; detail carries only additional
+  transition data it needs.
 
 When event state belongs to one rendered element, derive it directly on that
 element:
 
 ```tsx
-<events.form data-action={(event) => event?.type} />
+<events.form
+  data-action={(event) => event.type}
+/>
 ```
 
 Introduce keyed external state only when the information must outlive,

@@ -1,8 +1,4 @@
-import {
-  addEventListeners,
-  type Handle,
-  type RemixNode,
-} from "remix/ui";
+import { addEventListeners, type Handle, type RemixNode } from "remix/ui";
 import { customEvents } from "./utils/customEvents/index.tsx";
 
 export type AppContextValue = {
@@ -29,9 +25,9 @@ export function AppProvider(
 
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
-    appContext.patch({
-      user: { age: 23, name: "Bob Lazar" },
-      settings: { layout: "zen", theme: "light" },
+    appContext.update((draft) => {
+      draft.user = { age: 23, name: "Bob Lazar" };
+      draft.settings = { layout: "zen", theme: "light" };
     });
   });
 
@@ -56,9 +52,12 @@ export function EventUserDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.user.div
-      child={(event) => event?.detail?.name ?? "Not logged in"}
-    />
+    <div>
+      <appContext.events.div
+        on={(event) => event.user.name}
+        children={(event) => event.detail ?? "Not logged in"}
+      />
+    </div>
   );
 }
 
@@ -74,8 +73,7 @@ export function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {appContext.settings.layout}, Theme:{" "}
-        {appContext.settings.theme}
+        Layout: {appContext.settings.layout}, Theme: {appContext.settings.theme}
       </pre>
     </div>
   );
@@ -85,9 +83,10 @@ export function EventSettingsDisplay(handle: Handle) {
   let appContext = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.events.on.settings.pre
-      child={(event) =>
-        `Layout: ${event?.detail.layout}, Theme: ${event?.detail.theme}`
+    <appContext.events.pre
+      on={(event) => event.settings}
+      children={({ detail: settings }) =>
+        `Layout: ${settings.layout}, Theme: ${settings.theme}`
       }
     />
   );

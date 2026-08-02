@@ -37,21 +37,562 @@ describe("customEvents", () => {
       received.push([event.type, event.detail]);
     });
 
-    state.patch({ count: 1, label: "ready" });
+    state.update((draft) => {
+      draft.count = 1;
+      draft.label = "ready";
+    });
 
     assert.equal(state.count, 1);
     assert.equal(state.label, "ready");
     assert.deepEqual(received, [["count", 1], ["label", "ready"]]);
 
     if (false) {
-      // @ts-expect-error - state properties change only through patch().
+      // @ts-expect-error - state properties change only through update().
       state.count = 2;
       // @ts-expect-error - state properties cannot overwrite the state API.
       customEvents<{ events: string }>().withState({ events: "collision" });
+      // @ts-expect-error - state properties cannot overwrite the state API.
+      customEvents<{ update: string }>().withState({ update: "collision" });
+      // @ts-expect-error - update addresses are scoped to event-element on().
+      state.updates;
       // @ts-expect-error - state property events cannot use native DOM names.
       customEvents<{ click: boolean }>().withState({ click: false });
       // @ts-expect-error - initial state keys must belong to the event map.
       customEvents<{ count: number }>().withState({ count: 0, missing: true });
+    }
+  });
+
+  it("derives state events from nested Immer updates", () => {
+    let state = customEvents<{
+      draft: { name: string; surname: string };
+      people: Array<{ id: number; name: string }>;
+    }>().withState({
+      draft: { name: "Grace", surname: "Hopper" },
+      people: [{ id: 1, name: "Grace" }],
+    });
+    let originalDraft = state.draft;
+    let originalPeople = state.people;
+    let received: Array<[string, unknown]> = [];
+
+    state.addEventListener("draft", (event) => {
+      received.push([event.type, event.detail]);
+      assert.equal(state.people[0]?.name, "Ada");
+    });
+    state.addEventListener("people", (event) => {
+      received.push([event.type, event.detail]);
+      assert.equal(state.draft.name, "Ada");
+    });
+
+    state.update((draft) => {
+      draft.draft.name = "Ada";
+      draft.people[0]!.name = "Ada";
+    });
+
+    assert.equal(originalDraft.name, "Grace");
+    assert.equal(originalPeople[0]?.name, "Grace");
+    assert.equal(state.draft.name, "Ada");
+    assert.equal(state.people[0]?.name, "Ada");
+    assert.equal(received.length, 2);
+    assert.equal(
+      received.find(([type]) => type === "draft")?.[1],
+      state.draft,
+    );
+    assert.equal(
+      received.find(([type]) => type === "people")?.[1],
+      state.people,
+    );
+
+    state.update((draft) => {
+      draft.draft.name = "Ada";
+    });
+    assert.equal(received.length, 2);
+
+    assert.throws(() => {
+      state.update((draft) => {
+        draft.draft.name = "discarded";
+        throw new Error("stop");
+      });
+    }, /stop/);
+    assert.equal(state.draft.name, "Ada");
+    assert.equal(received.length, 2);
+
+    if (false) {
+      state.update((draft) => {
+        // @ts-expect-error - occurrences and undeclared properties are absent.
+        draft.missing = true;
+      });
+    }
+  });
+
+  it("infers nested update details and ignores unrelated paths", async (t) => {
+    let state = customEvents<{
+      profile: { name: string; address: { city: string } };
+      status: string;
+    }>().withState({
+      profile: { name: "Ada", address: { city: "London" } },
+      status: "idle",
+    });
+    let projections = 0;
+
+    function Profile() {
+      return () => (
+        <state.events.output
+          data-testid="name"
+          on={(event) => event.profile.name}
+          class={(event) => event.detail.toLowerCase()}
+          children={(event) => {
+            event.detail satisfies string;
+            if (false) {
+              // @ts-expect-error The update detail is a string, not a number.
+              event.detail.toFixed();
+            }
+            projections++;
+            return event.detail;
+          }}
+        />
+      );
+    }
+
+    let result = render(<Profile />);
+    t.after(() => result.cleanup());
+    assert.equal(projections, 1);
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.status = "ready";
+      });
+      await settleEffects();
+    });
+    assert.equal(projections, 1);
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.profile.name = "Grace";
+      });
+      await settleEffects();
+    });
+    assert.equal(projections, 2);
+    assert.equal(result.$('[data-testid="name"]')?.textContent, "Grace");
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.profile.address.city = "Arlington";
+      });
+      await settleEffects();
+    });
+    assert.equal(projections, 2);
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.profile = {
+          name: "Katherine",
+          address: { city: "Cleveland" },
+        };
+      });
+      await settleEffects();
+    });
+    assert.equal(projections, 3);
+    assert.equal(result.$('[data-testid="name"]')?.textContent, "Katherine");
+  });
+
+  it("derives keyed routes from Map and primitive Set patches", async (t) => {
+    let state = customEvents<{
+      position: Map<string, string>;
+      selected: Set<string>;
+    }>().withState({
+      position: new Map([["a", "X"], ["b", "O"]]),
+      selected: new Set(["red"]),
+    });
+    let calls = { mapA: 0, mapB: 0, mapAll: 0, red: 0, blue: 0 };
+    let positionEvents = 0;
+    state.addEventListener("position", () => positionEvents++);
+
+    function Collections() {
+      return () => (
+        <section>
+          <state.events.output
+            on={(event) => event.position.get("a")}
+            id="a"
+            children={(event) => `${++calls.mapA}:${event.detail}`}
+          />
+          <state.events.output
+            on={(event) => event.position.get("b")}
+            id="b"
+            children={(event) => `${++calls.mapB}:${event.detail}`}
+          />
+          <state.events.output
+            on={(event) => event.position}
+            children={(event) => `${++calls.mapAll}:${event.detail.size}`}
+          />
+          <state.events.output
+            on={(event) => event.selected.has("red")}
+            id="red"
+            children={(event) => `${++calls.red}:${event.detail}`}
+          />
+          <state.events.output
+            on={(event) => event.selected.has("blue")}
+            id="blue"
+            children={(event) => `${++calls.blue}:${event.detail}`}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Collections />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.position.set("a", "A");
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, {
+      mapA: 2,
+      mapB: 1,
+      mapAll: 2,
+      red: 1,
+      blue: 1,
+    });
+    assert.equal(positionEvents, 1);
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.position.set("a", "AA");
+        draft.position.set("b", "BB");
+        draft.selected.add("blue");
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, {
+      mapA: 3,
+      mapB: 2,
+      mapAll: 3,
+      red: 1,
+      blue: 2,
+    });
+    assert.equal(positionEvents, 2);
+  });
+
+  it("routes deep patches through every nested identity boundary", async (t) => {
+    let state = customEvents<{
+      columns: Map<string, {
+        cards: Map<string, { urgent: boolean }>;
+      }>;
+    }>().withState({
+      columns: new Map([
+        ["column:todo", {
+          cards: new Map([
+            ["card:one", { urgent: false }],
+            ["card:two", { urgent: false }],
+          ]),
+        }],
+        ["column:done", {
+          cards: new Map([["card:three", { urgent: false }]]),
+        }],
+      ]),
+    });
+    let calls = { todo: 0, done: 0, one: 0, two: 0, three: 0 };
+
+    function Board() {
+      return () => (
+        <section>
+          <state.events.output
+            on={(event) => event.columns.get("column:todo")}
+            id="column:todo"
+            children={() => String(++calls.todo)}
+          />
+          <state.events.output
+            on={(event) => event.columns.get("column:done")}
+            id="column:done"
+            children={() => String(++calls.done)}
+          />
+          <state.events.output
+            on={(event) =>
+              event.columns.get("column:todo").cards.get("card:one")}
+            id="card:one"
+            children={() => String(++calls.one)}
+          />
+          <state.events.output
+            on={(event) =>
+              event.columns.get("column:todo").cards.get("card:two")}
+            id="card:two"
+            children={() => String(++calls.two)}
+          />
+          <state.events.output
+            on={(event) =>
+              event.columns.get("column:done").cards.get("card:three")}
+            id="card:three"
+            children={() => String(++calls.three)}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Board />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.columns.get("column:todo")!.cards.get("card:one")!.urgent =
+          true;
+      });
+      await settleEffects();
+    });
+
+    assert.deepEqual(calls, {
+      todo: 2,
+      done: 1,
+      one: 2,
+      two: 1,
+      three: 1,
+    });
+  });
+
+  it("preserves object identity in Map update addresses", async (t) => {
+    let recordKey = {};
+    let state = customEvents<{
+      records: Map<object, { value: number }>;
+    }>().withState({
+      records: new Map([[recordKey, { value: 1 }]]),
+    });
+    let projections = 0;
+
+    function RecordValue() {
+      return () => (
+        <state.events.output
+          on={(event) => event.records.get(recordKey).value}
+          children={(event) => `${++projections}:${event.detail}`}
+        />
+      );
+    }
+
+    let result = render(<RecordValue />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.records.get(recordKey)!.value = 2;
+      });
+      await settleEffects();
+    });
+
+    assert.equal(projections, 2);
+    assert.equal(result.$("output")?.textContent, "2:2");
+  });
+
+  it("derives array index routes by default", async (t) => {
+    let state = customEvents<{ items: string[] }>().withState({
+      items: ["first", "second"],
+    });
+    let calls = { first: 0, second: 0, all: 0 };
+
+    function Items() {
+      return () => (
+        <section>
+          <state.events.output
+            on={(event) => event.items[0]}
+            id="0"
+            children={() => String(++calls.first)}
+          />
+          <state.events.output
+            on={(event) => event.items[1]}
+            id="1"
+            children={() => String(++calls.second)}
+          />
+          <state.events.output
+            on={(event) => event.items}
+            children={() => String(++calls.all)}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Items />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.items[1] = "updated";
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 1, second: 2, all: 2 });
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.items.splice(0, 1);
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 2, second: 3, all: 3 });
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.items = ["replacement"];
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 3, second: 4, all: 4 });
+  });
+
+  it("derives conventional ids and record paths", async (t) => {
+    type Circle = { id: number; diameter: number };
+    let state = customEvents<{
+      circles: Circle[];
+      values: Record<string, string>;
+    }>().withState({
+      circles: [{ id: 7, diameter: 30 }, { id: 8, diameter: 40 }],
+      values: { A0: "10", B0: "20" },
+    });
+    let calls = { circle7: 0, circle8: 0, A0: 0, B0: 0 };
+
+    function Collections() {
+      return () => (
+        <section>
+          <state.events.output
+            on={(event) => event.circles[7]}
+            id="7"
+            children={() => String(++calls.circle7)}
+          />
+          <state.events.output
+            on={(event) => event.circles[8]}
+            id="8"
+            children={() => String(++calls.circle8)}
+          />
+          <state.events.output
+            on={(event) => event.values.A0}
+            children={() => String(++calls.A0)}
+          />
+          <state.events.output
+            on={(event) => event.values.B0}
+            children={() => String(++calls.B0)}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Collections />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.circles[0]!.diameter = 35;
+        draft.values.A0 = "11";
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { circle7: 2, circle8: 1, A0: 2, B0: 1 });
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.circles.splice(0, 1);
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { circle7: 3, circle8: 1, A0: 2, B0: 1 });
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.circles = [{ id: 7, diameter: 50 }, {
+          id: 8,
+          diameter: 60,
+        }];
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { circle7: 4, circle8: 2, A0: 2, B0: 1 });
+
+    if (false) {
+      customEvents<{ circles: Circle[] }>().withState({ circles: [] }, {
+        keyBy: {
+          // @ts-expect-error - collection identity is structural, not selected.
+          circles: (circle) => circle.id,
+        },
+      });
+    }
+  });
+
+  it("routes identity-valued state to its previous and next values", async (t) => {
+    let state = customEvents<{
+      selectedId: number | null;
+    }>().withState({ selectedId: null }, {
+      keyBy: { selectedId: "value" },
+    });
+    let calls = { first: 0, second: 0, all: 0 };
+    let effectOrder: string[] = [];
+
+    function Selection() {
+      return () => (
+        <section>
+          <state.events.button
+            on={(event) => event.selectedId}
+            id="1"
+            type="button"
+            mix={state.events.on("selectedId", ({ currentTarget }) => {
+              effectOrder.push(currentTarget.id);
+              currentTarget.focus();
+            })}
+            children={() => String(++calls.first)}
+          />
+          <state.events.button
+            on={(event) => event.selectedId}
+            id="2"
+            type="button"
+            mix={state.events.on("selectedId", ({ currentTarget }) => {
+              effectOrder.push(currentTarget.id);
+              currentTarget.focus();
+            })}
+            children={() => String(++calls.second)}
+          />
+          <state.events.output
+            on={(event) => event.selectedId}
+            children={() => String(++calls.all)}
+          />
+        </section>
+      );
+    }
+
+    let result = render(<Selection />);
+    t.after(() => result.cleanup());
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.selectedId = 1;
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 2, second: 1, all: 2 });
+    assert.deepEqual(effectOrder, ["1"]);
+    assert.equal(document.activeElement?.id, "1");
+
+    effectOrder.length = 0;
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.selectedId = 2;
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 3, second: 2, all: 3 });
+    assert.deepEqual(effectOrder, ["1", "2"]);
+    assert.equal(document.activeElement?.id, "2");
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.selectedId = null;
+      });
+      await settleEffects();
+    });
+    assert.deepEqual(calls, { first: 3, second: 3, all: 4 });
+
+    if (false) {
+      state.update(
+        (draft) => {
+          draft.selectedId = 1;
+        },
+        // @ts-expect-error - state routing is declared by withState().
+        { key: 1 },
+      );
     }
   });
 
@@ -71,7 +612,9 @@ describe("customEvents", () => {
       received.push([event.type, event.detail]);
     });
 
-    state.patch({ count: 1 });
+    state.update((draft) => {
+      draft.count = 1;
+    });
     state.dispatchEvent(state.events("countDrafted", 2));
     state.dispatchEvent(state.events("refreshRequested"));
 
@@ -83,15 +626,47 @@ describe("customEvents", () => {
     ]);
 
     if (false) {
-      // @ts-expect-error - property events are produced only by patch().
+      // @ts-expect-error - property events are produced only by update().
       state.events("count", 2);
-      // @ts-expect-error - occurrences are not state properties.
-      state.patch({ countDrafted: 2 });
+      state.update((draft) => {
+        // @ts-expect-error - occurrences are not state properties.
+        draft.countDrafted = 2;
+      });
       // @ts-expect-error - occurrences do not become readable state.
       state.countDrafted;
       // @ts-expect-error - occurrences cannot use native DOM event names.
       customEvents<State & { click: null }>().withState({ count: 0 });
     }
+  });
+
+  it("selects state paths and occurrences from one event-source callback", async (t) => {
+    let state = customEvents<{
+      count: number;
+      countDrafted: number;
+    }>().withState({ count: 0 });
+    let projections = 0;
+
+    function Count() {
+      return () => (
+        <state.events.output
+          on={(event) => [
+            event.count,
+            event.countDrafted,
+          ]}
+          children={(event) => `${event.detail}:${++projections}`}
+        />
+      );
+    }
+
+    let result = render(<Count />);
+    t.after(() => result.cleanup());
+    assert.equal(result.$("output")?.textContent, "0:1");
+
+    await result.act(async () => {
+      state.dispatchEvent(state.events("countDrafted", 2));
+      await settleEffects();
+    });
+    assert.equal(result.$("output")?.textContent, "2:2");
   });
 
   it("creates an independent EventTarget host for each state model", () => {
@@ -104,7 +679,9 @@ describe("customEvents", () => {
     first.addEventListener("count", () => firstCalls++);
     second.addEventListener("count", () => secondCalls++);
 
-    first.patch({ count: 1 });
+    first.update((draft) => {
+      draft.count = 1;
+    });
 
     assert.equal(first.count, 1);
     assert.equal(second.count, 10);
@@ -178,6 +755,8 @@ describe("customEvents", () => {
       events("paid", "unexpected");
       // @ts-expect-error - detailed events require configured batch detail.
       events([{ submitted: {} }]);
+      // @ts-expect-error - transactions use the ordered array grammar.
+      events({ paid: null });
       // @ts-expect-error - entry options route only; propagation belongs to the batch.
       events([{ submitted: {
         detail: { id: "invalid-options" },
@@ -243,22 +822,26 @@ describe("customEvents", () => {
 
     function CollidingEventNames() {
       return () => (
-        <section mix={events.host()}>
-          <events.on.name.output
+        <section mix={events.host}>
+          <events.output
+            on="name"
             data-testid="name"
-            child={(event) => event?.type ?? "idle"}
+            children={(event) => event.type}
           />
-          <events.on.length.output
+          <events.output
+            on="length"
             data-testid="length"
-            child={(event) => event?.type ?? "idle"}
+            children={(event) => event.type}
           />
-          <events.on.bind.output
+          <events.output
+            on="bind"
             data-testid="bind"
-            child={(event) => event?.type ?? "idle"}
+            children={(event) => event.type}
           />
-          <events.on.toString.output
+          <events.output
+            on="toString"
             data-testid="toString"
-            child={(event) => event?.type ?? "idle"}
+            children={(event) => event.type}
           />
         </section>
       );
@@ -285,7 +868,7 @@ describe("customEvents", () => {
 
     function Checkout() {
       return () => (
-        <section mix={events.host()}>
+        <section mix={events.host}>
           <button
             data-testid="submit"
             mix={on("click", ({ currentTarget }) => {
@@ -296,17 +879,19 @@ describe("customEvents", () => {
           >
             Submit
           </button>
-          <events.on.submitted.form
+          <events.form
+            on="submitted"
+            initial={events("submitted", { id: "idle" })}
             data-testid="form"
-            class={(event) => event ? "pending" : ""}
-            aria-busy={(event) => Boolean(event)}
+            class={(event) => event.detail.id === "idle" ? "" : "pending"}
+            aria-busy={(event) => event.detail.id !== "idle"}
             mix={events.on("submitted", ({ currentTarget }) => {
               currentTarget.dataset.committed = String(
                 currentTarget.classList.contains("pending"),
               );
             })}
-            child={(event) => (
-              <output>{event?.detail.id ?? "idle"}</output>
+            children={(event) => (
+              <output>{event.detail.id}</output>
             )}
           />
         </section>
@@ -339,9 +924,9 @@ describe("customEvents", () => {
       return () => (
         <events.form
           data-testid="source"
-          data-action={(event) => event?.type}
+          data-action={(event) => event.type}
           mix={[
-            events.host(),
+            events.host,
             on("focusout", ({ currentTarget }) => {
               currentTarget.dataset.actionSeenOnFocusout =
                 currentTarget.dataset.action ?? "missing";
@@ -350,7 +935,7 @@ describe("customEvents", () => {
         >
           <events.input
             data-testid="input"
-            disabled={(event) => event?.type === "submitted"}
+            disabled={(event) => event.type === "submitted"}
           />
         </events.form>
       );
@@ -374,11 +959,11 @@ describe("customEvents", () => {
 
   it("supports named groups, wildcards, and keyed routing", async (t) => {
     let events = createEvents();
-    let outcomes = events.on(["submitted", "paid"]);
+    let initialOutcome = events("paid");
 
     function Orders() {
       return () => (
-        <section mix={events.host()}>
+        <section mix={events.host}>
           <button
             data-testid="update"
             mix={on("click", ({ currentTarget }) => {
@@ -388,18 +973,23 @@ describe("customEvents", () => {
             })}
           />
           {["first", "second"].map((id) => (
-            <outcomes.output
+            <events.output
+              on={["submitted", "paid"]}
+              initial={initialOutcome}
               id={id}
               data-testid={id}
-              child={(event) => event?.detail?.id ?? "idle"}
+              children={(event) =>
+                event.type === "submitted" ? event.detail.id : "idle"}
               mix={events.on("*", ({ currentTarget, type }) => {
                 currentTarget.dataset.effect = type;
               })}
             />
           ))}
           <events.output
+            on="*"
+            initial={initialOutcome}
             data-testid="all"
-            child={(event) => event?.type ?? "idle"}
+            children={(event) => event.type === "paid" ? "idle" : event.type}
           />
         </section>
       );
@@ -480,7 +1070,7 @@ describe("customEvents", () => {
               })}
             />
           </section>
-          <section mix={events.host()}>
+          <section mix={events.host}>
             <button
               data-testid="hosted-source"
               mix={on("click", ({ currentTarget }) => {
@@ -538,13 +1128,13 @@ describe("customEvents", () => {
       return () => (
         <section
           mix={[
-            events.host(),
+            events.host,
             events.on("submitted", ({ currentTarget, detail }) => {
               currentTarget.dataset.latest = detail.id;
             }),
           ]}
         >
-          <form mix={events.host()}>
+          <form mix={events.host}>
             <button
               data-testid="local"
               mix={on("click", ({ currentTarget }) => {
@@ -557,11 +1147,9 @@ describe("customEvents", () => {
               data-testid="composed"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  events(
-                    "submitted",
-                    { id: "composed" },
-                    { composed: true },
-                  ),
+                  events([{
+                    submitted: { detail: { id: "composed" } },
+                  }], { composed: true }),
                 );
               })}
             />
@@ -593,7 +1181,7 @@ describe("customEvents", () => {
 
     function Transaction() {
       return () => (
-        <section mix={events.host()}>
+        <section mix={events.host}>
           <button
             data-testid="dispatch"
             mix={ref((button) => {
@@ -602,8 +1190,7 @@ describe("customEvents", () => {
           />
           <events.output
             data-testid="projection"
-            child={(event) =>
-              event ? `${event.type}:${++projectionUpdates}` : "idle:0"}
+            children={(event) => `${event.type}:${++projectionUpdates}`}
             mix={events.on("*", async ({ type, currentTarget }) => {
               await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
@@ -711,7 +1298,7 @@ describe("customEvents", () => {
         <input
           data-testid="input"
           mix={[
-            events.host(),
+            events.host,
             on("input", ({ currentTarget }) => {
               currentTarget.dispatchEvent(events("paid"));
             }),
@@ -763,8 +1350,8 @@ describe("customEvents", () => {
         },
       };
       let cleanup = phase === "effect"
-        ? runtime.subscribeEffect(subscription)
-        : runtime.subscribeProjection(subscription);
+        ? runtime.subscribe("effect", subscription)
+        : runtime.subscribe("projection", subscription);
       cleanups.push(cleanup);
       return cleanup;
     }
@@ -780,8 +1367,7 @@ describe("customEvents", () => {
       return runtime.createProductEvent("updated", null, init, [{
         type: "updated",
         detail: null,
-        init,
-        ...(key === undefined ? {} : { key }),
+        ...(key === undefined ? {} : { routingKeys: [key] }),
       }]);
     }
 
@@ -827,7 +1413,7 @@ describe("customEvents", () => {
       reachedParent = true;
     });
 
-    let unsubscribe = runtime.subscribeProjection({
+    let unsubscribe = runtime.subscribe("projection", {
       element: host,
       eventTypes: new Set(["updated"]),
       notify() {},
@@ -838,7 +1424,6 @@ describe("customEvents", () => {
       runtime.createProductEvent("updated", null, init, [{
         type: "updated",
         detail: null,
-        init,
       }]),
     );
 
