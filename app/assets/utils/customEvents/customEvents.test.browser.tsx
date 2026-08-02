@@ -50,8 +50,26 @@ describe("customEvents", () => {
     ]);
 
     if (false) {
+      let nested = customEvents<{
+        profile: { name: string };
+        tags: string[];
+      }>().withState({ profile: { name: "Ada" }, tags: [] });
       // @ts-expect-error - state properties change only through update().
       state.count = 2;
+      // @ts-expect-error - nested state changes only through update().
+      nested.profile.name = "Grace";
+      // @ts-expect-error - collection state changes only through update().
+      nested.tags.push("compiler");
+      nested.addEventListener("profile", (event) => {
+        // @ts-expect-error - published state details are immutable.
+        event.detail.name = "Grace";
+      });
+      // @ts-expect-error - update recipes must be synchronous.
+      state.update(async (draft) => {
+        draft.count = 2;
+      });
+      // @ts-expect-error - update recipes return no value.
+      state.update((draft) => draft.count++);
       // @ts-expect-error - state properties cannot overwrite the state API.
       customEvents<{ events: string }>().withState({ events: "collision" });
       // @ts-expect-error - state properties cannot overwrite the state API.
@@ -63,6 +81,23 @@ describe("customEvents", () => {
       // @ts-expect-error - initial state keys must belong to the event map.
       customEvents<{ count: number }>().withState({ count: 0, missing: true });
     }
+  });
+
+  it("freezes retained initial state references", () => {
+    let initial = {
+      profile: { name: "Ada" },
+      tags: ["compiler"],
+    };
+    let state = customEvents<typeof initial>().withState(initial);
+
+    assert.throws(() => {
+      initial.profile.name = "Grace";
+    });
+    assert.throws(() => {
+      initial.tags.push("navy");
+    });
+    assert.equal(state.profile.name, "Ada");
+    assert.deepEqual(state.tags, ["compiler"]);
   });
 
   it("derives state events from nested Immer updates", () => {

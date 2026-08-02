@@ -3,6 +3,8 @@ import {
   type Draft,
   enableMapSet,
   enablePatches,
+  freeze,
+  type Immutable,
   type Patch,
   produceWithPatches,
 } from "immer";
@@ -97,15 +99,21 @@ type RuntimeStateOptions = {
 };
 
 /** An EventTarget whose supplied map entries are directly readable state. */
+type StateModelEvents<Events, State> = Omit<Events, keyof State> &
+  Immutable<State>;
+
 type StateModel<
   Events extends EventDetails,
   State extends EventDetails,
 > =
-  & TypedEventTarget<CustomEventsEventMap<Events>>
-  & Readonly<State>
+  & TypedEventTarget<CustomEventsEventMap<StateModelEvents<Events, State>>>
+  & Immutable<State>
   & {
-    readonly events: CustomEventsDescriptor<Events, State>;
-    update(recipe: (draft: Draft<State>) => void): void;
+    readonly events: CustomEventsDescriptor<
+      StateModelEvents<Events, State>,
+      Immutable<State>
+    >;
+    update(recipe: (draft: Draft<State>) => undefined): void;
   };
 
 function canonicalPropertyKey(key: PropertyKey) {
@@ -260,7 +268,7 @@ function createStateModel(
   initialState: EventDetails,
   stateOptions?: RuntimeStateOptions,
 ) {
-  let state = initialState;
+  let state = freeze(initialState) as EventDetails;
   let target = new EventTarget();
   let stateSources = createStateEventSources(target, () => state);
   let events = createCustomEventsDescriptor<EventDetails, EventDetails>(

@@ -16,7 +16,7 @@ type CrudModel = {
   nextId: number;
 };
 
-function visiblePeople(people: Array<Person>, prefix: string) {
+function visiblePeople(people: readonly Person[], prefix: string) {
   return people.filter((person) =>
     person.surname.toLowerCase().startsWith(prefix.toLowerCase()),
   );

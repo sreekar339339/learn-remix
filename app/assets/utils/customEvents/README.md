@@ -131,6 +131,13 @@ model.update((draft) => {
 });
 ```
 
+The model's public properties and published state-event details are deeply
+readonly. The initial state graph is frozen when the model is created, so a
+retained reference cannot mutate state without publishing its transition.
+`update()` recipes are typed to reject async functions and returned values;
+they must finish synchronously and return nothing because an Immer draft is
+valid only for the duration of the recipe.
+
 Immer reports the complete changed paths, such as `["editor", "name"]` and
 `["people", index, "name"]`. The model commits the complete next state, groups
 those patches by their declared root properties, and publishes one `editor`
@@ -538,7 +545,7 @@ The API has three deliberately separate consumption roles:
 
 | Role       | API                          | Ownership and timing                                                                                                  |
 | ---------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Projection | `<events.tag on={source}>`   | Declaratively updates one existing element from model updates or occurrences; omitting `on` observes every occurrence |
+| Projection | `<events.tag on={source}>`   | Declaratively updates one existing element from model updates or occurrences; omitting `on` observes every descriptor event |
 | Effect     | `events.on(event, listener)` | Runs on the mixin element after matching projections commit                                                           |
 | Observer   | `events.observe(listener)`   | Imperatively sees every descriptor event on one exact target before projections commit                                |
 
@@ -546,8 +553,8 @@ Use `events.on()` for a post-render DOM effect such as focus, selection, or
 measurement on the element hosting the mixin. It participates in element host
 scope and keyed routing. Keep attributes and child content declarative in JSX.
 
-Every event-aware intrinsic observes all occurrences by default. Add `on` to
-choose model updates or narrow the occurrence vocabulary:
+Every event-aware intrinsic observes all descriptor events by default. Add `on`
+to select model update addresses or narrow the occurrence vocabulary:
 
 ```tsx
 <input
@@ -669,6 +676,12 @@ item; adding, removing, or reordering items must update the nearest projection
 that owns the collection. Use `handle.update()` when the whole component is the
 unit of change, a collection projection for structural changes, and keyed
 event-aware elements for changes within existing items.
+
+Function-valued lexical children rely on Remix's `GenericJSXComponent`
+contract: an opted-in component owns the interpretation of its `children`
+instead of having the reconciler eagerly turn them into child VNodes. The
+custom-events element factory carries that marker. Keep both browser-update and
+server-render regression coverage when changing this integration.
 
 ### Keyed routing
 
@@ -811,9 +824,9 @@ through one element:
 
 State and occurrence sources share the same callback namespace. State entries
 produce update-address tokens; occurrence-only entries produce their typed
-event-name tokens. Name the callback parameter for its domain—such as
-`event` or `event`—because it describes the model's event sources,
-not an event being delivered.
+event-name tokens. Name the callback parameter `event`, or use a more specific
+domain name when that improves the expression, because it describes the
+model's event sources rather than an event being delivered.
 
 Occurrence callbacks begin with the first matching event. Supply `initial`
 when server or component input already defines a meaningful initial event. The
