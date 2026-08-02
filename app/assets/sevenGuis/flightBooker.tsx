@@ -117,9 +117,12 @@ export const SevenGuisFlightBooker = clientEntry(
         >
           Book
         </button>
-        <flight.events.output on="bookingConfirmed">
-          {() => {
-            if (!confirmedFlight) return null;
+        <flight.events.output
+          on="bookingConfirmed"
+          hidden={(event) => event === undefined}
+        >
+          {(event) => {
+            if (!event || !confirmedFlight) return null;
             return confirmedFlight.kind === "one-way flight"
               ? `You have booked a one-way flight on ${confirmedFlight.startDate}.`
               : `You have booked a return flight from ${confirmedFlight.startDate} to ${confirmedFlight.returnDate}.`;

@@ -828,10 +828,34 @@ event-name tokens. Name the callback parameter `event`, or use a more specific
 domain name when that improves the expression, because it describes the
 model's event sources rather than an event being delivered.
 
-Occurrence callbacks begin with the first matching event. Supply `initial`
-when server or component input already defines a meaningful initial event. The
-initial event is type-checked against the observed occurrence vocabulary and
-removes defensive optional-event branches from callbacks.
+The callback form selects a retained-state address, optionally followed by
+other state addresses or occurrence tokens. This guarantees an immediate
+projection value. Use `on="eventName"` or `on={["eventA", "eventB"]}` for a
+pure occurrence subscription, whose initial callback value is `undefined`.
+
+Occurrence callbacks run during the initial projection with `undefined`, then
+receive the latest matching event. This lets native properties and children
+describe both sides of the lifecycle without a special visibility or fallback
+API:
+
+```tsx
+<events.output
+  on="saveSucceeded"
+  hidden={(event) => event === undefined}
+>
+  {(event) =>
+    event ? `Saved revision ${event.detail.revision}` : null}
+</events.output>
+```
+
+Without `initial`, the callback parameter is typed as `Event | undefined`.
+Supply `initial` when server or component input already defines a meaningful
+initial event; it is type-checked against the observed occurrence vocabulary
+and narrows the callback parameter to `Event`. State-address callbacks are also
+non-optional because retained state always has an initial value. The intrinsic
+element remains mounted in every case, so it can own its subscription, host
+scope, and keyed route. Actual child creation and removal still belongs to a
+parent projection that owns that structural position.
 
 `events.on(event, listener)` remains the element-effect API. `*` is a
 subscription wildcard, not a dispatchable event name.

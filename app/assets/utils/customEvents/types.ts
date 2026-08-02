@@ -125,15 +125,29 @@ type CustomEventsElementProps<
   On,
   Input,
   Tag extends keyof JSX.IntrinsicElements,
-  Initial = never,
 > = Omit<CustomEventsReactiveElementProps<Input, Tag>, "children"> &
   {
     on: On;
-    initial?: Initial;
     children?:
       | CustomEventsIntrinsicChildren<Tag>
       | CustomEventsElementProjection<NoInfer<Input>, RemixNode>;
   };
+
+type CustomEventsUninitializedElementProps<
+  On,
+  Input,
+  Tag extends keyof JSX.IntrinsicElements,
+> = CustomEventsElementProps<On, Input | undefined, Tag> & {
+  initial?: never;
+};
+
+type CustomEventsInitializedElementProps<
+  On,
+  Input,
+  Tag extends keyof JSX.IntrinsicElements,
+> = CustomEventsElementProps<On, Input, Tag> & {
+  initial: Input;
+};
 
 type EventNameSource<Events extends EventDetails> =
   | "*"
@@ -160,7 +174,12 @@ type CustomEventsSourceItem<
 type CustomEventsSource<
   Events extends EventDetails,
   State extends EventDetails,
-> = SourceSelection<CustomEventsSourceItem<Events, State>>;
+> =
+  | StateEventSource<unknown, keyof State & string>
+  | readonly [
+    StateEventSource<unknown, keyof State & string>,
+    ...CustomEventsSourceItem<Events, State>[],
+  ];
 
 type CustomEventsStateSources<
   Events extends EventDetails,
@@ -188,16 +207,37 @@ type CustomEventsSourceEvent<
 type CustomEventsDefaultElementProps<
   Events extends EventDetails,
   Tag extends keyof JSX.IntrinsicElements,
-> = CustomEventsElementProps<
-  "*",
-  CustomEventsEventMap<Events>[CustomEventsEventType<Events>],
-  Tag,
-  CustomEventsEventMap<Events>[CustomEventsEventType<Events>]
-> extends infer Props
-  ? Props extends { on: "*" }
-    ? Omit<Props, "on"> & { on?: "*" }
+  Initialized extends boolean,
+> = (Initialized extends true ? CustomEventsInitializedElementProps<
+    "*",
+    CustomEventsEventMap<Events>[CustomEventsEventType<Events>],
+    Tag
+  >
+  : CustomEventsUninitializedElementProps<
+    "*",
+    CustomEventsEventMap<Events>[CustomEventsEventType<Events>],
+    Tag
+  >) extends infer ElementProps
+  ? ElementProps extends { on: "*" }
+    ? Omit<ElementProps, "on"> & { on?: "*" }
   : never
   : never;
+
+type CustomEventsOccurrenceProps<
+  Events extends EventDetails,
+  Source extends SourceSelection<EventNameSource<Events>>,
+  Tag extends keyof JSX.IntrinsicElements,
+  Initialized extends boolean,
+> = Initialized extends true ? CustomEventsInitializedElementProps<
+    Source,
+    CustomEventsSourceEvent<Events, Source>,
+    Tag
+  >
+  : CustomEventsUninitializedElementProps<
+    Source,
+    CustomEventsSourceEvent<Events, Source>,
+    Tag
+  >;
 
 /** Event-aware intrinsic element with declarative reactive attributes. */
 export type CustomEventsEventElement<
@@ -205,14 +245,13 @@ export type CustomEventsEventElement<
   State extends EventDetails | never,
   Tag extends keyof JSX.IntrinsicElements,
 > = GenericJSXComponent & {
-  (props: CustomEventsDefaultElementProps<Events, Tag>): RemixNode;
+  (props: CustomEventsDefaultElementProps<Events, Tag, true>): RemixNode;
+  (props: CustomEventsDefaultElementProps<Events, Tag, false>): RemixNode;
   <const Source extends SourceSelection<EventNameSource<Events>>>(
-    props: CustomEventsElementProps<
-      Source,
-      CustomEventsSourceEvent<Events, Source>,
-      Tag,
-      CustomEventsSourceEvent<Events, Source>
-    >,
+    props: CustomEventsOccurrenceProps<Events, Source, Tag, true>,
+  ): RemixNode;
+  <const Source extends SourceSelection<EventNameSource<Events>>>(
+    props: CustomEventsOccurrenceProps<Events, Source, Tag, false>,
   ): RemixNode;
 } & ([State] extends [never] ? unknown : {
   <const Source extends CustomEventsSource<Events, State>>(
@@ -220,7 +259,7 @@ export type CustomEventsEventElement<
       (event: CustomEventsStateSources<Events, State>) => Source,
       CustomEventsSourceEvent<Events, Source>,
       Tag
-    >,
+    > & { initial?: never },
   ): RemixNode;
 });
 

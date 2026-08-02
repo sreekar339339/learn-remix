@@ -131,8 +131,10 @@ describe("7GUIs custom-event choreography", () => {
     let returnDate = result.$(
       '[aria-label="Return date"]',
     ) as HTMLInputElement;
+    let confirmation = result.$("output") as HTMLOutputElement;
 
     assert.equal(returnDate.disabled, true);
+    assert.equal(confirmation.hidden, true);
 
     await result.act(() => {
       type.value = "return flight";
@@ -184,6 +186,7 @@ describe("7GUIs custom-event choreography", () => {
 
     await result.act(() => book.click());
     await settle(result);
+    assert.equal(confirmation.hidden, false);
     assert.match(
       result.container.textContent ?? "",
       /You have booked a return flight from 2099-01-01 to 2099-12-31/,

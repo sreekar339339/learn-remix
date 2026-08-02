@@ -147,9 +147,9 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[todoActionButtonCss, deleteTodoButtonCss]}
               name="intent"
               value="delete"
-              disabled={(event) => event.type === "actionSubmitted"}
+              disabled={(event) => event?.type === "actionSubmitted"}
               class={(event) =>
-                event.type === "actionSubmitted" ? "pending" : ""
+                event?.type === "actionSubmitted" ? "pending" : ""
               }
             >
               🗑️
@@ -157,7 +157,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
             <input hidden name="id" value={id} />
           </form>
           <events.form
-            data-action={(event) => event.type}
+            data-action={(event) => event?.type}
             mix={[
               events.host,
               events.on("actionErrored", ({ currentTarget }) => {
@@ -177,9 +177,9 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
               mix={[editTodoInputCss]}
               defaultValue={text}
               name="text"
-              disabled={(event) => event.type === "actionSubmitted"}
+              disabled={(event) => event?.type === "actionSubmitted"}
               class={(event) =>
-                event.type === "actionSubmitted" ? "pending" : ""
+                event?.type === "actionSubmitted" ? "pending" : ""
               }
             />
           </events.form>

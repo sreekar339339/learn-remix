@@ -268,7 +268,7 @@ function createStateModel(
   initialState: EventDetails,
   stateOptions?: RuntimeStateOptions,
 ) {
-  let state = freeze(initialState) as EventDetails;
+  let state = freeze(initialState, true) as EventDetails;
   let target = new EventTarget();
   let stateSources = createStateEventSources(target, () => state);
   let events = createCustomEventsDescriptor<EventDetails, EventDetails>(

@@ -873,16 +873,16 @@ describe("customEvents", () => {
       return () => (
         <section mix={events.host}>
           <events.output on="name" data-testid="name">
-            {(event) => event.type}
+            {(event) => event?.type}
           </events.output>
           <events.output on="length" data-testid="length">
-            {(event) => event.type}
+            {(event) => event?.type}
           </events.output>
           <events.output on="bind" data-testid="bind">
-            {(event) => event.type}
+            {(event) => event?.type}
           </events.output>
           <events.output on="toString" data-testid="toString">
-            {(event) => event.type}
+            {(event) => event?.type}
           </events.output>
         </section>
       );
@@ -955,6 +955,56 @@ describe("customEvents", () => {
     assert.equal(form.dataset.committed, "true");
   });
 
+  it("projects undefined until an occurrence first matches", async (t) => {
+    let events = createEvents();
+
+    function Confirmation() {
+      return () => (
+        <section mix={events.host} data-testid="confirmation-host">
+          <events.output
+            on="submitted"
+            hidden={(event) => event === undefined}
+            data-testid="confirmation"
+          >
+            {(event) => event?.detail.id ?? null}
+          </events.output>
+          <events.output
+            on="submitted"
+            initial={events("submitted", { id: "initial" })}
+            hidden={(event) => event.detail.id === "hidden"}
+            data-testid="initial-confirmation"
+          >
+            {(event) => event.detail.id}
+          </events.output>
+        </section>
+      );
+    }
+
+    let result = render(<Confirmation />);
+    t.after(() => result.cleanup());
+    let host = result.$('[data-testid="confirmation-host"]') as HTMLElement;
+    let confirmation = result.$(
+      '[data-testid="confirmation"]',
+    ) as HTMLOutputElement;
+    let initialConfirmation = result.$(
+      '[data-testid="initial-confirmation"]',
+    ) as HTMLOutputElement;
+
+    assert.equal(confirmation.hidden, true);
+    assert.equal(confirmation.textContent, "");
+    assert.equal(initialConfirmation.hidden, false);
+    assert.equal(initialConfirmation.textContent, "initial");
+
+    await result.act(() => host.dispatchEvent(events("paid")));
+    assert.equal(confirmation.hidden, true);
+
+    await result.act(() =>
+      host.dispatchEvent(events("submitted", { id: "order-1" }))
+    );
+    assert.equal(confirmation.hidden, false);
+    assert.equal(confirmation.textContent, "order-1");
+  });
+
   it("commits the source projection before downstream projections", async (t) => {
     let events = createEvents();
 
@@ -962,7 +1012,7 @@ describe("customEvents", () => {
       return () => (
         <events.form
           data-testid="source"
-          data-action={(event) => event.type}
+          data-action={(event) => event?.type}
           mix={[
             events.host,
             on("focusout", ({ currentTarget }) => {
@@ -973,7 +1023,7 @@ describe("customEvents", () => {
         >
           <events.input
             data-testid="input"
-            disabled={(event) => event.type === "submitted"}
+            disabled={(event) => event?.type === "submitted"}
           />
         </events.form>
       );
@@ -1241,7 +1291,7 @@ describe("customEvents", () => {
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
           >
-            {(event) => `${event.type}:${++projectionUpdates}`}
+            {(event) => event && `${event.type}:${++projectionUpdates}`}
           </events.output>
         </section>
       );

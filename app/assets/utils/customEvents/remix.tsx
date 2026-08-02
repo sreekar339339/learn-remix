@@ -84,14 +84,12 @@ function isReactiveElementProp(key: string) {
 function resolveEventElementProps(
   props: Record<string, unknown>,
   input: unknown,
-  hasInput: boolean,
 ) {
   let resolved = { ...props };
   for (let key of Object.keys(props)) {
     let value = props[key];
     if (typeof value === "function" && isReactiveElementProp(key)) {
-      if (hasInput) resolved[key] = value(input);
-      else delete resolved[key];
+      resolved[key] = value(input);
     }
   }
   return resolved;
@@ -132,11 +130,9 @@ function createCustomEventsEventElement<
         );
       }
     }
-    let hasInitial = Object.hasOwn(handle.props, "initial");
     let currentInput = stateEventSource
       ? createStateEvent(stateEventSource)
       : handle.props.initial;
-    let hasInput = stateEventSource !== undefined || hasInitial;
     let occurrenceTypes = sources.filter((source): source is string =>
       typeof source === "string"
     );
@@ -169,7 +165,6 @@ function createCustomEventsEventElement<
             currentInput = matchedSource
               ? createStateEvent(matchedSource, event)
               : event;
-            hasInput = true;
             return handle.update();
           },
         },
@@ -190,12 +185,11 @@ function createCustomEventsEventElement<
         ? children
         : undefined;
       let content = childrenProjection
-        ? hasInput ? childrenProjection(currentInput) : undefined
+        ? childrenProjection(currentInput)
         : children;
       let resolvedProps = resolveEventElementProps(
         elementProps,
         currentInput,
-        hasInput,
       );
       return createElement(
         tag,
