@@ -47,15 +47,12 @@ export const TicTacToeCustomEvents = clientEntry(
     let game = customEvents<{
       position: Map<number, Player>;
       result: Result | null;
-      focusTargetId: number | null;
-    }>().withState(
-      {
-        position: new Map<number, Player>(),
-        result: null as Result | null,
-        focusTargetId: 0 as number | null,
-      },
-      { keyBy: { focusTargetId: "value" } },
-    );
+      focusTarget: number;
+    }>().withState({
+      position: new Map<number, Player>(),
+      result: null as Result | null,
+      focusTarget: NaN,
+    });
     return () => (
       <div
         mix={css({
@@ -72,8 +69,10 @@ export const TicTacToeCustomEvents = clientEntry(
               gap: 4,
             }),
             on("click", ({ target }) => {
-              if (!(target instanceof HTMLButtonElement)) return;
-              let cellId = Number(target.id);
+              if (!(target instanceof HTMLElement)) return;
+              let cellId = Number(target.dataset.idx);
+              if (Number.isNaN(cellId)) return;
+              if (cellId < 0) return;
               if (game.position.has(cellId) || game.result !== null) return;
               let nextPlayer: Player = game.position.size % 2 === 0 ? "X" : "O";
               game.update((draft) => {
@@ -87,14 +86,16 @@ export const TicTacToeCustomEvents = clientEntry(
               }
               if (game.result === null) {
                 game.update((draft) => {
-                  draft.focusTargetId = nextFreeCellIdx;
+                  draft.focusTarget = nextFreeCellIdx;
                 });
               }
             }),
             on("keydown", ({ key, target }) => {
               if (!isArrowKey(key)) return;
-              if (!(target instanceof HTMLButtonElement)) return;
-              let cellId = Number(target.id);
+              if (!(target instanceof HTMLElement)) return;
+              let cellId = Number(target.dataset.idx);
+              if (Number.isNaN(cellId)) return;
+              if (cellId < 0) return;
               let idxIncrement = arrowKeyIdxIncrementMap[key];
               let boundIdx = idxIncrement < 0 ? 0 : 8;
               let nextFreeCellIdx = cellId;
@@ -111,7 +112,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 }
               }
               game.update((draft) => {
-                draft.focusTargetId = nextFreeCellIdx;
+                draft.focusTarget = nextFreeCellIdx;
               });
             }),
           ]}
@@ -120,7 +121,8 @@ export const TicTacToeCustomEvents = clientEntry(
             <game.view.button
               on={[game.events.position.get(index), game.events.result]}
               key={index}
-              id={String(index)}
+              data-idx={String(index)}
+              aria-label={`Cell ${index}`}
               disabled={() => game.position.has(index) || game.result !== null}
               class={() => game.position.get(index)}
               mix={[
@@ -135,15 +137,11 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                game.events.focusTargetId.on(({ currentTarget }) => {
-                  currentTarget.focus();
-                }),
-                ref((currentTarget, signal) => {
-                  if (index !== 0) return;
-                  queueMicrotask(() => {
-                    if (!signal.aborted) currentTarget.focus();
-                  });
-                }),
+                game.events.focusTarget
+                  .as(index)
+                  .on(({ currentTarget }) => {
+                    currentTarget.focus();
+                  }),
               ]}
             >
               {() => game.position.get(index)}
@@ -161,9 +159,14 @@ export const TicTacToeCustomEvents = clientEntry(
               game.update((draft) => {
                 draft.position.clear();
                 draft.result = null;
-                draft.focusTargetId = 0;
+                draft.focusTarget = 0;
               });
             }),
+            ref(() =>
+              game.update((draft) => {
+                draft.focusTarget = 0;
+              }),
+            ),
           ]}
         >
           Reset
@@ -177,8 +180,7 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           <game.view.span on={game.events.result}>
-            {(event) => {
-              let result = event.detail;
+            {({detail: result}) => {
               if (!result) return "Game in progress";
               if (result === "Draw") return "Game is drawn.";
               return `${result} has won!`;

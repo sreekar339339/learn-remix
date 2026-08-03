@@ -6,12 +6,13 @@ import {
   type RemixNode,
 } from "remix/ui";
 import {
+  ALL_EVENTS,
   createCurrentTargetEvent,
   customEventsRuntime,
   type CustomEventsRuntimeState,
 } from "./runtime.ts";
 import {
-  type CustomEventsEventElement,
+  type CustomEventsEventedView,
   type EventDetails,
 } from "./types.ts";
 import {
@@ -60,11 +61,11 @@ function prependMixin(mix: unknown, internalMixin: unknown) {
     : [internalMixin, mix];
 }
 
-function createProjectionEvent(
+function createViewEvent(
   metadata: EventSourceMetadata,
   sourceEvent?: CustomEvent,
 ) {
-  return new CustomEvent(metadata.type, {
+  return new CustomEvent(sourceEvent?.type ?? metadata.type, {
     bubbles: false,
     cancelable: false,
     composed: sourceEvent?.composed,
@@ -83,7 +84,7 @@ function isReactiveElementProp(key: string) {
   );
 }
 
-function resolveEventElementProps(
+function resolveEventedViewProps(
   props: Record<string, unknown>,
   input: unknown,
 ) {
@@ -97,7 +98,7 @@ function resolveEventElementProps(
   return resolved;
 }
 
-function createCustomEventsEventElement<
+function createCustomEventsEventedView<
   Events extends EventDetails,
   State extends EventDetails | never,
   Tag extends keyof JSX.IntrinsicElements,
@@ -105,13 +106,14 @@ function createCustomEventsEventElement<
   tag: Tag,
   runtime: CustomEventsRuntimeState,
   sourceOwner: object,
-): CustomEventsEventElement<Events, State, Tag> {
+  getState?: () => EventDetails,
+): CustomEventsEventedView<Events, State, Tag> {
   type RuntimeProps = Record<string, unknown> & {
     on?: object | readonly object[];
     initial?: unknown;
   };
 
-  function CustomEventsEventElement(
+  function CustomEventsEventedView(
     handle: Handle<RuntimeProps>,
   ) {
     let configuredSource = handle.props.on;
@@ -132,9 +134,18 @@ function createCustomEventsEventElement<
         );
       }
     }
-    let readableSource = eventSources.find(({ read }) => read !== undefined);
+    let defaultSource = configuredSource === undefined && getState
+      ? {
+        owner: sourceOwner,
+        type: ALL_EVENTS,
+        path: [],
+        read: () => getState(),
+      }
+      : undefined;
+    let readableSource = eventSources.find(({ read }) => read !== undefined) ??
+      defaultSource;
     let currentInput = readableSource
-      ? createProjectionEvent(readableSource)
+      ? createViewEvent(readableSource)
       : handle.props.initial;
     let eventTypes = configuredSource === undefined
       ? null
@@ -150,10 +161,10 @@ function createCustomEventsEventElement<
       sourceByType.set(source.type, source);
       addresses.set(source.type, source.path);
     }
-    let projectionMix = ref((element, signal) => {
+    let viewMix = ref((element, signal) => {
       customEventsRuntime.subscribe(
         runtime,
-        "projection",
+        "view",
         {
           element,
           eventTypes,
@@ -161,8 +172,10 @@ function createCustomEventsEventElement<
           notify(event) {
             let matchedSource = sourceByType.get(event.type);
             currentInput = matchedSource?.read
-              ? createProjectionEvent(matchedSource, event)
-              : event;
+              ? createViewEvent(matchedSource, event)
+              : defaultSource && Object.hasOwn(getState!(), event.type)
+                ? createViewEvent(defaultSource, event)
+                : event;
             return handle.update();
           },
         },
@@ -179,13 +192,13 @@ function createCustomEventsEventElement<
         ...elementProps
       } = handle.props as RuntimeProps;
 
-      let childrenProjection = typeof children === "function"
+      let childrenRenderer = typeof children === "function"
         ? children
         : undefined;
-      let content = childrenProjection
-        ? childrenProjection(currentInput)
+      let content = childrenRenderer
+        ? childrenRenderer(currentInput)
         : children;
-      let resolvedProps = resolveEventElementProps(
+      let resolvedProps = resolveEventedViewProps(
         elementProps,
         currentInput,
       );
@@ -193,37 +206,39 @@ function createCustomEventsEventElement<
         tag,
         {
           ...resolvedProps,
-          mix: prependMixin(mix, projectionMix),
+          mix: prependMixin(mix, viewMix),
         },
         content,
       );
     };
   }
 
-  return Object.assign(CustomEventsEventElement, {
+  return Object.assign(CustomEventsEventedView, {
     __rmxGenericJSXComponent: true as const,
-  }) as unknown as CustomEventsEventElement<Events, State, Tag>;
+  }) as unknown as CustomEventsEventedView<Events, State, Tag>;
 }
 
-export function createEventElementFactory<
+export function createEventedViewFactory<
   Events extends EventDetails,
   State extends EventDetails | never = never,
 >(
   runtime: CustomEventsRuntimeState,
   sourceOwner: object,
+  getState?: () => EventDetails,
 ) {
   let elements = new Map<string, unknown>();
 
   return <Tag extends keyof JSX.IntrinsicElements>(tag: Tag) => {
     let element = elements.get(tag);
     if (!element) {
-      element = createCustomEventsEventElement<Events, State, Tag>(
+      element = createCustomEventsEventedView<Events, State, Tag>(
         tag,
         runtime,
         sourceOwner,
+        getState,
       );
       elements.set(tag, element);
     }
-    return element as CustomEventsEventElement<Events, State, Tag>;
+    return element as CustomEventsEventedView<Events, State, Tag>;
   };
 }

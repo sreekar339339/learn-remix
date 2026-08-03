@@ -8,10 +8,10 @@ it("routes a deep card update only to its card and owning column", async (t) => 
   t.after(() => result.cleanup());
 
   let backlog = result.$(
-    '[aria-label="Backlog projection"]',
+    '[aria-label="Backlog view"]',
   ) as HTMLOutputElement;
   let building = result.$(
-    '[aria-label="Building projection"]',
+    '[aria-label="Building view"]',
   ) as HTMLOutputElement;
   let design = result.$(
     '[aria-label="Review interaction design"]',
@@ -23,11 +23,11 @@ it("routes a deep card update only to its card and owning column", async (t) => 
     '[aria-label="Prototype deep patch routing"]',
   ) as HTMLElement;
 
-  assert.equal(backlog.textContent, "0 urgent · projected 1×");
-  assert.equal(building.textContent, "1 urgent · projected 1×");
-  assert.match(design.textContent ?? "", /Normal · projected 1×/);
-  assert.match(metrics.textContent ?? "", /Normal · projected 1×/);
-  assert.match(routing.textContent ?? "", /Urgent · projected 1×/);
+  assert.equal(backlog.textContent, "0 urgent · rendered 1");
+  assert.equal(building.textContent, "1 urgent · rendered 1");
+  assert.match(design.textContent ?? "", /Normal · rendered 1×/);
+  assert.match(metrics.textContent ?? "", /Normal · rendered 1×/);
+  assert.match(routing.textContent ?? "", /Urgent · rendered 1×/);
 
   let toggle = result.$(
     '[aria-label="Toggle Review interaction design urgency"]',
@@ -36,10 +36,10 @@ it("routes a deep card update only to its card and owning column", async (t) => 
   await result.act(() => Promise.resolve());
 
   backlog = result.$(
-    '[aria-label="Backlog projection"]',
+    '[aria-label="Backlog view"]',
   ) as HTMLOutputElement;
   building = result.$(
-    '[aria-label="Building projection"]',
+    '[aria-label="Building view"]',
   ) as HTMLOutputElement;
   design = result.$(
     '[aria-label="Review interaction design"]',
@@ -51,9 +51,9 @@ it("routes a deep card update only to its card and owning column", async (t) => 
     '[aria-label="Prototype deep patch routing"]',
   ) as HTMLElement;
 
-  assert.equal(backlog.textContent, "1 urgent · projected 2×");
-  assert.equal(building.textContent, "1 urgent · projected 1×");
-  assert.match(design.textContent ?? "", /Urgent · projected 2×/);
-  assert.match(metrics.textContent ?? "", /Normal · projected 1×/);
-  assert.match(routing.textContent ?? "", /Urgent · projected 1×/);
+  assert.equal(backlog.textContent, "1 urgent · rendered 2");
+  assert.equal(building.textContent, "1 urgent · rendered 1");
+  assert.match(design.textContent ?? "", /Urgent · rendered 2×/);
+  assert.match(metrics.textContent ?? "", /Normal · rendered 1×/);
+  assert.match(routing.textContent ?? "", /Urgent · rendered 1×/);
 });

@@ -13,7 +13,7 @@ describe("TicTacToeCustomEvents", () => {
       () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
     );
 
-    let firstCell = result.$("button[id='0']") as HTMLButtonElement;
+    let firstCell = result.$("button[aria-label='Cell 0']") as HTMLButtonElement;
     let status = result.$("p") as HTMLParagraphElement;
 
     assert.equal(firstCell.textContent, "");
@@ -29,7 +29,7 @@ describe("TicTacToeCustomEvents", () => {
         }),
       ),
     );
-    assert.equal(document.activeElement, result.$("button[id='1']"));
+    assert.equal(document.activeElement, result.$("button[aria-label='Cell 1']"));
   });
 
   it("focuses the reset button when the game ends", async (t) => {
@@ -41,7 +41,7 @@ describe("TicTacToeCustomEvents", () => {
     );
 
     let clickCell = async (cellId: number) => {
-      let cell = result.$(`button[id='${cellId}']`) as HTMLButtonElement;
+      let cell = result.$(`button[aria-label='Cell ${cellId}']`) as HTMLButtonElement;
       await result.act(() => cell.click());
     };
 
@@ -69,7 +69,7 @@ describe("TicTacToeCustomEvents", () => {
       () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
     );
 
-    let firstCell = result.$("button[id='0']") as HTMLButtonElement;
+    let firstCell = result.$("button[aria-label='Cell 0']") as HTMLButtonElement;
     status = result.$("p") as HTMLParagraphElement;
 
     assert.equal(status.textContent, "Game in progress");

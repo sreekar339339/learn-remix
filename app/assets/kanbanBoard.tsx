@@ -93,11 +93,11 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
   let board = customEvents<{
     columns: Map<string, Column>;
   }>().withState({ columns: initialColumns() });
-  let projectionCounts = new Map<string, number>();
+  let renderCounts = new Map<string, number>();
 
-  function nextProjectionCount(id: string) {
-    let count = (projectionCounts.get(id) ?? 0) + 1;
-    projectionCounts.set(id, count);
+  function nextRenderCount(id: string) {
+    let count = (renderCounts.get(id) ?? 0) + 1;
+    renderCounts.set(id, count);
     return count;
   }
 
@@ -113,7 +113,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
         <h1>Deep identity routing experiment</h1>
         <p>
           Toggle a card. Its deep Immer patch updates only that card and its
-          owning column; projection counters make the boundary visible.
+          owning column; render counters make the boundary visible.
         </p>
       </header>
       <div
@@ -132,14 +132,14 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                 <h2>{column.title}</h2>
                 <board.view.output
                   on={board.events.columns.get(columnId)}
-                  aria-label={`${column.title} projection`}
+                  aria-label={`${column.title} view`}
                 >
                   {({ detail: current }) => {
                     if (!current) return null;
                     let urgent = current.cards
                       .values()
                       .reduce((count, card) => count + Number(card.urgent), 0);
-                    return `${urgent} urgent · projected ${nextProjectionCount(
+                    return `${urgent} urgent · rendered ${nextRenderCount(
                       columnId,
                     )}`;
                   }}
@@ -160,7 +160,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                         <>
                           <strong>{card.title}</strong>
                           <span>
-                            {`${card.urgent ? "Urgent" : "Normal"} · projected ${nextProjectionCount(
+                            {`${card.urgent ? "Urgent" : "Normal"} · rendered ${nextRenderCount(
                               cardId,
                             )}×`}
                           </span>

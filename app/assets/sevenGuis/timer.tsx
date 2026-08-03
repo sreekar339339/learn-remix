@@ -3,19 +3,15 @@ import { customEvents } from "../utils/customEvents/index.tsx";
 import { buttonCss, inputCss, rowCss, taskCss } from "./styles.ts";
 
 type TimerModel = {
-  timing: {
-    elapsed: number;
-    duration: number;
-  };
+  elapsed: number;
+  duration: number;
 };
 export const SevenGuisTimer = clientEntry(
   import.meta.url,
   function SevenGuisTimer() {
     let timer = customEvents<TimerModel>().withState({
-      timing: {
-        elapsed: 0,
-        duration: 10,
-      },
+      elapsed: 0,
+      duration: 10,
     });
     return () => (
       <section
@@ -27,12 +23,9 @@ export const SevenGuisTimer = clientEntry(
               let now = performance.now();
               let delta = (now - last) / 1000;
               last = now;
-              if (timer.timing.elapsed >= timer.timing.duration) return;
+              if (timer.elapsed >= timer.duration) return;
               timer.update((draft) => {
-                draft.timing.elapsed = Math.min(
-                  draft.timing.duration,
-                  draft.timing.elapsed + delta,
-                );
+                draft.elapsed = Math.min(draft.duration, draft.elapsed + delta);
               });
             }, 100);
             signal.addEventListener("abort", () => window.clearInterval(id), {
@@ -44,13 +37,13 @@ export const SevenGuisTimer = clientEntry(
         <h2>Timer</h2>
         <div>
           <timer.view.progress
-            on={timer.events.timing}
-            value={({ detail }) =>
-              Math.min(1, detail.elapsed / detail.duration)}
+            value={({ detail: timing }) =>
+              Math.min(1, timing.elapsed / timing.duration)
+            }
             max={1}
           />
-          <timer.view.output on={timer.events.timing.elapsed}>
-            {(event) => `${event.detail.toFixed(1)}s elapsed`}
+          <timer.view.output on={timer.events.elapsed}>
+            {({detail: elapsed}) => `${elapsed.toFixed(1)}s elapsed`}
           </timer.view.output>
         </div>
         <label mix={rowCss}>
@@ -66,17 +59,14 @@ export const SevenGuisTimer = clientEntry(
               on("input", ({ currentTarget }) => {
                 let duration = currentTarget.valueAsNumber;
                 timer.update((draft) => {
-                  draft.timing.duration = duration;
-                  draft.timing.elapsed = Math.min(
-                    draft.timing.elapsed,
-                    duration,
-                  );
+                  draft.duration = duration;
+                  draft.elapsed = Math.min(draft.elapsed, duration);
                 });
               }),
             ]}
           />
-          <timer.view.span on={timer.events.timing.duration}>
-            {(event) => `${event.detail.toFixed(1)}s`}
+          <timer.view.span on={timer.events.duration}>
+            {({detail: duration}) => `${duration.toFixed(1)}s`}
           </timer.view.span>
         </label>
         <button
@@ -85,7 +75,7 @@ export const SevenGuisTimer = clientEntry(
             buttonCss,
             on("click", () => {
               timer.update((draft) => {
-                draft.timing.elapsed = 0;
+                draft.elapsed = 0;
               });
             }),
           ]}

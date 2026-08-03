@@ -16,7 +16,7 @@ type CircleHistory = {
 
 type DrawingModel = {
   circles: Map<number, Circle>;
-  editingCircleId: number | null;
+  editingCircleById: number | null;
   history: CircleHistory;
 };
 
@@ -65,14 +65,11 @@ function getCanvasPoint(
 export const SevenGuisCircleDrawer = clientEntry(
   import.meta.url,
   function SevenGuisCircleDrawer(handle) {
-    let drawing = customEvents<DrawingModel>().withState(
-      {
-        circles: new Map(),
-        editingCircleId: null,
-        history: { snapshots: [new Map()], index: 0 },
-      },
-      { keyBy: { editingCircleId: "value" } },
-    );
+    let drawing = customEvents<DrawingModel>().withState({
+      circles: new Map(),
+      editingCircleById: null,
+      history: { snapshots: [new Map()], index: 0 },
+    });
     let nextCircleId = 1;
     function addCircle(circle: Circle) {
       drawing.update((draft) => {
@@ -83,7 +80,7 @@ export const SevenGuisCircleDrawer = clientEntry(
     }
 
     function closeDiameterEditor() {
-      let id = drawing.editingCircleId;
+      let id = drawing.editingCircleById;
       if (id === null) return;
       drawing.update((draft) => {
         let circle = draft.circles.get(id);
@@ -92,7 +89,7 @@ export const SevenGuisCircleDrawer = clientEntry(
         if (circle?.diameter !== committedCircle?.diameter) {
           recordDrawingSnapshot(draft.circles, draft.history);
         }
-        draft.editingCircleId = null;
+        draft.editingCircleById = null;
       });
     }
 
@@ -104,7 +101,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             { ...circle },
           ]),
         );
-        draft.editingCircleId = null;
+        draft.editingCircleById = null;
         draft.history.index = index;
       });
       void handle.update();
@@ -161,7 +158,9 @@ export const SevenGuisCircleDrawer = clientEntry(
               backgroundColor: "white",
             }),
             on("click", ({ currentTarget, clientX, clientY }) => {
-              if (drawing.editingCircleId !== null) return;
+              if (drawing.editingCircleById !== null) {
+                return;
+              }
               let point = getCanvasPoint(currentTarget, clientX, clientY);
               if (
                 !point ||
@@ -182,10 +181,9 @@ export const SevenGuisCircleDrawer = clientEntry(
             <drawing.view.circle
               on={[
                 drawing.events.circles.get(circle.id).diameter,
-                drawing.events.editingCircleId,
+                drawing.events.editingCircleById.as(circle.id),
               ]}
               key={circle.id}
-              id={String(circle.id)}
               cx={circle.x}
               cy={circle.y}
               r={() =>
@@ -193,7 +191,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                 2
               }
               fill={() =>
-                drawing.editingCircleId === circle.id ? "#d4d4d8" : "none"
+                drawing.editingCircleById === circle.id ? "#d4d4d8" : "none"
               }
               mix={[
                 css({
@@ -205,9 +203,11 @@ export const SevenGuisCircleDrawer = clientEntry(
                 }),
                 on("contextmenu", (event) => {
                   event.preventDefault();
-                  if (drawing.editingCircleId !== null) return;
+                  if (drawing.editingCircleById !== null) {
+                    return;
+                  }
                   drawing.update((draft) => {
-                    draft.editingCircleId = circle.id;
+                    draft.editingCircleById = circle.id;
                   });
                 }),
               ]}
@@ -215,7 +215,7 @@ export const SevenGuisCircleDrawer = clientEntry(
           ))}
         </svg>
         <drawing.view.form
-          on={drawing.events.editingCircleId}
+          on={drawing.events.editingCircleById}
           hidden={(event) => event.detail === null}
           mix={[
             rowCss,
@@ -228,20 +228,20 @@ export const SevenGuisCircleDrawer = clientEntry(
           <label>
             Diameter{" "}
             <drawing.view.input
-              on={[drawing.events.editingCircleId, drawing.events.circles]}
+              on={[drawing.events.editingCircleById, drawing.events.circles]}
               type="range"
               min={10}
               max={120}
-              defaultValue={() =>
-                drawing.editingCircleId === null
+              defaultValue={() => {
+                let id = drawing.editingCircleById;
+                return id === null
                   ? 10
-                  : (drawing.circles.get(drawing.editingCircleId)?.diameter ??
-                    10)
-              }
+                  : (drawing.circles.get(id)?.diameter ?? 10);
+              }}
               mix={[
                 inputCss,
                 on("input", ({ currentTarget }) => {
-                  let id = drawing.editingCircleId;
+                  let id = drawing.editingCircleById;
                   if (id === null) return;
                   let diameter = currentTarget.valueAsNumber;
                   if (drawing.circles.get(id)?.diameter === diameter) return;

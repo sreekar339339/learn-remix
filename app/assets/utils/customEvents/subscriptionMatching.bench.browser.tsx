@@ -20,12 +20,12 @@ it("benchmarks addressed subscription matching", async () => {
 
   for (let index = 0; index < subscriptionCount; index++) {
     let element = document.createElement("output");
-    element.id = String(index);
     host.append(element);
     cleanups.push(
-      customEventsRuntime.subscribe(runtime, "projection", {
+      customEventsRuntime.subscribe(runtime, "view", {
         element,
         eventTypes: new Set(["itemUpdated"]),
+        addresses: new Map([["itemUpdated", [String(index)]]]),
         notify() {
           notifications++;
         },

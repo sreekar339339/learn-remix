@@ -129,7 +129,7 @@ describe("AppContext", () => {
 
     let result = render(
       <AppProvider>
-        <section data-testid="app-context">
+        <section>
           <div data-consumer="user">
             <UserDisplay />
           </div>

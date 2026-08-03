@@ -2,26 +2,153 @@
 
 `customEvents` combines native `CustomEvent`/`EventTarget`, Immer-backed model
 updates, addressable event sources, and Remix element lifecycles. It exists to
-update an existing DOM projection at the narrowest affected model address
-without splitting every repeated element into a component with its own state
-and `handle.update()` ceremony.
+update an existing DOM view at the narrowest affected model address without
+splitting every repeated element into a component with its own state and
+`handle.update()` ceremony.
 
-The API has four distinct nouns and verbs:
+The library is organized around five concepts:
 
-- `model.update(recipe)` changes retained state.
-- `model.events.<address>` identifies a state update or occurrence.
-- `model.view.<tag>` creates an intrinsic element projected by those events.
-- `source.on(listener)` attaches an element-owned post-projection effect.
+- **State model** — immutable retained state mutated through Immer recipes.
+- **Event source** — a typed, addressable subscription handle for one event.
+- **Evented-view** — an intrinsic element (`model.view.<tag>`) that subscribes
+  to sources and re-renders from matched events.
+- **Effect** — an element-owned listener run after views update.
+- **Subscription** — the runtime registration that routes events to an
+  evented-view or effect.
+
+The vocabulary reuses standard web/CS terms: *subscribe*, *subscription*,
+*render*, *effect*, *source*, *host*, *routing*, and *transaction*.
 
 `events` is only an event-source graph. `view` is only an intrinsic-element
 factory. Keeping these namespaces separate means domain events may safely be
 named `output`, `form`, `name`, `length`, or any other intrinsic/function name.
 
+## Public API
+
+### `customEvents<Definition>(options?)`
+
+Creates an event descriptor. `Definition` declares the event vocabulary as
+either a payload map or a detail-less string union (see
+[Event maps](#event-maps)).
+
+```ts
+const flightEvents = customEvents<FlightEvents>();
+```
+
+Options:
+
+```ts
+{ host?: EventTarget }  // registers a domain EventTarget as the default host
+```
+
+The descriptor is itself the source graph. The reserved names `create`,
+`dispatch`, `host`, `on`, `view`, and `withState` cannot be event names.
+
+### Event sources — `events.<name>`
+
+Every declared event is exposed as a typed source:
+
+```ts
+flightEvents.kind;
+flightEvents.bookingConfirmed;
+```
+
+On a state model the sources live under the descriptor:
+
+```ts
+model.events.kind;
+model.events.bookingConfirmed;
+```
+
+Property access records an **address**; it does not snapshot a selected value.
+Each access reads the current value at that address only to classify
+collections (Map, Set, array, object) and choose the right accessor shape. The
+source tells the runtime exactly which Immer patch paths can affect the
+consumer, and the value is re-read when an event is delivered. The event
+delivered to callbacks contains the current value at that address as
+`event.detail`.
+
+Nested access and collection accessors:
+
+```ts
+model.events.profile.name;
+board.events.columns.get(columnId).cards.get(cardId).urgent;
+sheet.events.values.A0;
+selection.events.selected.has("red");
+selection.events.selected.as("green");
+circles.events.items[index].diameter;
+```
+
+Maps and Sets retain their real key identity. Arrays are addressed by index:
+an item is reached by the index written and read, never by an `id` property.
+That index behaves as a key like any other and stays stable as neighbors are
+added or removed.
+
+A source also carries an element-owned effect listener:
+
+```ts
+source.on(listener)  // MixinDescriptor; active only while mounted
+```
+
+### Evented-views — `model.view.<tag>`
+
+`model.view.<tag>` creates an intrinsic element that subscribes to sources and
+re-renders from matched events:
+
+```tsx
+<flight.view.output on={flight.events.kind}>
+  {(event) => event.detail}
+</flight.view.output>
+```
+
+Evented-view props:
+
+| Prop | Meaning |
+| --- | --- |
+| `on` | A source, or an array of sources, this view subscribes to. |
+| `initial` | A defined event to render before an occurrence first matches. |
+| `children` | Static children, or a render function of the matched event. |
+| *reactive props* | Any native prop may be a function of the matched event. |
+| `mix` | Mixins; use `source.on(...)` for element-owned effects. |
+
+### Descriptor methods
+
+| Member | Signature | Purpose |
+| --- | --- | --- |
+| `create` | `create(type, detail?, init?)` / `create([...])` | Creates a fresh occurrence or transaction `CustomEvent`. |
+| `dispatch` | `dispatch(target, ...)` | Dispatches and resolves after view updates and effects settle. |
+| `on` | `on(listener)` | Element-owned wildcard effect for every descriptor event. |
+| `host` | `host` | Mixin that makes an element the local routing boundary. |
+| `view` | `view.<tag>` | Evented-view factory. |
+| `withState` | `withState(value)` | Creates a state model (see below). |
+
+### State model
+
+`withState()` creates an independent `EventTarget` and retains its initial
+properties as immutable, directly readable state:
+
+```ts
+let flight = flightEvents.withState({
+  kind: "one-way flight",
+  startDate: "2026-08-02",
+  returnDate: "2026-08-02",
+});
+
+flight.kind; // "one-way flight"
+```
+
+| Member | Purpose |
+| --- | --- |
+| `update(recipe)` | Mutates state through an Immer draft and dispatches change events. |
+| *property reads* | Current immutable state, e.g. `model.kind`. |
+| `events` | The descriptor: sources and descriptor methods. |
+| `view` | The evented-view factory. |
+| native `addEventListener` / `dispatchEvent` | Ordinary `EventTarget` consumption of state events. |
+
 ## Event maps
 
 A payload map declares detailed events. A string union declares detail-less
-events. Intersect an event map with state, or union a detail-less occurrence
-with it:
+events:
 
 ```ts
 type Flight = {
@@ -47,20 +174,8 @@ so they are deliberately non-cancelable.
 
 ## Evented state
 
-`withState()` creates an independent `EventTarget`. Its initial properties are
-read directly from the model:
-
-```ts
-let flight = flightEvents.withState({
-  kind: "one-way flight",
-  startDate: "2026-08-02",
-  returnDate: "2026-08-02",
-});
-
-flight.kind; // "one-way flight"
-```
-
-Use `update()` with normal mutable JavaScript expressions:
+`withState()` retains the supplied value as immutable state. Mutate it with
+normal mutable JavaScript expressions through `update()`:
 
 ```ts
 flight.update((draft) => {
@@ -98,52 +213,18 @@ export type AppContext = ReturnType<
 
 The same descriptor can create each provider's independent state model.
 
-## Event sources
+## Consumption patterns
 
-Every declared event is exposed as a typed source:
+### Narrow evented-views
 
-```ts
-flight.events.kind;
-flight.events.bookingConfirmed;
-```
-
-State sources continue through objects and collections:
-
-```ts
-model.events.profile.name;
-board.events.columns.get(columnId).cards.get(cardId).urgent;
-sheet.events.values.A0;
-selection.events.selected.has("red");
-circles.events.items[circleId].diameter;
-```
-
-Property access records an address; it does not read or recompute a selected
-value. The source tells the runtime exactly which Immer patch paths can affect
-the consumer. The event delivered to callbacks contains the current value at
-that address as `event.detail`.
-
-Maps retain their real key identity. Arrays use an item's `id` when it is a
-property key, otherwise its index. Stable `id` values are the right default for
-lists that can be inserted, deleted, or reordered; index identity is suitable
-for fixed positional collections such as a tic-tac-toe board.
-
-## Event-aware elements
-
-Use `model.view.<intrinsic>` and pass a source to `on`:
-
-```tsx
-<flight.view.output on={flight.events.kind}>
-  {(event) => event.detail}
-</flight.view.output>
-```
-
-Children and native properties may be functions of the matched event:
+Use `model.view.<intrinsic>` and pass a source to `on`. Children and native
+properties may be functions of the matched event:
 
 ```tsx
 <selection.view.button
-  on={selection.events.selectedId}
-  aria-pressed={(event) => event.detail === item.id}
-  class={(event) => event.detail === item.id ? "selected" : ""}
+  on={selection.events.selected.as(item.id)}
+  aria-pressed={({ detail }) => detail}
+  class={({ detail }) => (detail ? "selected" : "")}
 >
   {item.label}
 </selection.view.button>
@@ -164,8 +245,36 @@ Listen to several explicit sources with an array:
 </game.view.button>
 ```
 
-Omitting `on` projects every event owned by the descriptor. This is useful for
-small mutually exclusive occurrence vocabularies:
+An evented-view accepts one source per event type; passing two sources that
+share a type throws.
+
+### Whole-model default source
+
+On a `withState` model, omitting `on` subscribes the view to every event. It
+re-reads the whole state snapshot on mount and re-renders whenever any state
+property changes. Occurrence events still arrive raw. The render function's
+input is a `CustomEvent`; its `detail` is the state snapshot on state events
+and the occurrence payload otherwise:
+
+```tsx
+<flight.view.output>
+  {(event) =>
+    typeof event.detail === "object"
+      ? `${event.detail.kind} from ${event.detail.startDate}`
+      : event.detail
+  }
+</flight.view.output>
+```
+
+The snapshot read needs no `initial` because a snapshot always exists. This
+makes the evented-view a live read-only view of the whole model — ideal for an
+element whose output depends on several properties at once, such as a progress
+bar ratio.
+
+### Occurrence vocabulary
+
+A descriptor with no state broadcasts occurrences. Omitting `on` subscribes the
+view to every descriptor event:
 
 ```tsx
 <searchEvents.view.div initial={initialEvent}>
@@ -184,22 +293,22 @@ small mutually exclusive occurrence vocabularies:
 
 Before an occurrence first matches, its callback input is `undefined`. Supply
 `initial={events.create(...)}` when a defined initial occurrence is part of the
-UI model. State sources always have a current value and need no `initial`.
+UI model.
 
-## Element-owned effects
+### Element-owned effects
 
 An event source's `.on(listener)` creates a Remix mixin. The listener exists
 only while its host element is mounted:
 
 ```tsx
 <input
-  mix={sheet.events.focusTargetId.on(({ currentTarget }) => {
-    currentTarget.focus();
+  mix={sheet.events.focusTarget.as(id).on(({ currentTarget, detail }) => {
+    if (detail === id) currentTarget.focus();
   })}
 />
 ```
 
-The source address participates in the same keyed/deep routing as a projection.
+The source address participates in the same keyed/deep routing as a view.
 `currentTarget` is the mounted element owning the mixin.
 
 Use the descriptor's root `.on(listener)` for every descriptor event:
@@ -208,13 +317,13 @@ Use the descriptor's root `.on(listener)` for every descriptor event:
 <section
   mix={model.events.on(() => handle.update())}
 >
-  {/* component-wide projection */}
+  {/* component-wide render */}
 </section>
 ```
 
 This centralizes component invalidation: DOM handlers only mutate the model,
 and one mounted effect calls `handle.update()`. Place it on the element that
-naturally owns the projection; it does not need to be the component root.
+naturally owns the render; it does not need to be the component root.
 
 There is intentionally no detached `observe()` or `subscribe()` API:
 
@@ -250,8 +359,7 @@ Use `dispatch()` when completion must be awaited:
 await events.dispatch(form, "saved", detail);
 ```
 
-It resolves after matching element projections and their post-projection
-effects settle.
+It resolves after matching views re-render and their effects settle.
 
 ## Transactions
 
@@ -261,20 +369,16 @@ An ordered array creates one logical event transaction:
 await events.dispatch(target, [
   "gameStateChanged",
   {
-    cellFocusRequested: {
-      options: { key: 0 },
-    },
+    cellFocusRequested: {},
   },
 ]);
 ```
 
-Entries share one carrier event and commit matching projections once. Effects
-then receive each matching logical entry in order. On a configured non-element
-`EventTarget` host, batch entries are also mirrored as native named events so
-normal EventTarget listeners can consume them.
-
-Per-entry options contain only `key`; propagation options belong to the shared
-transaction.
+Entries share one carrier event and commit matching views once. A subscription
+that matches several entries re-renders exactly once, using the last matching
+entry. Effects then receive each matching logical entry in order. On a
+configured non-element `EventTarget` host, batch entries are also mirrored as
+native named events so normal EventTarget listeners can consume them.
 
 ## Hosts and routing
 
@@ -284,9 +388,18 @@ transaction.
 <section mix={events.host}>...</section>
 ```
 
+Element hosts belong with occurrence descriptors. A `withState` model already
+registers its own `EventTarget` as the default host, so do not wrap state
+views in an element `events.host`: `update()` dispatches on the model target
+and hosted views will not receive it.
+
 Events created by one descriptor are ignored by another descriptor even when
-their raw names match. Non-bubbling events remain on their origin element.
-Composed events may cross nested descriptor hosts; non-composed events do not.
+their raw names match. Dispatch scope follows the origin target: dispatching on
+an element keeps the event on that element (the origin element and its mounted
+subscribers, plus the subscriptions of its containing `events.host`), while
+dispatching on the model target (via `update()` or `state.dispatchEvent`)
+broadcasts to the default host scope. Composed events may cross nested
+descriptor hosts; non-composed events do not.
 
 For a descriptor configured with a domain host:
 
@@ -310,35 +423,61 @@ Detached code uses `addEventListeners(drummer, signal, { tempoSet() {} })`.
 
 An Immer patch notifies subscriptions whose address is an ancestor or
 descendant of the changed path. A leaf mutation therefore updates its leaf,
-owning item, collection, and top-level-property projections—but no sibling
-items.
+owning item, collection, and top-level-property views—but no sibling items.
 
-Identity-valued state can route to both the previous and next owner:
+A source with an empty address (a top-level state property, or any occurrence)
+subscribes at the root. A change with no address at all — a top-level
+property — matches the root and re-renders every subscription, so occurrences
+broadcast to every listener.
+
+### Scalar identity routing
+
+Identity-valued state (which row is selected, which cell is focused) is a
+scalar routed by value. Each owner subscribes with `.as(ownerId)`:
 
 ```ts
-let selection = customEvents<{ selectedId: string | null }>().withState(
-  { selectedId: null },
-  { keyBy: { selectedId: "value" } },
-);
+selection.update((draft) => {
+  draft.selected = item.id;
+});
 ```
 
-This is useful when one item must remove a previous selection projection and
-another must apply the new one. Do not add explicit keys to unrelated state
-updates merely to force local rendering; model the state at the identity
-boundary that actually owns the projection.
+```tsx
+<selection.view.button
+  on={selection.events.selected.as(item.id)}
+  aria-pressed={({ detail }) => detail}
+>
+  {item.label}
+</selection.view.button>
+```
+
+A write to a top-level scalar is addressed to the losing and gaining owners by
+value: the losing owner's subscription fires first (re-rendering against the
+new value, so `detail === id` is false), the gaining owner's second, and
+untouched siblings do not re-render. Collection (root) subscribers still
+observe the final value once. An `.as(id)` view renders whether the scalar
+currently equals `id`; an `.as(id)` effect (`mix={source.on(...)}`) receives
+the scalar value in `event.detail`, and `detail === id` identifies the gaining
+owner.
+
+Use a `Map` for per-item data or reorderable collections; use `.as()` when the
+identity lives in a single scalar.
 
 ## Sequencing
 
 One processed event transaction follows this order:
 
-1. Commit matching projections on the event's origin element.
-2. Commit remaining matching projections.
+1. Re-render matching views on the event's origin element.
+2. Re-render the remaining matching views.
 3. Run matching `.on(...)` effects.
 4. Resolve `events.dispatch(...)` after returned promises settle.
 
 The origin-first rule follows DOM causality: an element that dispatches an
-event observes its own projected attributes before descendant side effects
-such as `disabled`-induced `focusout` occur. Effects always see committed DOM.
+event observes its own updated attributes before descendant side effects such
+as `disabled`-induced `focusout` occur. Effects always see committed DOM. An
+element-dispatched event stays local to that element (and its containing
+host), so unrelated elements do not re-render; route model-scoped events
+through the model target (`update()`/`state.dispatchEvent`) when siblings or
+other elements must observe them.
 
 ## Design guidance
 
@@ -349,8 +488,11 @@ such as `disabled`-induced `focusout` occur. Effects always see committed DOM.
   value.
 - Put payload in occurrence detail when it is the fact's durable data.
 - Prefer a deep state source over broad component invalidation when one existing
-  DOM projection owns that address.
+  DOM view owns that address.
 - Prefer one wildcard mounted effect when the component genuinely renders as a
   cohesive unit.
 - Structural creation, deletion, and reordering still belong to the owning
-  component projection; fine-grained event-aware elements update existing DOM.
+  component render; fine-grained evented-views update existing DOM.
+- Reaching for a default-source whole-model view is a signal the component
+  renders as a unit; narrow evented-views earn their keep when only a few
+  addresses change per event.

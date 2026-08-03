@@ -1,14 +1,13 @@
 import { ref } from "remix/ui";
 import {
   ALL_EVENTS,
-  canonicalAddressSegment,
   createCustomEventsRuntimeState,
   customEventsRuntime,
   type CustomEventsBatchRuntimeEntry,
   type CustomEventsRuntimeState,
 } from "./runtime.ts";
 import {
-  createEventElementFactory,
+  createEventedViewFactory,
   customEventsOnMixin,
 } from "./remix.tsx";
 import { createEventSource } from "./eventSources.ts";
@@ -27,7 +26,6 @@ const CUSTOM_EVENTS_TRANSACTION = "$transaction";
 const customEventsInitKeys = new Set([
   "bubbles",
   "composed",
-  "key",
   "signal",
 ]);
 
@@ -82,10 +80,7 @@ export function createCustomEventsDescriptor<
     if (type === ALL_EVENTS) {
       throw new TypeError('customEvents reserves "*" for subscriptions.');
     }
-    let addresses = options?.addresses ??
-      (options?.key === undefined
-        ? undefined
-        : [[canonicalAddressSegment(options.key)]]);
+    let addresses = options?.addresses;
     return {
       type,
       detail,
@@ -177,17 +172,17 @@ export function createCustomEventsDescriptor<
     throw new TypeError("customEvents expects an event name or event array.");
   }) as CustomEventsFactory<Events>;
 
-  let eventElements:
-    | ReturnType<typeof createEventElementFactory<Events, State>>
+  let eventedViews:
+    | ReturnType<typeof createEventedViewFactory<Events, State>>
     | undefined;
-  let getEventElements = () => eventElements ??= createEventElementFactory<
+  let getEventedViews = () => eventedViews ??= createEventedViewFactory<
     Events,
     State
-  >(getRuntime(), sourceOwner);
+  >(getRuntime(), sourceOwner, state?.getState);
   let view = new Proxy(Object.create(null), {
     get(_, property) {
       if (typeof property !== "string") return undefined;
-      return getEventElements()(property as keyof JSX.IntrinsicElements);
+      return getEventedViews()(property as keyof JSX.IntrinsicElements);
     },
   });
   let dispatch = ((

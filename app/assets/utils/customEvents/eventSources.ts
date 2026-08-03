@@ -25,11 +25,12 @@ export type EventSource<
   Value,
   Type extends string,
   Current extends boolean = false,
+  Detail = Value,
 > = {
   readonly [eventSourceMetadata]: EventSourceMetadata<Value, Type>;
   readonly [currentEventSource]: Current;
   on<Host extends Element = Element>(
-    listener: EventSourceListener<Value, Type, Host>,
+    listener: EventSourceListener<Detail, Type, Host>,
   ): MixinDescriptor<Host, any>;
 };
 
@@ -41,23 +42,18 @@ type PreserveMissing<Parent, Value> = Extract<Parent, null | undefined> extends 
   ? Value
   : Value | undefined;
 
-type ArrayIdentity<Item> = Item extends { readonly id: infer Id }
-  ? Id extends PropertyKey ? Id : number
-  : number;
-
-export type StateEventSource<Value, Type extends string> =
-  & EventSource<Value, Type, true>
+export type StateEventSource<
+  Value,
+  Type extends string,
+  Detail = Value,
+> =
+  & EventSource<Value, Type, true, Detail>
   & (Defined<Value> extends ReadonlyMap<infer Key, infer Item>
     ? { get(key: Key): StateEventSource<Item | undefined, Type> }
     : Defined<Value> extends ReadonlySet<infer Item>
       ? { has(value: Item): StateEventSource<boolean, Type> }
     : Defined<Value> extends readonly (infer Item)[]
-      ? {
-          readonly [Key in ArrayIdentity<Item> & PropertyKey]: StateEventSource<
-            Item | undefined,
-            Type
-          >;
-        }
+      ? { readonly [index: number]: StateEventSource<Item | undefined, Type> }
     : Defined<Value> extends object
       ? {
           readonly [Key in keyof Defined<Value>]: StateEventSource<
@@ -65,7 +61,7 @@ export type StateEventSource<Value, Type extends string> =
             Type
           >;
         }
-    : unknown);
+    : { as(value: Value): StateEventSource<boolean, Type, Value | null> });
 
 export type EventSources<
   Events extends Record<string, unknown>,
@@ -91,17 +87,6 @@ export function isPropertyKey(value: unknown): value is PropertyKey {
     typeof value === "number" ||
     typeof value === "symbol";
 }
-
-export function defaultArrayKey(item: unknown, index: number): PropertyKey {
-  if (
-    item !== null && typeof item === "object" && Object.hasOwn(item, "id")
-  ) {
-    let id = Reflect.get(item, "id");
-    if (isPropertyKey(id)) return id;
-  }
-  return index;
-}
-
 export function samePropertyKey(left: unknown, right: unknown) {
   return Object.is(left, right) ||
     (isPropertyKey(left) && isPropertyKey(right) &&
@@ -122,9 +107,7 @@ function readPath(value: unknown, path: readonly unknown[]) {
     } else if (value instanceof Set) {
       value = value.values().some((item) => samePropertyKey(item, segment));
     } else if (Array.isArray(value)) {
-      value = value.find((item, index) =>
-        samePropertyKey(defaultArrayKey(item, index), segment)
-      );
+      value = value[Number(segment)];
     } else {
       value = value == null
         ? undefined
@@ -149,12 +132,13 @@ export function createEventSource(
   readRoot: (() => unknown) | undefined,
   createEffect: EffectFactory,
   path: readonly unknown[] = [],
+  read?: () => unknown,
 ): object {
   let metadata: EventSourceMetadata = {
     owner,
     type,
     path,
-    ...(readRoot ? { read: () => readPath(readRoot(), path) } : {}),
+    ...(readRoot ? { read: read ?? (() => readPath(readRoot(), path)) } : {}),
   };
   return new Proxy(Object.create(null), {
     get(_, property) {
@@ -184,6 +168,19 @@ export function createEventSource(
             readRoot,
             createEffect,
             [...path, canonicalAddressSegment(value)],
+          );
+      }
+      if (property === "as") {
+        return (value: unknown) =>
+          createEventSource(
+            owner,
+            type,
+            readRoot,
+            createEffect,
+            [...path, canonicalAddressSegment(value)],
+            readRoot
+              ? () => samePropertyKey(readPath(readRoot(), path), value)
+              : undefined,
           );
       }
       return createEventSource(

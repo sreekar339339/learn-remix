@@ -9,7 +9,7 @@ async function settleSearch() {
   await Promise.resolve();
 }
 
-it("centralizes search projection updates without event-aware elements", async (t) => {
+it("centralizes search view updates without event-aware elements", async (t) => {
   let resolveRequest: ((response: Response) => void) | undefined;
   t.mock.method(window, "fetch", () =>
     new Promise<Response>((resolve) => {

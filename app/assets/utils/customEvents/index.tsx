@@ -20,17 +20,11 @@ import type {
   EventDetails,
   NormalizeCustomEventsDefinition,
 } from "./types.ts";
-import {
-  defaultArrayKey,
-  isPropertyKey,
-  samePropertyKey,
-} from "./eventSources.ts";
+import { isPropertyKey } from "./eventSources.ts";
 export type { CustomEventsEventMap } from "./types.ts";
 
 enablePatches();
 enableMapSet();
-
-const COLLECTION_STRUCTURE = Symbol("collectionStructure");
 
 type DescriptorWithState<Events extends EventDetails> =
   & CustomEventsDescriptor<Events>
@@ -38,9 +32,6 @@ type DescriptorWithState<Events extends EventDetails> =
     /** Retains the supplied event-map entries as directly readable state. */
     withState<const Value extends Partial<Events>>(
       value: StateInput<Events, Value>,
-      options?: StateOptions<
-        Pick<Events, Extract<keyof Value, keyof Events>>
-      >,
     ): StateModel<
       Events,
       Pick<Events, Extract<keyof Value, keyof Events>>
@@ -55,13 +46,13 @@ export function customEvents(options?: unknown): unknown {
   let descriptorOptions = options as CustomEventsOptions | undefined;
   let descriptor = createCustomEventsDescriptor(descriptorOptions);
   return Object.assign(descriptor, {
-    withState(value: EventDetails, stateOptions?: StateOptions<EventDetails>) {
+    withState(value: EventDetails) {
       if (descriptorOptions?.host) {
         throw new TypeError(
           "customEvents withState() supplies its own EventTarget host.",
         );
       }
-      return createStateModel(value, stateOptions);
+      return createStateModel(value);
     },
   });
 }
@@ -79,23 +70,6 @@ type StateInput<
   readonly __customEventsStateError:
     "withState() keys must be declared events and cannot overwrite its API.";
   readonly invalidKeys: InvalidKeys;
-};
-
-type StateValueKey<Value> = Exclude<Value, null | undefined> extends infer Key
-  ? [Key] extends [never] ? never
-  : [Key] extends [PropertyKey] ? "value"
-  : never
-  : never;
-
-type StateOptions<State extends EventDetails> = {
-  /** Routes identity-valued properties to their previous and next owners. */
-  keyBy?: Partial<{
-    [Key in keyof State]: StateValueKey<State[Key]>;
-  }>;
-};
-
-type RuntimeStateOptions = {
-  keyBy?: Record<string, "value" | undefined>;
 };
 
 /** An EventTarget whose supplied map entries are directly readable state. */
@@ -140,8 +114,7 @@ function resolvePatchPath(
         return;
       }
       let item = value[segment];
-      let identity = defaultArrayKey(item, segment);
-      logicalPath.push(canonicalAddressSegment(identity));
+      logicalPath.push(canonicalAddressSegment(segment));
       value = item;
       continue;
     }
@@ -162,7 +135,6 @@ function normalizePatches(
   previousState: EventDetails,
   nextState: EventDetails,
   patches: Patch[],
-  routeByValue = false,
 ) {
   let rootKey = patches[0]?.path[0];
   if (typeof rootKey !== "string") {
@@ -180,14 +152,6 @@ function normalizePatches(
     );
     if (!duplicate) addresses.push(address);
   };
-
-  if (routeByValue) {
-    if (isPropertyKey(previous)) {
-      addAddress([canonicalAddressSegment(previous)]);
-    }
-    if (isPropertyKey(next)) addAddress([canonicalAddressSegment(next)]);
-    return addresses;
-  }
 
   for (let patch of patches) {
     let addressCount = addresses.length;
@@ -213,30 +177,6 @@ function normalizePatches(
       segments,
     );
 
-    if (
-      Array.isArray(previous) && Array.isArray(next) &&
-      patch.path.length === 2 && typeof patch.path[1] === "number"
-    ) {
-      let index = patch.path[1];
-      let candidates = [previous[index], next[index]];
-      for (let item of candidates) {
-        if (item === undefined) continue;
-        let identity = defaultArrayKey(item, index);
-        let stable = [previous, next].every((items) =>
-          items.some((candidate, candidateIndex) =>
-            samePropertyKey(
-              defaultArrayKey(candidate, candidateIndex),
-              identity,
-            ) && Object.is(candidate, item)
-          )
-        );
-        if (!stable) addAddress([canonicalAddressSegment(identity)]);
-      }
-      if (addresses.length === addressCount) {
-        addAddress([COLLECTION_STRUCTURE]);
-      }
-      continue;
-    }
     addAddress(previousPath);
     addAddress(nextPath);
     if (addresses.length === addressCount) addAddress([]);
@@ -244,9 +184,16 @@ function normalizePatches(
   return addresses;
 }
 
+function isPrimitive(value: unknown) {
+  return value === null || typeof value !== "object";
+}
+
+function ownerAddress(value: unknown): readonly unknown[] {
+  return [canonicalAddressSegment(value)];
+}
+
 function createStateModel(
   initialState: EventDetails,
-  stateOptions?: RuntimeStateOptions,
 ) {
   let state = freeze(initialState, true) as EventDetails;
   let target = new EventTarget();
@@ -284,11 +231,35 @@ function createStateModel(
           state,
           nextState,
           keyPatches,
-          stateOptions?.keyBy?.[key] === "value",
         );
+        let nextValue = nextState[key];
+        let previousOwner = state[key];
+
+        if (
+          isPrimitive(previousOwner) &&
+          isPrimitive(nextValue)
+        ) {
+          entries.push({
+            [key]: {
+              detail: nextValue,
+              options: {
+                addresses: [
+                  ...(previousOwner !== undefined && previousOwner !== null
+                    ? [ownerAddress(previousOwner)]
+                    : []),
+                  ...(nextValue !== undefined && nextValue !== null
+                    ? [ownerAddress(nextValue)]
+                    : []),
+                ],
+              },
+            },
+          });
+          continue;
+        }
+
         entries.push({
           [key]: {
-            detail: nextState[key],
+            detail: nextValue,
             options: { addresses },
           },
         });

@@ -27,7 +27,7 @@ async function settleEffects() {
 
 describe("customEvents", () => {
   it("publishes withState properties as typed events", () => {
-    let state = customEvents<{ count: number; label: string }>().withState({
+    let state = customEvents<{ count: number; label: string}>().withState({
       count: 0,
       label: "idle",
     });
@@ -56,7 +56,7 @@ describe("customEvents", () => {
       let nested = customEvents<{
         profile: { name: string };
         tags: string[];
-      }>().withState({ profile: { name: "Ada" }, tags: [] });
+     }>().withState({ profile: { name: "Ada" }, tags: [] });
       // @ts-expect-error - state properties change only through update().
       state.count = 2;
       // @ts-expect-error - nested state changes only through update().
@@ -74,15 +74,15 @@ describe("customEvents", () => {
       // @ts-expect-error - update recipes return no value.
       state.update((draft) => draft.count++);
       // @ts-expect-error - state properties cannot overwrite the state API.
-      customEvents<{ events: string }>().withState({ events: "collision" });
+      customEvents<{ events: string}>().withState({ events: "collision" });
       // @ts-expect-error - state properties cannot overwrite the state API.
-      customEvents<{ update: string }>().withState({ update: "collision" });
+      customEvents<{ update: string}>().withState({ update: "collision" });
       // @ts-expect-error - update addresses are scoped to event-element on().
       state.updates;
       // @ts-expect-error - state property events cannot use native DOM names.
-      customEvents<{ click: boolean }>().withState({ click: false });
+      customEvents<{ click: boolean}>().withState({ click: false });
       // @ts-expect-error - initial state keys must belong to the event map.
-      customEvents<{ count: number }>().withState({ count: 0, missing: true });
+      customEvents<{ count: number}>().withState({ count: 0, missing: true });
     }
   });
 
@@ -106,8 +106,8 @@ describe("customEvents", () => {
   it("derives state events from nested Immer updates", () => {
     let state = customEvents<{
       draft: { name: string; surname: string };
-      people: Array<{ id: number; name: string }>;
-    }>().withState({
+      people: Array<{ id: number; name: string}>;
+   }>().withState({
       draft: { name: "Grace", surname: "Hopper" },
       people: [{ id: 1, name: "Grace" }],
     });
@@ -166,16 +166,16 @@ describe("customEvents", () => {
     let state = customEvents<{
       profile: { name: string; address: { city: string } };
       status: string;
-    }>().withState({
+   }>().withState({
       profile: { name: "Ada", address: { city: "London" } },
       status: "idle",
     });
-    let projections = 0;
+    let renders = 0;
 
     function Profile() {
       return () => (
         <state.view.output
-          data-testid="name"
+          aria-label="name"
           on={state.events.profile.name}
           class={(event) => event.detail.toLowerCase()}
         >
@@ -185,7 +185,7 @@ describe("customEvents", () => {
               // @ts-expect-error The update detail is a string, not a number.
               event.detail.toFixed();
             }
-            projections++;
+            renders++;
             return event.detail;
           }}
         </state.view.output>
@@ -194,7 +194,7 @@ describe("customEvents", () => {
 
     let result = render(<Profile />);
     t.after(() => result.cleanup());
-    assert.equal(projections, 1);
+    assert.equal(renders, 1);
 
     await result.act(async () => {
       state.update((draft) => {
@@ -202,7 +202,7 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.equal(projections, 1);
+    assert.equal(renders, 1);
 
     await result.act(async () => {
       state.update((draft) => {
@@ -210,8 +210,8 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.equal(projections, 2);
-    assert.equal(result.$('[data-testid="name"]')?.textContent, "Grace");
+    assert.equal(renders, 2);
+    assert.equal(result.$('[aria-label="name"]')?.textContent, "Grace");
 
     await result.act(async () => {
       state.update((draft) => {
@@ -219,7 +219,7 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.equal(projections, 2);
+    assert.equal(renders, 2);
 
     await result.act(async () => {
       state.update((draft) => {
@@ -230,15 +230,15 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.equal(projections, 3);
-    assert.equal(result.$('[data-testid="name"]')?.textContent, "Katherine");
+    assert.equal(renders, 3);
+    assert.equal(result.$('[aria-label="name"]')?.textContent, "Katherine");
   });
 
   it("derives keyed routes from Map and primitive Set patches", async (t) => {
     let state = customEvents<{
       position: Map<string, string>;
       selected: Set<string>;
-    }>().withState({
+   }>().withState({
       position: new Map([
         ["a", "X"],
         ["b", "O"],
@@ -252,10 +252,10 @@ describe("customEvents", () => {
     function Collections() {
       return () => (
         <section>
-          <state.view.output on={state.events.position.get("a")} id="a">
+          <state.view.output on={state.events.position.get("a")}>
             {(event) => `${++calls.mapA}:${event.detail}`}
           </state.view.output>
-          <state.view.output on={state.events.position.get("b")} id="b">
+          <state.view.output on={state.events.position.get("b")} >
             {(event) => `${++calls.mapB}:${event.detail}`}
           </state.view.output>
           <state.view.output on={state.events.position}>
@@ -263,14 +263,12 @@ describe("customEvents", () => {
           </state.view.output>
           <state.view.output
             on={state.events.selected.has("red")}
-            id="red"
-          >
+            >
             {(event) => `${++calls.red}:${event.detail}`}
           </state.view.output>
           <state.view.output
             on={state.events.selected.has("blue")}
-            id="blue"
-          >
+            >
             {(event) => `${++calls.blue}:${event.detail}`}
           </state.view.output>
         </section>
@@ -318,10 +316,10 @@ describe("customEvents", () => {
       columns: Map<
         string,
         {
-          cards: Map<string, { urgent: boolean }>;
+          cards: Map<string, { urgent: boolean}>;
         }
       >;
-    }>().withState({
+   }>().withState({
       columns: new Map([
         [
           "column:todo",
@@ -347,32 +345,27 @@ describe("customEvents", () => {
         <section>
           <state.view.output
             on={state.events.columns.get("column:todo")}
-            id="column:todo"
-          >
+            >
             {() => String(++calls.todo)}
           </state.view.output>
           <state.view.output
             on={state.events.columns.get("column:done")}
-            id="column:done"
-          >
+            >
             {() => String(++calls.done)}
           </state.view.output>
           <state.view.output
             on={state.events.columns.get("column:todo").cards.get("card:one")}
-            id="card:one"
-          >
+            >
             {() => String(++calls.one)}
           </state.view.output>
           <state.view.output
             on={state.events.columns.get("column:todo").cards.get("card:two")}
-            id="card:two"
-          >
+            >
             {() => String(++calls.two)}
           </state.view.output>
           <state.view.output
             on={state.events.columns.get("column:done").cards.get("card:three")}
-            id="card:three"
-          >
+            >
             {() => String(++calls.three)}
           </state.view.output>
         </section>
@@ -401,16 +394,16 @@ describe("customEvents", () => {
   it("preserves object identity in Map update addresses", async (t) => {
     let recordKey = {};
     let state = customEvents<{
-      records: Map<object, { value: number }>;
-    }>().withState({
+      records: Map<object, { value: number}>;
+   }>().withState({
       records: new Map([[recordKey, { value: 1 }]]),
     });
-    let projections = 0;
+    let renders = 0;
 
     function RecordValue() {
       return () => (
         <state.view.output on={state.events.records.get(recordKey).value}>
-          {(event) => `${++projections}:${event.detail}`}
+          {(event) => `${++renders}:${event.detail}`}
         </state.view.output>
       );
     }
@@ -425,12 +418,12 @@ describe("customEvents", () => {
       await settleEffects();
     });
 
-    assert.equal(projections, 2);
+    assert.equal(renders, 2);
     assert.equal(result.$("output")?.textContent, "2:2");
   });
 
   it("derives array index routes by default", async (t) => {
-    let state = customEvents<{ items: string[] }>().withState({
+    let state = customEvents<{ items: string[]}>().withState({
       items: ["first", "second"],
     });
     let calls = { first: 0, second: 0, all: 0 };
@@ -438,10 +431,10 @@ describe("customEvents", () => {
     function Items() {
       return () => (
         <section>
-          <state.view.output on={state.events.items[0]} id="0">
+          <state.view.output on={state.events.items[0]}>
             {() => String(++calls.first)}
           </state.view.output>
-          <state.view.output on={state.events.items[1]} id="1">
+          <state.view.output on={state.events.items[1]} aria-label="1">
             {() => String(++calls.second)}
           </state.view.output>
           <state.view.output on={state.events.items}>
@@ -479,28 +472,28 @@ describe("customEvents", () => {
     assert.deepEqual(calls, { first: 3, second: 4, all: 4 });
   });
 
-  it("derives conventional ids and record paths", async (t) => {
+  it("routes object arrays by index", async (t) => {
     type Circle = { id: number; diameter: number };
     let state = customEvents<{
       circles: Circle[];
       values: Record<string, string>;
-    }>().withState({
+   }>().withState({
       circles: [
         { id: 7, diameter: 30 },
         { id: 8, diameter: 40 },
       ],
       values: { A0: "10", B0: "20" },
     });
-    let calls = { circle7: 0, circle8: 0, A0: 0, B0: 0 };
+    let calls = { circle0: 0, circle1: 0, A0: 0, B0: 0 };
 
     function Collections() {
       return () => (
         <section>
-          <state.view.output on={state.events.circles[7]} id="7">
-            {() => String(++calls.circle7)}
+          <state.view.output on={state.events.circles[0]}>
+            {() => String(++calls.circle0)}
           </state.view.output>
-          <state.view.output on={state.events.circles[8]} id="8">
-            {() => String(++calls.circle8)}
+          <state.view.output on={state.events.circles[1]} aria-label="1">
+            {() => String(++calls.circle1)}
           </state.view.output>
           <state.view.output on={state.events.values.A0}>
             {() => String(++calls.A0)}
@@ -522,7 +515,7 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.deepEqual(calls, { circle7: 2, circle8: 1, A0: 2, B0: 1 });
+    assert.deepEqual(calls, { circle0: 2, circle1: 1, A0: 2, B0: 1 });
 
     await result.act(async () => {
       state.update((draft) => {
@@ -530,7 +523,7 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.deepEqual(calls, { circle7: 3, circle8: 1, A0: 2, B0: 1 });
+    assert.deepEqual(calls, { circle0: 3, circle1: 2, A0: 2, B0: 1 });
 
     await result.act(async () => {
       state.update((draft) => {
@@ -544,30 +537,15 @@ describe("customEvents", () => {
       });
       await settleEffects();
     });
-    assert.deepEqual(calls, { circle7: 4, circle8: 2, A0: 2, B0: 1 });
-
-    if (false) {
-      customEvents<{ circles: Circle[] }>().withState(
-        { circles: [] },
-        {
-          keyBy: {
-            // @ts-expect-error - collection identity is structural, not selected.
-            circles: (circle) => circle.id,
-          },
-        },
-      );
-    }
+    assert.deepEqual(calls, { circle0: 4, circle1: 3, A0: 2, B0: 1 });
   });
 
-  it("routes identity-valued state to its previous and next values", async (t) => {
+  it("routes scalar identity values by value and notifies owners via as()", async (t) => {
     let state = customEvents<{
-      selectedId: number | null;
-    }>().withState(
-      { selectedId: null },
-      {
-        keyBy: { selectedId: "value" },
-      },
-    );
+      selected: string | null;
+   }>().withState({
+      selected: null,
+    });
     let calls = { first: 0, second: 0, all: 0 };
     let effectOrder: string[] = [];
 
@@ -575,28 +553,34 @@ describe("customEvents", () => {
       return () => (
         <section>
           <state.view.button
-            on={state.events.selectedId}
-            id="1"
+            on={state.events.selected.as("1")}
+            aria-label="1"
             type="button"
-            mix={state.events.selectedId.on(({ currentTarget }) => {
-              effectOrder.push(currentTarget.id);
-              currentTarget.focus();
+            aria-pressed={({ detail }) => detail}
+            mix={state.events.selected.as("1").on(({ currentTarget, detail }) => {
+              effectOrder.push(currentTarget.getAttribute("aria-label") ?? "");
+              if (detail === "1") {
+                currentTarget.focus();
+              }
             })}
           >
             {() => String(++calls.first)}
           </state.view.button>
           <state.view.button
-            on={state.events.selectedId}
-            id="2"
+            on={state.events.selected.as("2")}
+            aria-label="2"
             type="button"
-            mix={state.events.selectedId.on(({ currentTarget }) => {
-              effectOrder.push(currentTarget.id);
-              currentTarget.focus();
+            aria-pressed={({ detail }) => detail}
+            mix={state.events.selected.as("2").on(({ currentTarget, detail }) => {
+              effectOrder.push(currentTarget.getAttribute("aria-label") ?? "");
+              if (detail === "2") {
+                currentTarget.focus();
+              }
             })}
           >
             {() => String(++calls.second)}
           </state.view.button>
-          <state.view.output on={state.events.selectedId}>
+          <state.view.output on={state.events.selected}>
             {() => String(++calls.all)}
           </state.view.output>
         </section>
@@ -608,42 +592,50 @@ describe("customEvents", () => {
 
     await result.act(async () => {
       state.update((draft) => {
-        draft.selectedId = 1;
+        draft.selected = "1";
       });
       await settleEffects();
     });
     assert.deepEqual(calls, { first: 2, second: 1, all: 2 });
     assert.deepEqual(effectOrder, ["1"]);
-    assert.equal(document.activeElement?.id, "1");
+    assert.equal(document.activeElement?.getAttribute("aria-label"), "1");
 
     effectOrder.length = 0;
     await result.act(async () => {
       state.update((draft) => {
-        draft.selectedId = 2;
+        draft.selected = "2";
       });
       await settleEffects();
     });
     assert.deepEqual(calls, { first: 3, second: 2, all: 3 });
     assert.deepEqual(effectOrder, ["1", "2"]);
-    assert.equal(document.activeElement?.id, "2");
+    assert.equal(document.activeElement?.getAttribute("aria-label"), "2");
+    assert.equal(
+      (result.$('[aria-label="1"]') as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+      "false",
+    );
+    assert.equal(
+      (result.$('[aria-label="2"]') as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+      "true",
+    );
 
     await result.act(async () => {
       state.update((draft) => {
-        draft.selectedId = null;
+        draft.selected = null;
       });
       await settleEffects();
     });
     assert.deepEqual(calls, { first: 3, second: 3, all: 4 });
-
-    if (false) {
-      state.update(
-        (draft) => {
-          draft.selectedId = 1;
-        },
-        // @ts-expect-error - state routing is declared by withState().
-        { key: 1 },
-      );
-    }
+    assert.equal(
+      (result.$('[aria-label="2"]') as HTMLButtonElement).getAttribute(
+        "aria-pressed",
+      ),
+      "false",
+    );
   });
 
   it("derives occurrences from event-map entries omitted by withState", () => {
@@ -685,7 +677,7 @@ describe("customEvents", () => {
       // @ts-expect-error - occurrences do not become readable state.
       state.countDrafted;
       // @ts-expect-error - occurrences cannot use native DOM event names.
-      customEvents<State & { click: null }>().withState({ count: 0 });
+      customEvents<State & { click: null}>().withState({ count: 0 });
     }
   });
 
@@ -693,13 +685,13 @@ describe("customEvents", () => {
     let state = customEvents<{
       count: number;
       countDrafted: number;
-    }>().withState({ count: 0 });
-    let projections = 0;
+   }>().withState({ count: 0 });
+    let renders = 0;
 
     function Count() {
       return () => (
         <state.view.output on={[state.events.count, state.events.countDrafted]}>
-          {(event) => `${event.detail}:${++projections}`}
+          {(event) => `${event.detail}:${++renders}`}
         </state.view.output>
       );
     }
@@ -715,8 +707,109 @@ describe("customEvents", () => {
     assert.equal(result.$("output")?.textContent, "2:2");
   });
 
+  it("keeps element-dispatched occurrences on the origin element", async (t) => {
+    let state = customEvents<{
+      count: number;
+      countDrafted: number;
+    }>().withState({ count: 0 });
+    let drafts = 0;
+    let listenerRenders = 0;
+
+    function Editor() {
+      return () => (
+        <section>
+          <button
+            aria-label="source"
+            mix={[
+              state.events.countDrafted.on(() => {
+                drafts++;
+              }),
+              on("click", ({ currentTarget }) => {
+                currentTarget.dispatchEvent(
+                  state.events.create("countDrafted", 1),
+                );
+              }),
+            ]}
+          />
+          <state.view.output
+            aria-label="listener"
+            on={state.events.countDrafted}
+          >
+            {(event) =>
+              event ? `${event.detail}:${++listenerRenders}` : "idle"
+            }
+          </state.view.output>
+        </section>
+      );
+    }
+
+    let result = render(<Editor />);
+    t.after(() => result.cleanup());
+    let source = result.$('[aria-label="source"]') as HTMLButtonElement;
+    let listener = result.$('[aria-label="listener"]') as HTMLOutputElement;
+
+    await result.act(() => source.click());
+    await settleEffects();
+    assert.equal(drafts, 1);
+    assert.equal(listener.textContent, "idle");
+
+    await result.act(async () => {
+      state.dispatchEvent(state.events.create("countDrafted", 2));
+      await settleEffects();
+    });
+    assert.equal(listenerRenders, 1);
+    assert.equal(listener.textContent, "2:1");
+  });
+
+  it("renders the whole state snapshot when on is omitted", async (t) => {
+    let state = customEvents<{
+      count: number;
+      countDrafted: number;
+    }>().withState({ count: 0 });
+    let seen: unknown[] = [];
+
+    function Snapshot() {
+      return () => (
+        <state.view.output aria-label="snapshot">
+          {(event) => {
+            seen.push(event.detail);
+            if (false) {
+              event.detail satisfies
+                number | { readonly count: number };
+            }
+            return typeof event.detail === "object" && event.detail !== null
+              ? `count:${event.detail.count}`
+              : `raw:${event.detail}`;
+          }}
+        </state.view.output>
+      );
+    }
+
+    let result = render(<Snapshot />);
+    t.after(() => result.cleanup());
+
+    assert.equal(result.$('[aria-label="snapshot"]')?.textContent, "count:0");
+    assert.deepEqual(seen[0], { count: 0 });
+
+    await result.act(async () => {
+      state.update((draft) => {
+        draft.count = 1;
+      });
+      await settleEffects();
+    });
+    assert.equal(result.$('[aria-label="snapshot"]')?.textContent, "count:1");
+    assert.deepEqual(seen[seen.length - 1], { count: 1 });
+
+    await result.act(async () => {
+      state.dispatchEvent(state.events.create("countDrafted", 2));
+      await settleEffects();
+    });
+    assert.equal(result.$('[aria-label="snapshot"]')?.textContent, "raw:2");
+    assert.equal(seen[seen.length - 1], 2);
+  });
+
   it("creates an independent EventTarget host for each state model", () => {
-    let models = customEvents<{ count: number }>();
+    let models = customEvents<{ count: number}>();
     let first = models.withState({ count: 0 });
     let second = models.withState({ count: 10 });
     let firstCalls = 0;
@@ -736,7 +829,7 @@ describe("customEvents", () => {
 
     assert.throws(
       () =>
-        customEvents<{ count: number }>({ host: new EventTarget() }).withState({
+        customEvents<{ count: number}>({ host: new EventTarget() }).withState({
           count: 0,
         }),
       /supplies its own EventTarget host/,
@@ -754,7 +847,6 @@ describe("customEvents", () => {
       {
         submitted: {
           detail: { id: "batched" },
-          options: { key: "row-1" },
         },
       },
     ]);
@@ -784,7 +876,7 @@ describe("customEvents", () => {
       type: "submitted",
       detail: { id: string },
       init: EventInit,
-    ) => CustomEvent<{ id: string }>;
+    ) => CustomEvent<{ id: string}>;
     assert.throws(
       () =>
         createWithEventInit(
@@ -870,16 +962,16 @@ describe("customEvents", () => {
     function CollidingEventNames() {
       return () => (
         <section mix={events.host}>
-          <events.view.output on={events.name} data-testid="name">
+          <events.view.output on={events.name} aria-label="name">
             {(event) => event?.type}
           </events.view.output>
-          <events.view.output on={events.length} data-testid="length">
+          <events.view.output on={events.length} aria-label="length">
             {(event) => event?.type}
           </events.view.output>
-          <events.view.output on={events.bind} data-testid="bind">
+          <events.view.output on={events.bind} aria-label="bind">
             {(event) => event?.type}
           </events.view.output>
-          <events.view.output on={events.toString} data-testid="toString">
+          <events.view.output on={events.toString} aria-label="toString">
             {(event) => event?.type}
           </events.view.output>
         </section>
@@ -896,7 +988,7 @@ describe("customEvents", () => {
     });
 
     for (let type of ["name", "length", "bind", "toString"]) {
-      assert.equal(result.$(`[data-testid="${type}"]`)?.textContent, type);
+      assert.equal(result.$(`[aria-label="${type}"]`)?.textContent, type);
     }
   });
 
@@ -907,7 +999,7 @@ describe("customEvents", () => {
       return () => (
         <section mix={events.host}>
           <button
-            data-testid="submit"
+            aria-label="submit"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
                 events.create("submitted", { id: "order-1" }),
@@ -919,7 +1011,7 @@ describe("customEvents", () => {
           <events.view.form
             on={events.submitted}
             initial={events.create("submitted", { id: "idle" })}
-            data-testid="form"
+            aria-label="form"
             class={(event) => (event.detail.id === "idle" ? "" : "pending")}
             aria-busy={(event) => event.detail.id !== "idle"}
             mix={events.submitted.on(({ currentTarget }) => {
@@ -936,33 +1028,33 @@ describe("customEvents", () => {
 
     let result = render(<Checkout />);
     t.after(() => result.cleanup());
-    let form = result.$('[data-testid="form"]') as HTMLFormElement;
+    let form = result.$('[aria-label="form"]') as HTMLFormElement;
 
     assert.equal(form.className, "");
     assert.equal(form.textContent, "idle");
 
     await result.act(() =>
-      (result.$('[data-testid="submit"]') as HTMLButtonElement).click(),
+      (result.$('[aria-label="submit"]') as HTMLButtonElement).click(),
     );
     await settleEffects();
 
-    assert.equal(result.$('[data-testid="form"]'), form);
+    assert.equal(result.$('[aria-label="form"]'), form);
     assert.equal(form.className, "pending");
     assert.equal(form.getAttribute("aria-busy"), "true");
     assert.equal(form.textContent, "order-1");
     assert.equal(form.dataset.committed, "true");
   });
 
-  it("projects undefined until an occurrence first matches", async (t) => {
+  it("renders undefined until an occurrence first matches", async (t) => {
     let events = createEvents();
 
     function Confirmation() {
       return () => (
-        <section mix={events.host} data-testid="confirmation-host">
+        <section mix={events.host} aria-label="confirmation-host">
           <events.view.output
             on={events.submitted}
             hidden={(event) => event === undefined}
-            data-testid="confirmation"
+            aria-label="confirmation"
           >
             {(event) => event?.detail.id ?? null}
           </events.view.output>
@@ -970,7 +1062,7 @@ describe("customEvents", () => {
             on={events.submitted}
             initial={events.create("submitted", { id: "initial" })}
             hidden={(event) => event.detail.id === "hidden"}
-            data-testid="initial-confirmation"
+            aria-label="initial-confirmation"
           >
             {(event) => event.detail.id}
           </events.view.output>
@@ -980,12 +1072,12 @@ describe("customEvents", () => {
 
     let result = render(<Confirmation />);
     t.after(() => result.cleanup());
-    let host = result.$('[data-testid="confirmation-host"]') as HTMLElement;
+    let host = result.$('[aria-label="confirmation-host"]') as HTMLElement;
     let confirmation = result.$(
-      '[data-testid="confirmation"]',
+      '[aria-label="confirmation"]',
     ) as HTMLOutputElement;
     let initialConfirmation = result.$(
-      '[data-testid="initial-confirmation"]',
+      '[aria-label="initial-confirmation"]',
     ) as HTMLOutputElement;
 
     assert.equal(confirmation.hidden, true);
@@ -1003,13 +1095,13 @@ describe("customEvents", () => {
     assert.equal(confirmation.textContent, "order-1");
   });
 
-  it("commits the source projection before downstream projections", async (t) => {
+  it("commits the source view before downstream views", async (t) => {
     let events = createEvents();
 
     function Form() {
       return () => (
         <events.view.form
-          data-testid="source"
+          aria-label="source"
           data-action={(event) => event?.type}
           mix={[
             events.host,
@@ -1020,7 +1112,7 @@ describe("customEvents", () => {
           ]}
         >
           <events.view.input
-            data-testid="input"
+            aria-label="input"
             disabled={(event) => event?.type === "submitted"}
           />
         </events.view.form>
@@ -1029,8 +1121,8 @@ describe("customEvents", () => {
 
     let result = render(<Form />);
     t.after(() => result.cleanup());
-    let form = result.$('[data-testid="source"]') as HTMLFormElement;
-    let input = result.$('[data-testid="input"]') as HTMLInputElement;
+    let form = result.$('[aria-label="source"]') as HTMLFormElement;
+    let input = result.$('[aria-label="input"]') as HTMLInputElement;
     input.focus();
 
     await result.act(async () => {
@@ -1043,7 +1135,7 @@ describe("customEvents", () => {
     assert.equal(form.dataset.actionSeenOnFocusout, "submitted");
   });
 
-  it("supports named groups, wildcards, and keyed routing", async (t) => {
+  it("broadcasts named groups and wildcards to every listener", async (t) => {
     let events = createEvents();
     let initialOutcome = events.create("paid");
 
@@ -1051,10 +1143,10 @@ describe("customEvents", () => {
       return () => (
         <section mix={events.host}>
           <button
-            data-testid="update"
+            aria-label="update"
             mix={on("click", ({ currentTarget }) => {
               currentTarget.dispatchEvent(
-                events.create("submitted", { id: "first" }, { key: "first" }),
+                events.create("submitted", { id: "first" }),
               );
             })}
           />
@@ -1062,8 +1154,7 @@ describe("customEvents", () => {
             <events.view.output
               on={[events.submitted, events.paid]}
               initial={initialOutcome}
-              id={id}
-              data-testid={id}
+              aria-label={id}
               mix={events.on(({ currentTarget, type }) => {
                 currentTarget.dataset.effect = type;
               })}
@@ -1073,7 +1164,7 @@ describe("customEvents", () => {
               }
             </events.view.output>
           ))}
-          <events.view.output initial={initialOutcome} data-testid="all">
+          <events.view.output initial={initialOutcome} aria-label="all">
             {(event) => (event.type === "paid" ? "idle" : event.type)}
           </events.view.output>
         </section>
@@ -1084,17 +1175,17 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(() =>
-      (result.$('[data-testid="update"]') as HTMLButtonElement).click(),
+      (result.$('[aria-label="update"]') as HTMLButtonElement).click(),
     );
     await settleEffects();
 
-    let first = result.$('[data-testid="first"]') as HTMLOutputElement;
-    let second = result.$('[data-testid="second"]') as HTMLOutputElement;
+    let first = result.$('[aria-label="first"]') as HTMLOutputElement;
+    let second = result.$('[aria-label="second"]') as HTMLOutputElement;
     assert.equal(first.textContent, "first");
     assert.equal(first.dataset.effect, "submitted");
-    assert.equal(second.textContent, "idle");
-    assert.equal(second.dataset.effect, undefined);
-    assert.equal(result.$('[data-testid="all"]')?.textContent, "submitted");
+    assert.equal(second.textContent, "first");
+    assert.equal(second.dataset.effect, "submitted");
+    assert.equal(result.$('[aria-label="all"]')?.textContent, "submitted");
 
     await result.act(() => {
       (result.$("section") as HTMLElement).dispatchEvent(
@@ -1103,13 +1194,11 @@ describe("customEvents", () => {
             {
               submitted: {
                 detail: { id: "first-again" },
-                options: { key: "first" },
               },
             },
             {
               submitted: {
                 detail: { id: "second" },
-                options: { key: "second" },
               },
             },
           ],
@@ -1119,7 +1208,7 @@ describe("customEvents", () => {
     });
     await settleEffects();
 
-    assert.equal(first.textContent, "first-again");
+    assert.equal(first.textContent, "second");
     assert.equal(second.textContent, "second");
     assert.equal(first.dataset.effect, "submitted");
     assert.equal(second.dataset.effect, "submitted");
@@ -1132,7 +1221,7 @@ describe("customEvents", () => {
       return () => (
         <div>
           <button
-            data-testid="local"
+            aria-label="local"
             mix={[
               events.paid.on(({ currentTarget }) => {
                 currentTarget.dataset.received = "true";
@@ -1144,13 +1233,13 @@ describe("customEvents", () => {
           />
           <section>
             <button
-              data-testid="unhosted-source"
+              aria-label="unhosted-source"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(events.create("paid"));
               })}
             />
             <output
-              data-testid="unhosted-listener"
+              aria-label="unhosted-listener"
               mix={events.paid.on(({ currentTarget }) => {
                 currentTarget.textContent = "received";
               })}
@@ -1158,13 +1247,13 @@ describe("customEvents", () => {
           </section>
           <section mix={events.host}>
             <button
-              data-testid="hosted-source"
+              aria-label="hosted-source"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(events.create("paid"));
               })}
             />
             <output
-              data-testid="hosted-listener"
+              aria-label="hosted-listener"
               mix={events.paid.on(({ currentTarget }) => {
                 currentTarget.textContent = "received";
               })}
@@ -1176,7 +1265,7 @@ describe("customEvents", () => {
 
     let result = render(<Scopes />);
     t.after(() => result.cleanup());
-    let local = result.$('[data-testid="local"]') as HTMLButtonElement;
+    let local = result.$('[aria-label="local"]') as HTMLButtonElement;
     let foreignEventReachedParent = false;
     result.container.addEventListener("paid", () => {
       foreignEventReachedParent = true;
@@ -1187,25 +1276,25 @@ describe("customEvents", () => {
 
     await result.act(() =>
       (
-        result.$('[data-testid="unhosted-source"]') as HTMLButtonElement
+        result.$('[aria-label="unhosted-source"]') as HTMLButtonElement
       ).click(),
     );
     assert.equal(
-      result.$('[data-testid="unhosted-listener"]')?.textContent,
+      result.$('[aria-label="unhosted-listener"]')?.textContent,
       "",
     );
 
     await result.act(() =>
-      (result.$('[data-testid="hosted-source"]') as HTMLButtonElement).click(),
+      (result.$('[aria-label="hosted-source"]') as HTMLButtonElement).click(),
     );
     assert.equal(
-      result.$('[data-testid="hosted-listener"]')?.textContent,
+      result.$('[aria-label="hosted-listener"]')?.textContent,
       "received",
     );
 
     foreignEventReachedParent = false;
     (
-      result.$('[data-testid="hosted-source"]') as HTMLButtonElement
+      result.$('[aria-label="hosted-source"]') as HTMLButtonElement
     ).dispatchEvent(new CustomEvent("paid", { bubbles: true }));
     assert.equal(foreignEventReachedParent, true);
   });
@@ -1225,7 +1314,7 @@ describe("customEvents", () => {
         >
           <form mix={events.host}>
             <button
-              data-testid="local"
+              aria-label="local"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
                   events.create("submitted", { id: "local" }),
@@ -1233,7 +1322,7 @@ describe("customEvents", () => {
               })}
             />
             <button
-              data-testid="composed"
+              aria-label="composed"
               mix={on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
                   events.create(
@@ -1257,19 +1346,19 @@ describe("customEvents", () => {
     let root = result.$("section") as HTMLElement;
 
     await result.act(() =>
-      (result.$('[data-testid="local"]') as HTMLButtonElement).click(),
+      (result.$('[aria-label="local"]') as HTMLButtonElement).click(),
     );
     assert.equal(root.dataset.latest, undefined);
 
     await result.act(() =>
-      (result.$('[data-testid="composed"]') as HTMLButtonElement).click(),
+      (result.$('[aria-label="composed"]') as HTMLButtonElement).click(),
     );
     assert.equal(root.dataset.latest, "composed");
   });
 
-  it("dispatches a transaction and awaits projections and ordered effects", async (t) => {
+  it("dispatches a transaction and awaits view updates and ordered effects", async (t) => {
     let events = createEvents();
-    let projectionUpdates = 0;
+    let viewUpdates = 0;
     let effects: string[] = [];
     let dispatchTarget!: HTMLButtonElement;
 
@@ -1277,19 +1366,19 @@ describe("customEvents", () => {
       return () => (
         <section mix={events.host}>
           <button
-            data-testid="dispatch"
+            aria-label="dispatch"
             mix={ref((button) => {
               dispatchTarget = button;
             })}
           />
           <events.view.output
-            data-testid="projection"
+            aria-label="view"
             mix={events.on(async ({ type, currentTarget }) => {
               await Promise.resolve();
               effects.push(`${type}:${currentTarget.textContent}`);
             })}
           >
-            {(event) => event && `${event.type}:${++projectionUpdates}`}
+            {(event) => event && `${event.type}:${++viewUpdates}`}
           </events.view.output>
         </section>
       );
@@ -1309,7 +1398,7 @@ describe("customEvents", () => {
       ]),
     );
 
-    assert.equal(result.$('[data-testid="projection"]')?.textContent, "paid:1");
+    assert.equal(result.$('[aria-label="view"]')?.textContent, "paid:1");
     assert.deepEqual(effects, ["submitted:paid:1", "paid:paid:1"]);
   });
 
@@ -1319,7 +1408,7 @@ describe("customEvents", () => {
     let nativeCalls: string[] = [];
     domain.addEventListener("submitted", (event) => {
       nativeCalls.push(
-        `submitted:${(event as CustomEvent<{ id: string }>).detail.id}`,
+        `submitted:${(event as CustomEvent<{ id: string}>).detail.id}`,
       );
     });
     domain.addEventListener("paid", () => nativeCalls.push("paid"));
@@ -1339,7 +1428,7 @@ describe("customEvents", () => {
     function MountedInput() {
       return () => (
         <input
-          data-testid="input"
+          aria-label="input"
           mix={[
             events.host,
             on("input", ({ currentTarget }) => {
@@ -1359,7 +1448,7 @@ describe("customEvents", () => {
     await result.act(() => Promise.resolve());
 
     assert.equal(
-      (result.$('[data-testid="input"]') as HTMLInputElement).dataset.ready,
+      (result.$('[aria-label="input"]') as HTMLInputElement).dataset.ready,
       "true",
     );
   });
@@ -1378,16 +1467,18 @@ describe("customEvents", () => {
 
     function subscribe(
       name: string,
-      id: string,
+      addresses: Record<string, ReadonlyArray<string>> | null,
       eventTypes: ReadonlySet<string> | null,
-      phase: "projection" | "effect" = "projection",
+      phase: "view" | "effect" = "view",
     ) {
       let element = document.createElement("output");
-      element.id = id;
       host.append(element);
       let subscription = {
         element,
         eventTypes,
+        ...(addresses === null
+          ? {}
+          : { addresses: new Map(Object.entries(addresses)) }),
         notify(event: CustomEvent) {
           calls.push(`${name}:${event.type}`);
         },
@@ -1397,18 +1488,27 @@ describe("customEvents", () => {
           ? customEventsRuntime.subscribe(runtime, "effect", subscription)
           : customEventsRuntime.subscribe(
             runtime,
-            "projection",
+            "view",
             subscription,
           );
       cleanups.push(cleanup);
       return cleanup;
     }
 
-    let removeExact = subscribe("exact", "first", new Set(["updated"]));
-    let removeBroad = subscribe("broad", "", new Set(["updated"]));
-    subscribe("other-key", "second", new Set(["updated"]));
-    subscribe("wildcard", "first", null);
-    subscribe("effect", "first", new Set(["updated"]), "effect");
+    let removeExact = subscribe(
+      "exact",
+      { updated: ["first"] },
+      new Set(["updated"]),
+    );
+    let removeBroad = subscribe("broad", null, new Set(["updated"]));
+    subscribe("other-key", { updated: ["second"] }, new Set(["updated"]));
+    subscribe("wildcard", { "*": ["first"] }, null);
+    subscribe(
+      "effect",
+      { updated: ["first"] },
+      new Set(["updated"]),
+      "effect",
+    );
 
     function event(key?: string) {
       let init = { bubbles: true, cancelable: false };
@@ -1467,7 +1567,7 @@ describe("customEvents", () => {
       reachedParent = true;
     });
 
-    let unsubscribe = customEventsRuntime.subscribe(runtime, "projection", {
+    let unsubscribe = customEventsRuntime.subscribe(runtime, "view", {
       element: host,
       eventTypes: new Set(["updated"]),
       notify() {},

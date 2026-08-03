@@ -76,7 +76,6 @@ let cellCss = css({
   font: "inherit",
   boxSizing: "border-box",
 });
-let localEvtOpts = { bubbles: false };
 
 export const SevenGuisCells = clientEntry(
   import.meta.url,
@@ -85,15 +84,12 @@ export const SevenGuisCells = clientEntry(
     let renderCounts = new Map<CellId, number>();
     let sheet = customEvents<{
       values: Values;
-      focusTargetId: CellId;
+      focusTarget: CellId;
       cellDrafted: string;
-    }>().withState(
-      {
-        values: calculate(formulas),
-        focusTargetId: cellId("A", 0),
-      },
-      { keyBy: { focusTargetId: "value" } },
-    );
+    }>().withState({
+      values: calculate(formulas),
+      focusTarget: cellId("A", 0),
+    });
     return () => (
       <section mix={[taskCss]}>
         <h2>Cells</h2>
@@ -127,12 +123,8 @@ export const SevenGuisCells = clientEntry(
                   {columns.map((column, __, _, id = cellId(column, row)) => (
                     <td key={id}>
                       <sheet.view.input
-                        on={[
-                          sheet.events.values[id],
-                          sheet.events.cellDrafted,
-                        ]}
+                        on={[sheet.events.values[id], sheet.events.cellDrafted]}
                         aria-label={id}
-                        id={id}
                         data-render-count={() => {
                           let count = (renderCounts.get(id) ?? 0) + 1;
                           renderCounts.set(id, count);
@@ -147,9 +139,11 @@ export const SevenGuisCells = clientEntry(
                         }
                         mix={[
                           cellCss,
-                          sheet.events.focusTargetId.on(({ currentTarget }) => {
-                            currentTarget.focus();
-                          }),
+                          sheet.events.focusTarget
+                            .as(id)
+                            .on(({ currentTarget }) => {
+                              currentTarget.focus();
+                            }),
                           on("blur", ({ currentTarget }) => {
                             formulas[id] = currentTarget.value;
                             let previousValue = sheet.values[id];
@@ -162,7 +156,6 @@ export const SevenGuisCells = clientEntry(
                                 sheet.events.create(
                                   "cellDrafted",
                                   values[id] ?? "",
-                                  localEvtOpts,
                                 ),
                               );
                             }
@@ -172,7 +165,6 @@ export const SevenGuisCells = clientEntry(
                               sheet.events.create(
                                 "cellDrafted",
                                 formulas[id] ?? "",
-                                localEvtOpts,
                               ),
                             );
                             currentTarget.select();
@@ -182,7 +174,6 @@ export const SevenGuisCells = clientEntry(
                               sheet.events.create(
                                 "cellDrafted",
                                 currentTarget.value,
-                                localEvtOpts,
                               ),
                             );
                           }),
@@ -192,7 +183,7 @@ export const SevenGuisCells = clientEntry(
                             if (nextId === undefined) return;
                             event.preventDefault();
                             sheet.update((draft) => {
-                              draft.focusTargetId = nextId;
+                              draft.focusTarget = nextId;
                             });
                           }),
                         ]}

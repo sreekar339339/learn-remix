@@ -12,33 +12,30 @@ export const KeyedSelection = clientEntry(
   import.meta.url,
   function KeyedSelection() {
     let selection = customEvents<{
-      selectedId: string;
-    }>().withState(
-      { selectedId: items[0]!.id },
-      {
-        keyBy: { selectedId: "value" },
-      },
-    );
-    let projectionCounts = new Map<string, number>();
+      selectedId: string | null;
+    }>().withState({
+      selectedId: items[0]!.id,
+    });
+    let renderCounts = new Map<string, number>();
 
     return () => (
       <section mix={taskCss}>
         <h2>Keyed selection</h2>
         <p>
-          Selecting an item updates only the item losing selection and the item
-          gaining it.
+          Selecting an item changes its identity, so only the losing and gaining
+          option re-render.
         </p>
         <div mix={rowCss}>
           {items.map((item) => (
             <selection.view.button
-              on={selection.events.selectedId}
+              on={selection.events.selectedId.as(item.id)}
               key={item.id}
-              id={item.id}
+              aria-label={item.label}
               type="button"
-              aria-pressed={(event) => event.detail === item.id}
-              data-projections={() => {
-                let count = (projectionCounts.get(item.id) ?? 0) + 1;
-                projectionCounts.set(item.id, count);
+              aria-pressed={({ detail }) => detail}
+              data-renders={() => {
+                let count = (renderCounts.get(item.id) ?? 0) + 1;
+                renderCounts.set(item.id, count);
                 return count;
               }}
               mix={[

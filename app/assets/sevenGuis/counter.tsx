@@ -1,29 +1,41 @@
 import { clientEntry, on } from "remix/ui";
-import { buttonCss, taskCss } from "./styles.ts";
+import { customEvents } from "../utils/customEvents/index.tsx";
+import { buttonCss } from "./styles.ts";
 
 export const SevenGuisCounter = clientEntry(
   import.meta.url,
-  function SevenGuisCounter(handle) {
-    let count = 0;
+  function SevenGuisCounter() {
+    let counterEvents = customEvents<{ count: number }>().withState({
+      count: 0,
+    });
+    let incrementOffset = 1;
     return () => (
-      <section mix={taskCss}>
-        <h2>Counter</h2>
-        <output aria-label="count">
-          <span>{count}</span>
-        </output>
+      <>
         <button
-          type="button"
           mix={[
             buttonCss,
             on("click", () => {
-              count += 1;
-              handle.update();
+              counterEvents.update((state) => {
+                state.count += incrementOffset;
+              });
             }),
           ]}
         >
-          Count
+          <counterEvents.view.span>
+            {() => counterEvents.count}
+          </counterEvents.view.span>
         </button>
-      </section>
+        <label>
+          Increment by{" "}
+          <input
+            mix={on("input", ({ currentTarget }) => {
+              incrementOffset = currentTarget.valueAsNumber;
+            })}
+            type="number"
+            defaultValue={incrementOffset}
+          />
+        </label>
+      </>
     );
   },
 );

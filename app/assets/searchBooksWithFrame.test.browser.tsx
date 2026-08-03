@@ -41,7 +41,7 @@ describe("SearchBooksWithFrame", () => {
     assert.match(result.container.textContent ?? "", /Dune result/);
   });
 
-  it("moves between empty and submitted query projections", async (t) => {
+  it("moves between empty and submitted query views", async (t) => {
     let selections = 0;
     let requests: PendingFrame[] = [];
     t.mock.method(HTMLInputElement.prototype, "select", () => {

@@ -1,6 +1,6 @@
 export const ALL_EVENTS = "*";
 
-export type SubscriptionPhase = "projection" | "effect";
+export type SubscriptionPhase = "view" | "effect";
 
 type DispatchTargetRegistration = {
   count: number;
@@ -33,6 +33,8 @@ export type CustomEventsBatchRuntimeEntry = {
 type ProductEventMetadata = {
   entries: CustomEventsBatchRuntimeEntry[];
   completion?: Promise<void>;
+  /** Batch-shaped carriers do not natively deliver their entry types. */
+  transaction?: boolean;
 };
 
 type TransactionEvent = {
@@ -214,7 +216,7 @@ export function createCustomEventsRuntimeState(): CustomEventsRuntimeState {
     eventTypeListeners: new Set(),
     eventMetadata: new WeakMap(),
     subscriptions: {
-      projection: new Map(),
+      view: new Map(),
       effect: new Map(),
     },
     dispatchTargets: new WeakMap(),
@@ -239,7 +241,10 @@ function createProductEvent(
   for (let { type } of entries) addEventType(runtime, type);
   let event = new CustomEvent(carrierType, { ...init, detail });
   if (detail === undefined) setEventProperty(event, "detail", undefined);
-  runtime.eventMetadata.set(event, { entries });
+  runtime.eventMetadata.set(event, {
+    entries,
+    transaction: entries.length !== 1 || entries[0]?.type !== carrierType,
+  });
   return event;
 }
 
@@ -270,10 +275,7 @@ function subscribe(
       route = createAddressNode();
       phase.set(selector, route);
     }
-    let selectedAddress = subscription.addresses?.get(selector);
-    let address = selectedAddress?.length || !subscription.element.id
-      ? selectedAddress ?? []
-      : [canonicalAddressSegment(subscription.element.id)];
+    let address = subscription.addresses?.get(selector) ?? [];
     addToRoute(route, subscription, address);
     routes.push([selector, route, address]);
   }
@@ -341,6 +343,9 @@ function matchesScope(
   originScope: EventTarget,
   originTarget: EventTarget,
 ) {
+  if (isElement(originTarget) && subscription.element === originTarget) {
+    return true;
+  }
   if (
     !event.bubbles &&
     isElement(originTarget) &&
@@ -389,7 +394,7 @@ function notifyEntries(
     for (
       let subscription of matchingSubscriptions(
         runtime,
-        "projection",
+        "view",
         transactionEvent,
       )
     ) {
@@ -418,11 +423,11 @@ function notifyEntries(
         subscription.notify(match.event)
       ),
     );
-  let projectionsCommitted = source.length
+  let viewsCommitted = source.length
     ? commit(source).then(() => commit(remaining))
     : commit(remaining);
 
-  let projectionsAndEffectsSettled = projectionsCommitted.then(() => {
+  let viewsAndEffectsSettled = viewsCommitted.then(() => {
     let effectResults: unknown[] = [];
     for (let transactionEvent of events) {
       for (
@@ -451,14 +456,10 @@ function notifyEntries(
     return Promise.all(effectResults);
   });
 
-  return projectionsAndEffectsSettled.then(() => {});
+  return viewsAndEffectsSettled.then(() => {});
 }
 
-function process(
-  runtime: CustomEventsRuntimeState,
-  event: Event,
-  fallbackScope: EventTarget,
-) {
+function process(runtime: CustomEventsRuntimeState, event: Event) {
   if (!(event instanceof CustomEvent)) return;
   let metadata = runtime.eventMetadata.get(event);
   if (!metadata) return;
@@ -466,18 +467,15 @@ function process(
 
   let originTarget = event.target;
   if (!originTarget) return;
-  if (
-    isElement(fallbackScope) &&
-    runtime.hosts.has(fallbackScope) &&
-    event.composed !== true
-  ) {
+  let originHost = isElement(originTarget)
+    ? findHost(runtime, originTarget)
+    : undefined;
+  if (originHost && event.composed !== true) {
     event.stopPropagation();
   }
-  let isBatch = metadata.entries.length !== 1 ||
-    metadata.entries[0]?.type !== event.type;
-  if (isBatch && fallbackScope === runtime.defaultHost) {
+  if (metadata.transaction && originTarget === runtime.defaultHost) {
     for (let entry of metadata.entries) {
-      fallbackScope.dispatchEvent(
+      originTarget.dispatchEvent(
         new CustomEvent(entry.type, {
           bubbles: event.bubbles,
           cancelable: false,
@@ -488,10 +486,8 @@ function process(
     }
   }
 
-  let originScope = scopeFor(
-    runtime,
-    isElement(originTarget) ? originTarget : undefined,
-  ) ?? fallbackScope;
+  let originScope = originHost ??
+    (isElement(originTarget) ? originTarget : runtime.defaultHost ?? originTarget);
   try {
     metadata.completion = notifyEntries(
       runtime,
@@ -522,7 +518,7 @@ function registerDispatchTarget(
     listenedTypes.add(type);
     target.addEventListener(
       type,
-      (event) => process(runtime, event, target),
+      (event) => process(runtime, event),
       { signal: controller.signal },
     );
   };

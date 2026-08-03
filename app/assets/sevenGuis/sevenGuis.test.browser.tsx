@@ -20,27 +20,27 @@ async function settle(result: RenderResult) {
 }
 
 describe("7GUIs custom-event choreography", () => {
-  it("updates both sides of an identity-valued selection", async (t) => {
+  it("updates the selected identity and re-renders only the losing and gaining options", async (t) => {
     let result = render(<KeyedSelection />);
     t.after(() => result.cleanup());
 
-    let alpha = result.$("#alpha") as HTMLButtonElement;
-    let bravo = result.$("#bravo") as HTMLButtonElement;
-    let charlie = result.$("#charlie") as HTMLButtonElement;
+    let alpha = result.$('button[aria-label="Alpha"]') as HTMLButtonElement;
+    let bravo = result.$('button[aria-label="Bravo"]') as HTMLButtonElement;
+    let charlie = result.$('button[aria-label="Charlie"]') as HTMLButtonElement;
     assert.equal(alpha.getAttribute("aria-pressed"), "true");
     assert.equal(bravo.getAttribute("aria-pressed"), "false");
-    assert.equal(alpha.dataset.projections, "1");
-    assert.equal(bravo.dataset.projections, "1");
-    assert.equal(charlie.dataset.projections, "1");
+    assert.equal(alpha.dataset.renders, "1");
+    assert.equal(bravo.dataset.renders, "1");
+    assert.equal(charlie.dataset.renders, "1");
 
     await result.act(() => bravo.click());
     await settle(result);
 
     assert.equal(alpha.getAttribute("aria-pressed"), "false");
     assert.equal(bravo.getAttribute("aria-pressed"), "true");
-    assert.equal(alpha.dataset.projections, "2");
-    assert.equal(bravo.dataset.projections, "2");
-    assert.equal(charlie.dataset.projections, "1");
+    assert.equal(alpha.dataset.renders, "2");
+    assert.equal(bravo.dataset.renders, "2");
+    assert.equal(charlie.dataset.renders, "1");
     assert.equal(result.$("output")?.textContent, "bravo");
   });
 
@@ -49,14 +49,23 @@ describe("7GUIs custom-event choreography", () => {
     t.after(() => result.cleanup());
 
     let button = result.$("button") as HTMLButtonElement;
-    await result.act(() => button.click());
-    await settle(result);
-    await result.act(() => button.click());
-    await settle(result);
-    await result.act(() => button.click());
-    await settle(result);
+    let display = () => button.querySelector("span")?.textContent ?? "";
 
-    assert.equal(result.$('[aria-label="count"]')?.textContent, "3");
+    assert.equal(display(), "0");
+    for (let index = 0; index < 3; index++) {
+      await result.act(() => button.click());
+      await settle(result);
+    }
+    assert.equal(display(), "3");
+
+    let offset = result.$('input[type="number"]') as HTMLInputElement;
+    await result.act(() => {
+      offset.value = "10";
+      offset.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    await result.act(() => button.click());
+    await settle(result);
+    assert.equal(display(), "13");
   });
 
   it("converts temperatures in both directions and leaves invalid input alone", async (t) => {

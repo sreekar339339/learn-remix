@@ -9,7 +9,8 @@ describe("draggable custom events", () => {
     function DraggableCard(handle: Handle) {
       return () => (
         <div
-          data-testid="draggable-card"
+          role="group"
+          aria-label="draggable-card"
           style={{ left: "12px", top: "8px" }}
           mix={[
             draggable(true),
@@ -35,7 +36,9 @@ describe("draggable custom events", () => {
     let result = render(<DraggableCard />);
     t.after(() => result.cleanup());
 
-    let card = result.$('[data-testid="draggable-card"]') as HTMLDivElement;
+    let card = result.$(
+      '[role="group"][aria-label="draggable-card"]',
+    ) as HTMLDivElement;
     Object.defineProperty(card, "setPointerCapture", {
       configurable: true,
       value() {},

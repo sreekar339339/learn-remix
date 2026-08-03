@@ -93,8 +93,6 @@ export type CustomEventsInit = Omit<EventInit, "cancelable"> & {
   cancelable?: never;
   /** Throws the signal's abort reason when it is already aborted. */
   signal?: AbortSignal;
-  /** Routes the event to event-aware elements with the same DOM `id`. */
-  key?: PropertyKey;
 };
 
 export type CustomEventsOptions = {
@@ -115,7 +113,7 @@ export type CustomEventsEventMap<
     & { readonly type: Type };
 };
 
-type CustomEventsElementProjection<Input, Value> = (input: Input) => Value;
+type CustomEventsReactiveProp<Input, Value> = (input: Input) => Value;
 
 type CustomEventsReactiveElementProps<
   Input,
@@ -126,13 +124,13 @@ type CustomEventsReactiveElementProps<
       ? Props<Tag>[Key]
       :
           | Props<Tag>[Key]
-          | CustomEventsElementProjection<NoInfer<Input>, Props<Tag>[Key]>
+          | CustomEventsReactiveProp<NoInfer<Input>, Props<Tag>[Key]>
     : Props<Tag>[Key];
 } & {
   [Key in `data-${string}`]?:
     | string
     | undefined
-    | CustomEventsElementProjection<NoInfer<Input>, string | undefined>;
+    | CustomEventsReactiveProp<NoInfer<Input>, string | undefined>;
 };
 
 type CustomEventsIntrinsicChildren<
@@ -149,7 +147,7 @@ type CustomEventsElementProps<
     on: On;
     children?:
       | CustomEventsIntrinsicChildren<Tag>
-      | CustomEventsElementProjection<NoInfer<Input>, RemixNode>;
+      | CustomEventsReactiveProp<NoInfer<Input>, RemixNode>;
   };
 
 type CustomEventsInputProps<
@@ -172,7 +170,7 @@ type CustomEventsSourceItem<
 
 type CustomEventsSourceEvent<Source> = Source extends readonly (infer Item)[]
   ? CustomEventsSourceEvent<Item>
-  : Source extends EventSource<infer Value, infer Type, boolean>
+  : Source extends EventSource<infer Value, infer Type, boolean, any>
     ? CustomEvent<Value> & { readonly type: Type }
   : never;
 
@@ -194,6 +192,37 @@ type CustomEventsDefaultElementProps<
   "on"
 > & { on?: never };
 
+type CustomEventsStateDefaultInput<
+  Events extends EventDetails,
+  State extends EventDetails,
+> = CustomEvent<State> | {
+  [Key in CustomEventsEventType<Events>]: Key extends keyof State & string
+    ? never
+    : CustomEventsEventMap<Events>[Key];
+}[CustomEventsEventType<Events>];
+
+/** Default `on`-omitted element for a state model: re-renders from the whole snapshot. */
+type CustomEventsStateDefaultElementProps<
+  Events extends EventDetails,
+  State extends EventDetails,
+  Tag extends keyof JSX.IntrinsicElements,
+> = Omit<
+  CustomEventsReactiveElementProps<
+    CustomEventsStateDefaultInput<Events, State>,
+    Tag
+  >,
+  "children" | "on"
+> & {
+  on?: never;
+  initial?: never;
+  children?:
+    | CustomEventsIntrinsicChildren<Tag>
+    | CustomEventsReactiveProp<
+      NoInfer<CustomEventsStateDefaultInput<Events, State>>,
+      RemixNode
+    >;
+};
+
 type CustomEventsOccurrenceProps<
   Source,
   Tag extends keyof JSX.IntrinsicElements,
@@ -208,14 +237,18 @@ type CustomEventsOccurrenceProps<
 > & (Initialized extends true ? { initial: CustomEventsSourceEvent<Source> }
   : { initial?: never });
 
-/** Event-aware intrinsic element with declarative reactive attributes. */
-export type CustomEventsEventElement<
+/** Event-aware intrinsic element that re-renders from matched events. */
+export type CustomEventsEventedView<
   Events extends EventDetails,
   State extends EventDetails | never,
   Tag extends keyof JSX.IntrinsicElements,
 > = GenericJSXComponent & {
-  (props: CustomEventsDefaultElementProps<Events, Tag, true>): RemixNode;
-  (props: CustomEventsDefaultElementProps<Events, Tag, false>): RemixNode;
+  (props: [State] extends [never]
+    ? CustomEventsDefaultElementProps<Events, Tag, true>
+    : CustomEventsStateDefaultElementProps<Events, State, Tag>): RemixNode;
+  (props: [State] extends [never]
+    ? CustomEventsDefaultElementProps<Events, Tag, false>
+    : CustomEventsStateDefaultElementProps<Events, State, Tag>): RemixNode;
   <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
     props: CustomEventsOccurrenceProps<Source, Tag, true>,
   ): RemixNode;
@@ -224,11 +257,11 @@ export type CustomEventsEventElement<
   ): RemixNode;
 };
 
-export type CustomEventsEventElements<
+export type CustomEventsEventedViews<
   Events extends EventDetails,
   State extends EventDetails | never = never,
 > = {
-  [Tag in keyof JSX.IntrinsicElements]: CustomEventsEventElement<
+  [Tag in keyof JSX.IntrinsicElements]: CustomEventsEventedView<
     Events,
     State,
     Tag
@@ -242,7 +275,7 @@ type NullDetailEventTypes<Events extends EventDetails> = {
 }[keyof Events & string];
 
 /** Per-entry routing; propagation belongs to the shared batch carrier. */
-export type CustomEventsBatchEntryOptions = Pick<CustomEventsInit, "key">;
+export type CustomEventsBatchEntryOptions = Record<string, never>;
 
 type CustomEventsBatchEntryConfiguration<Detail> = [Detail] extends [null]
   ? {
@@ -357,7 +390,7 @@ export type CustomEventsDescriptor<
     create: CustomEventsFactory<
       [State] extends [never] ? Events : Omit<Events, keyof State>
     >;
-    /** Dispatches and resolves after projections and effects settle. */
+    /** Dispatches and resolves after view updates and effects settle. */
     dispatch: CustomEventsDispatch<
       [State] extends [never] ? Events : Omit<Events, keyof State>
     >;
@@ -366,6 +399,6 @@ export type CustomEventsDescriptor<
     /** Makes an element the local boundary for this descriptor. */
     host: MixinDescriptor<Element, any>;
     /** Event-aware intrinsic elements for this descriptor. */
-    view: CustomEventsEventElements<Events, State>;
+    view: CustomEventsEventedViews<Events, State>;
   }
 ;
