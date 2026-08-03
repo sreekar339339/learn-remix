@@ -131,12 +131,8 @@ export const SevenGuisCells = clientEntry(
                           return String(count);
                         }}
                         type="text"
-                        defaultValue={sheet.values[id]}
-                        value={(event) =>
-                          event.type === "cellDrafted"
-                            ? event.detail
-                            : sheet.values[id]
-                        }
+                        defaultValue={({ detail }) => detail[1] ?? detail[0]}
+                        value={({ detail }) => detail[1] ?? detail[0]}
                         mix={[
                           cellCss,
                           sheet.events.focusTarget
@@ -146,9 +142,10 @@ export const SevenGuisCells = clientEntry(
                             }),
                           on("blur", ({ currentTarget }) => {
                             formulas[id] = currentTarget.value;
-                            let previousValue = sheet.values[id];
                             let values = calculate(formulas);
+                            let previousValue: string | undefined;
                             sheet.update((draft) => {
+                              previousValue = draft.values[id];
                               Object.assign(draft.values, values);
                             });
                             if (Object.is(previousValue, values[id])) {

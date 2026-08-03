@@ -23,8 +23,8 @@ export const SevenGuisTimer = clientEntry(
               let now = performance.now();
               let delta = (now - last) / 1000;
               last = now;
-              if (timer.elapsed >= timer.duration) return;
               timer.update((draft) => {
+                if (draft.elapsed >= draft.duration) return;
                 draft.elapsed = Math.min(draft.duration, draft.elapsed + delta);
               });
             }, 100);
@@ -37,13 +37,13 @@ export const SevenGuisTimer = clientEntry(
         <h2>Timer</h2>
         <div>
           <timer.view.progress
-            value={({ detail: timing }) =>
-              Math.min(1, timing.elapsed / timing.duration)
+            value={({ detail }) =>
+              Math.min(1, detail.elapsed / detail.duration)
             }
             max={1}
           />
           <timer.view.output on={timer.events.elapsed}>
-            {({detail: elapsed}) => `${elapsed.toFixed(1)}s elapsed`}
+            {({ detail }) => `${detail.toFixed(1)}s elapsed`}
           </timer.view.output>
         </div>
         <label mix={rowCss}>
@@ -66,7 +66,7 @@ export const SevenGuisTimer = clientEntry(
             ]}
           />
           <timer.view.span on={timer.events.duration}>
-            {({detail: duration}) => `${duration.toFixed(1)}s`}
+            {({ detail }) => `${detail.toFixed(1)}s`}
           </timer.view.span>
         </label>
         <button

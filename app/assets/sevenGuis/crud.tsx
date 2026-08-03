@@ -43,7 +43,7 @@ export const SevenGuisCrud = clientEntry(
           Filter prefix{" "}
           <input
             aria-label="Filter prefix"
-            defaultValue={model.prefix}
+            defaultValue={model.state.prefix}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
@@ -72,15 +72,15 @@ export const SevenGuisCrud = clientEntry(
             ]}
             size={7}
             aria-label="People"
-            value={() => model.selectedId ?? ""}
+            value={({ detail }) => detail[2] ?? ""}
             mix={[
               inputCss,
               on("change", ({ currentTarget }) => {
-                let selected = model.people.find(
-                  (person) => person.id === Number(currentTarget.value),
-                );
-                if (!selected) return;
                 model.update((draft) => {
+                  let selected = draft.people.find(
+                    (person) => person.id === Number(currentTarget.value),
+                  );
+                  if (!selected) return;
                   draft.selectedId = selected.id;
                   draft.draft.name = selected.name;
                   draft.draft.surname = selected.surname;
@@ -88,8 +88,8 @@ export const SevenGuisCrud = clientEntry(
               }),
             ]}
           >
-            {() =>
-              visiblePeople(model.people, model.prefix).map((person) => (
+            {({ detail }) =>
+              visiblePeople(detail[0], detail[1]).map((person) => (
                 <option value={person.id}>
                   {person.surname}, {person.name}
                 </option>
@@ -100,13 +100,13 @@ export const SevenGuisCrud = clientEntry(
             on={[model.events.draft, model.events.selectedId]}
             mix={css({ display: "grid", gap: 8 })}
           >
-            {() => (
+            {({ detail }) => (
               <>
                 <label>
                   Name{" "}
                   <input
                     aria-label="Name"
-                    value={model.draft.name}
+                    value={detail[0].name}
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
@@ -121,7 +121,7 @@ export const SevenGuisCrud = clientEntry(
                   Surname{" "}
                   <input
                     aria-label="Surname"
-                    value={model.draft.surname}
+                    value={detail[0].surname}
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
@@ -136,7 +136,7 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      !(model.draft.name.trim() && model.draft.surname.trim())
+                      !(detail[0].name.trim() && detail[0].surname.trim())
                     }
                     mix={[
                       buttonCss,
@@ -157,14 +157,14 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      model.selectedId === null ||
-                      !(model.draft.name.trim() && model.draft.surname.trim())
+                      detail[1] === null ||
+                      !(detail[0].name.trim() && detail[0].surname.trim())
                     }
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        if (model.selectedId === null) return;
                         model.update((draft) => {
+                          if (draft.selectedId === null) return;
                           let person = draft.people.find(
                             (person) => person.id === draft.selectedId,
                           );
@@ -177,12 +177,12 @@ export const SevenGuisCrud = clientEntry(
                   </button>
                   <button
                     type="button"
-                    disabled={model.selectedId === null}
+                    disabled={detail[1] === null}
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        if (model.selectedId === null) return;
                         model.update((draft) => {
+                          if (draft.selectedId === null) return;
                           let index = draft.people.findIndex(
                             (person) => person.id === draft.selectedId,
                           );

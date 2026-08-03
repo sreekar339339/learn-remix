@@ -60,7 +60,7 @@ export const KeyedSelection = clientEntry(
         <p>
           Selected:{" "}
           <selection.view.output on={selection.events.selectedId}>
-            {(event) => event.detail}
+            {({ detail }) => detail ?? ""}
           </selection.view.output>
         </p>
       </section>

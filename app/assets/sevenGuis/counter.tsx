@@ -22,7 +22,7 @@ export const SevenGuisCounter = clientEntry(
           ]}
         >
           <counterEvents.view.span>
-            {() => counterEvents.count}
+            {({ detail }) => detail.count}
           </counterEvents.view.span>
         </button>
         <label>

@@ -192,33 +192,77 @@ type CustomEventsDefaultElementProps<
   "on"
 > & { on?: never };
 
-type CustomEventsStateDefaultInput<
+/** The value selected by a source: its payload for occurrences, its path value for state. */
+type CustomEventsSourceValue<Source> = Source extends EventSource<infer Value, any, any, any>
+  ? Value
+  : never;
+
+/**
+ * The detail delivered to a state view. One source yields the selected value;
+ * several sources yield a tuple index-aligned with `on`.
+ */
+type CustomEventsSourceDetail<Source> = Source extends readonly unknown[]
+  ? { [Index in keyof Source]: CustomEventsSourceValue<Source[Index]> }
+  : CustomEventsSourceValue<Source>;
+
+/** Payloads of the occurrence events not retained by the store. */
+type CustomEventsOccurrenceDetail<
   Events extends EventDetails,
   State extends EventDetails,
-> = CustomEvent<State> | {
+> = {
   [Key in CustomEventsEventType<Events>]: Key extends keyof State & string
     ? never
-    : CustomEventsEventMap<Events>[Key];
+    : Events[Key];
 }[CustomEventsEventType<Events>];
 
-/** Default `on`-omitted element for a state model: re-renders from the whole snapshot. */
+/** Detail for an `on`-omitted state view: the whole snapshot or one occurrence payload. */
+type CustomEventsStateViewInput<
+  Events extends EventDetails,
+  State extends EventDetails,
+> = {
+  detail: State | CustomEventsOccurrenceDetail<Events, State>;
+};
+
+/** Evented-view on a state store: `on` selects sources; the detail is their value(s). */
+type CustomEventsStateElementProps<
+  Events extends EventDetails,
+  State extends EventDetails,
+  Tag extends keyof JSX.IntrinsicElements,
+  Source,
+> = Omit<
+  CustomEventsReactiveElementProps<
+    { detail: CustomEventsSourceDetail<Source> },
+    Tag
+  >,
+  "children" | "on"
+> & {
+  on: Source;
+  initial?: never;
+  children?:
+    | CustomEventsIntrinsicChildren<Tag>
+    | CustomEventsReactiveProp<
+      NoInfer<{ detail: CustomEventsSourceDetail<Source> }>,
+      RemixNode
+    >;
+};
+
+/** Default `on`-omitted element for a state store: subscribes to every event. */
 type CustomEventsStateDefaultElementProps<
   Events extends EventDetails,
   State extends EventDetails,
   Tag extends keyof JSX.IntrinsicElements,
 > = Omit<
   CustomEventsReactiveElementProps<
-    CustomEventsStateDefaultInput<Events, State>,
+    CustomEventsStateViewInput<Events, State>,
     Tag
   >,
   "children" | "on"
 > & {
   on?: never;
-  initial?: never;
   children?:
     | CustomEventsIntrinsicChildren<Tag>
     | CustomEventsReactiveProp<
-      NoInfer<CustomEventsStateDefaultInput<Events, State>>,
+      NoInfer<CustomEventsStateViewInput<Events, State>>,
       RemixNode
     >;
 };
@@ -250,10 +294,14 @@ export type CustomEventsEventedView<
     ? CustomEventsDefaultElementProps<Events, Tag, false>
     : CustomEventsStateDefaultElementProps<Events, State, Tag>): RemixNode;
   <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
-    props: CustomEventsOccurrenceProps<Source, Tag, true>,
+    props: [State] extends [never]
+      ? CustomEventsOccurrenceProps<Source, Tag, true>
+      : CustomEventsStateElementProps<Events, State, Tag, Source>,
   ): RemixNode;
   <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
-    props: CustomEventsOccurrenceProps<Source, Tag, false>,
+    props: [State] extends [never]
+      ? CustomEventsOccurrenceProps<Source, Tag, false>
+      : CustomEventsStateElementProps<Events, State, Tag, Source>,
   ): RemixNode;
 };
 

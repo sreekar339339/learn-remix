@@ -25,8 +25,8 @@ describe("AppContext", () => {
     let calls: string[] = [];
     let controller = new AbortController();
 
-    assert.equal(context.user, null);
-    assert.deepEqual(context.settings, {
+    assert.equal(context.state.user, null);
+    assert.deepEqual(context.state.settings, {
       layout: "normal",
       theme: "system",
     });
@@ -43,7 +43,7 @@ describe("AppContext", () => {
       draft.user = { name: "Ada", age: 37 };
     });
 
-    assert.deepEqual(context.user, { name: "Ada", age: 37 });
+    assert.deepEqual(context.state.user, { name: "Ada", age: 37 });
     assert.equal(calls.join(","), "named:Ada");
 
     context.update((draft) => {
@@ -51,8 +51,8 @@ describe("AppContext", () => {
       draft.settings = { layout: "zen", theme: "dark" };
     });
 
-    assert.deepEqual(context.user, { name: "Grace", age: 85 });
-    assert.deepEqual(context.settings, { layout: "zen", theme: "dark" });
+    assert.deepEqual(context.state.user, { name: "Grace", age: 85 });
+    assert.deepEqual(context.state.settings, { layout: "zen", theme: "dark" });
     assert.equal(
       calls.join(","),
       "named:Ada,named:Grace,map:dark:zen",

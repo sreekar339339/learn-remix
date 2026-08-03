@@ -14,7 +14,7 @@ function formatTemperature(value: number) {
 export const SevenGuisTemperatureConverter = clientEntry(
   import.meta.url,
   function SevenGuisTemperatureConverter() {
-    let temperature = customEvents<{
+    let { view, update, events, state } = customEvents<{
       celsius: string;
       fahrenheit: string;
     }>().withState({ celsius: "", fahrenheit: "" });
@@ -23,17 +23,17 @@ export const SevenGuisTemperatureConverter = clientEntry(
       <section mix={taskCss}>
         <h2>Temperature Converter</h2>
         <div mix={rowCss}>
-          <temperature.view.input
-            on={temperature.events.celsius}
+          <view.input
+            on={events.celsius}
             aria-label="Celsius"
-            value={(event) => event.detail}
+            value={({ detail }) => detail}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.update((draft) => {
+                update((draft) => {
                   draft.celsius = value;
                   draft.fahrenheit = formatTemperature(number * (9 / 5) + 32);
                 });
@@ -41,17 +41,17 @@ export const SevenGuisTemperatureConverter = clientEntry(
             ]}
           />
           <span>Celsius =</span>
-          <temperature.view.input
-            on={temperature.events.fahrenheit}
+          <view.input
+            on={events.fahrenheit}
             aria-label="Fahrenheit"
-            value={(event) => event.detail}
+            value={({ detail }) => detail}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                temperature.update((draft) => {
+                update((draft) => {
                   draft.celsius = formatTemperature((number - 32) * (5 / 9));
                   draft.fahrenheit = value;
                 });

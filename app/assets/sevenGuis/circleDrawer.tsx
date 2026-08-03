@@ -71,18 +71,10 @@ export const SevenGuisCircleDrawer = clientEntry(
       history: { snapshots: [new Map()], index: 0 },
     });
     let nextCircleId = 1;
-    function addCircle(circle: Circle) {
-      drawing.update((draft) => {
-        draft.circles.set(circle.id, circle);
-        recordDrawingSnapshot(draft.circles, draft.history);
-      });
-      void handle.update();
-    }
-
     function closeDiameterEditor() {
-      let id = drawing.editingCircleById;
-      if (id === null) return;
       drawing.update((draft) => {
+        let id = draft.editingCircleById;
+        if (id === null) return;
         let circle = draft.circles.get(id);
         let committedCircle =
           draft.history.snapshots[draft.history.index]?.get(id);
@@ -93,8 +85,10 @@ export const SevenGuisCircleDrawer = clientEntry(
       });
     }
 
-    function travel(index: number) {
+    function travel(direction: -1 | 1) {
       drawing.update((draft) => {
+        let index = draft.history.index + direction;
+        if (index < 0 || index >= draft.history.snapshots.length) return;
         draft.circles = new Map(
           draft.history.snapshots[index]!.entries().map(([id, circle]) => [
             id,
@@ -114,13 +108,11 @@ export const SevenGuisCircleDrawer = clientEntry(
           <drawing.view.button
             on={drawing.events.history}
             type="button"
-            disabled={(event) => event.detail.index === 0}
+            disabled={({ detail }) => detail.index === 0}
             mix={[
               buttonCss,
               on("click", () => {
-                if (drawing.history.index > 0) {
-                  travel(drawing.history.index - 1);
-                }
+                travel(-1);
               }),
             ]}
           >
@@ -129,18 +121,13 @@ export const SevenGuisCircleDrawer = clientEntry(
           <drawing.view.button
             on={drawing.events.history}
             type="button"
-            disabled={(event) =>
-              event.detail.index === event.detail.snapshots.length - 1
+            disabled={({ detail }) =>
+              detail.index === detail.snapshots.length - 1
             }
             mix={[
               buttonCss,
               on("click", () => {
-                if (
-                  drawing.history.index <
-                  drawing.history.snapshots.length - 1
-                ) {
-                  travel(drawing.history.index + 1);
-                }
+                travel(1);
               }),
             ]}
           >
@@ -158,26 +145,24 @@ export const SevenGuisCircleDrawer = clientEntry(
               backgroundColor: "white",
             }),
             on("click", ({ currentTarget, clientX, clientY }) => {
-              if (drawing.editingCircleById !== null) {
-                return;
-              }
               let point = getCanvasPoint(currentTarget, clientX, clientY);
-              if (
-                !point ||
-                hitCircle(drawing.circles.values(), point.x, point.y)
-              ) {
-                return;
-              }
-              let circle = {
-                id: nextCircleId++,
-                ...point,
-                diameter: 30,
-              };
-              addCircle(circle);
+              if (!point) return;
+              drawing.update((draft) => {
+                if (draft.editingCircleById !== null) return;
+                if (hitCircle(draft.circles.values(), point.x, point.y)) return;
+                let circle = {
+                  id: nextCircleId++,
+                  ...point,
+                  diameter: 30,
+                };
+                draft.circles.set(circle.id, circle);
+                recordDrawingSnapshot(draft.circles, draft.history);
+              });
+              void handle.update();
             }),
           ]}
         >
-          {[...drawing.circles.values()].map((circle) => (
+          {[...drawing.state.circles.values()].map((circle) => (
             <drawing.view.circle
               on={[
                 drawing.events.circles.get(circle.id).diameter,
@@ -186,12 +171,11 @@ export const SevenGuisCircleDrawer = clientEntry(
               key={circle.id}
               cx={circle.x}
               cy={circle.y}
-              r={() =>
-                (drawing.circles.get(circle.id)?.diameter ?? circle.diameter) /
-                2
+              r={({ detail }) =>
+                (detail[0] ?? circle.diameter) / 2
               }
-              fill={() =>
-                drawing.editingCircleById === circle.id ? "#d4d4d8" : "none"
+              fill={({ detail }) =>
+                detail[1] ? "#d4d4d8" : "none"
               }
               mix={[
                 css({
@@ -203,10 +187,8 @@ export const SevenGuisCircleDrawer = clientEntry(
                 }),
                 on("contextmenu", (event) => {
                   event.preventDefault();
-                  if (drawing.editingCircleById !== null) {
-                    return;
-                  }
                   drawing.update((draft) => {
+                    if (draft.editingCircleById !== null) return;
                     draft.editingCircleById = circle.id;
                   });
                 }),
@@ -216,7 +198,7 @@ export const SevenGuisCircleDrawer = clientEntry(
         </svg>
         <drawing.view.form
           on={drawing.events.editingCircleById}
-          hidden={(event) => event.detail === null}
+          hidden={({ detail }) => detail === null}
           mix={[
             rowCss,
             on("submit", (event) => {
@@ -232,22 +214,22 @@ export const SevenGuisCircleDrawer = clientEntry(
               type="range"
               min={10}
               max={120}
-              defaultValue={() => {
-                let id = drawing.editingCircleById;
+              defaultValue={({ detail }) => {
+                let id = detail[0];
                 return id === null
                   ? 10
-                  : (drawing.circles.get(id)?.diameter ?? 10);
+                  : (detail[1].get(id)?.diameter ?? 10);
               }}
               mix={[
                 inputCss,
                 on("input", ({ currentTarget }) => {
-                  let id = drawing.editingCircleById;
-                  if (id === null) return;
                   let diameter = currentTarget.valueAsNumber;
-                  if (drawing.circles.get(id)?.diameter === diameter) return;
                   drawing.update((draft) => {
+                    let id = draft.editingCircleById;
+                    if (id === null) return;
                     let circle = draft.circles.get(id);
-                    if (circle) circle.diameter = diameter;
+                    if (!circle || circle.diameter === diameter) return;
+                    circle.diameter = diameter;
                   });
                 }),
               ]}

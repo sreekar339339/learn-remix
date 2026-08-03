@@ -124,7 +124,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
           alignItems: "start",
         })}
       >
-        {board.columns
+        {board.state.columns
           .entries()
           .map(([columnId, column]) => (
             <section key={columnId} mix={columnCss}>
@@ -134,9 +134,9 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                   on={board.events.columns.get(columnId)}
                   aria-label={`${column.title} view`}
                 >
-                  {({ detail: current }) => {
-                    if (!current) return null;
-                    let urgent = current.cards
+                  {({ detail }) => {
+                    if (!detail) return null;
+                    let urgent = detail.cards
                       .values()
                       .reduce((count, card) => count + Number(card.urgent), 0);
                     return `${urgent} urgent · rendered ${nextRenderCount(
@@ -152,21 +152,22 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                     on={board.events.columns.get(columnId).cards.get(cardId)}
                     key={cardId}
                     aria-label={initialCard.title}
-                    data-urgent={(event) => event.detail?.urgent}
+                    data-urgent={({ detail }) => detail?.urgent}
                     mix={cardCss}
                   >
-                    {({ detail: card }) =>
-                      card ? (
+                    {({ detail }) => {
+                      if (!detail) return null;
+                      return (
                         <>
-                          <strong>{card.title}</strong>
+                          <strong>{detail.title}</strong>
                           <span>
-                            {`${card.urgent ? "Urgent" : "Normal"} · rendered ${nextRenderCount(
+                            {`${detail.urgent ? "Urgent" : "Normal"} · rendered ${nextRenderCount(
                               cardId,
                             )}×`}
                           </span>
                           <button
                             type="button"
-                            aria-label={`Toggle ${card.title} urgency`}
+                            aria-label={`Toggle ${detail.title} urgency`}
                             mix={[
                               buttonCss,
                               on("click", () => {
@@ -182,8 +183,8 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                             Toggle urgency
                           </button>
                         </>
-                      ) : null
-                    }
+                      );
+                    }}
                   </board.view.article>
                 ))
                 .toArray()}

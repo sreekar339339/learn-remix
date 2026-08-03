@@ -61,16 +61,23 @@ function prependMixin(mix: unknown, internalMixin: unknown) {
     : [internalMixin, mix];
 }
 
-function createViewEvent(
-  metadata: EventSourceMetadata,
-  sourceEvent?: CustomEvent,
+function computeViewInput(
+  trigger: CustomEvent | undefined,
+  sources: readonly EventSourceMetadata[],
+  defaultSource: EventSourceMetadata | undefined,
+  getState: (() => EventDetails) | undefined,
 ) {
-  return new CustomEvent(sourceEvent?.type ?? metadata.type, {
-    bubbles: false,
-    cancelable: false,
-    composed: sourceEvent?.composed,
-    detail: readEventSource(metadata),
+  if (sources.length === 0) {
+    if (trigger && getState && !Object.hasOwn(getState(), trigger.type)) {
+      return { detail: trigger.detail };
+    }
+    return { detail: defaultSource ? readEventSource(defaultSource) : undefined };
+  }
+  let detail = sources.map((source) => {
+    if (source.read) return readEventSource(source);
+    return trigger && trigger.type === source.type ? trigger.detail : undefined;
   });
+  return { detail: detail.length === 1 ? detail[0] : detail };
 }
 
 function isReactiveElementProp(key: string) {
@@ -142,10 +149,8 @@ function createCustomEventsEventedView<
         read: () => getState(),
       }
       : undefined;
-    let readableSource = eventSources.find(({ read }) => read !== undefined) ??
-      defaultSource;
-    let currentInput = readableSource
-      ? createViewEvent(readableSource)
+    let currentInput = getState
+      ? computeViewInput(undefined, eventSources, defaultSource, getState)
       : handle.props.initial;
     let eventTypes = configuredSource === undefined
       ? null
@@ -170,12 +175,9 @@ function createCustomEventsEventedView<
           eventTypes,
           ...(addresses.size ? { addresses } : {}),
           notify(event) {
-            let matchedSource = sourceByType.get(event.type);
-            currentInput = matchedSource?.read
-              ? createViewEvent(matchedSource, event)
-              : defaultSource && Object.hasOwn(getState!(), event.type)
-                ? createViewEvent(defaultSource, event)
-                : event;
+            currentInput = getState
+              ? computeViewInput(event, eventSources, defaultSource, getState)
+              : event;
             return handle.update();
           },
         },

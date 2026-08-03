@@ -32,7 +32,7 @@ type DescriptorWithState<Events extends EventDetails> =
     /** Retains the supplied event-map entries as directly readable state. */
     withState<const Value extends Partial<Events>>(
       value: StateInput<Events, Value>,
-    ): StateModel<
+    ): Store<
       Events,
       Pick<Events, Extract<keyof Value, keyof Events>>
     >;
@@ -52,7 +52,7 @@ export function customEvents(options?: unknown): unknown {
           "customEvents withState() supplies its own EventTarget host.",
         );
       }
-      return createStateModel(value);
+      return createStore(value);
     },
   });
 }
@@ -64,7 +64,7 @@ type StateInput<
     | Exclude<keyof Value, keyof Events>
     | Extract<
       keyof Value,
-      keyof EventTarget | "events" | "update" | "view"
+      keyof EventTarget | "events" | "update" | "view" | "state"
     >,
 > = [InvalidKeys] extends [never] ? Value : Value & {
   readonly __customEventsStateError:
@@ -73,24 +73,29 @@ type StateInput<
 };
 
 /** An EventTarget whose supplied map entries are directly readable state. */
-type StateModelEvents<Events, State> = Omit<Events, keyof State> &
+type StoreEvents<Events, State> = Omit<Events, keyof State> &
   Immutable<State>;
 
-type StateModel<
+/**
+ * A state store: an EventTarget host, retained immutable state, and the event
+ * source graph. State is readable only through `state`; `update()` writes it.
+ */
+type Store<
   Events extends EventDetails,
   State extends EventDetails,
 > =
-  & TypedEventTarget<CustomEventsEventMap<StateModelEvents<Events, State>>>
-  & Immutable<State>
+  & TypedEventTarget<CustomEventsEventMap<StoreEvents<Events, State>>>
   & {
     readonly events: CustomEventsDescriptor<
-      StateModelEvents<Events, State>,
+      StoreEvents<Events, State>,
       Immutable<State>
     >;
     readonly view: CustomEventsDescriptor<
-      StateModelEvents<Events, State>,
+      StoreEvents<Events, State>,
       Immutable<State>
     >["view"];
+    /** The current immutable state snapshot. */
+    readonly state: Immutable<State>;
     update(recipe: (draft: Draft<State>) => undefined): void;
   };
 
@@ -192,7 +197,31 @@ function ownerAddress(value: unknown): readonly unknown[] {
   return [canonicalAddressSegment(value)];
 }
 
-function createStateModel(
+/**
+ * A stable live read-through view of the current snapshot: each top-level key
+ * is an accessor forwarding to the latest `state`, so a destructured `state`
+ * stays live through updates without capturing a frozen snapshot at setup.
+ */
+function createLiveState(getSnapshot: () => EventDetails): EventDetails {
+  let state: EventDetails = {};
+  for (let key of Object.keys(getSnapshot())) {
+    Object.defineProperty(state, key, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return getSnapshot()[key];
+      },
+      set() {
+        throw new TypeError(
+          "Store state is immutable; update it through update().",
+        );
+      },
+    });
+  }
+  return state;
+}
+
+function createStore(
   initialState: EventDetails,
 ) {
   let state = freeze(initialState, true) as EventDetails;
@@ -201,7 +230,11 @@ function createStateModel(
     { host: target },
     { owner: target, getState: () => state },
   );
-  return Object.assign(target, state, {
+  Object.defineProperty(target, "state", {
+    configurable: true,
+    value: createLiveState(() => state),
+  });
+  return Object.assign(target, {
     events,
     view: events.view,
     update(recipe: (draft: Draft<EventDetails>) => void) {
@@ -222,11 +255,6 @@ function createStateModel(
 
       let entries: Array<Record<string, unknown>> = [];
       for (let [key, keyPatches] of patchesByKey) {
-        if (Object.hasOwn(nextState, key)) {
-          Object.assign(target, { [key]: nextState[key] });
-        } else {
-          Reflect.deleteProperty(target, key);
-        }
         let addresses = normalizePatches(
           state,
           nextState,

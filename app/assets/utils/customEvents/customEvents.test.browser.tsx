@@ -45,8 +45,8 @@ describe("customEvents", () => {
       draft.label = "ready";
     });
 
-    assert.equal(state.count, 1);
-    assert.equal(state.label, "ready");
+    assert.equal(state.state.count, 1);
+    assert.equal(state.state.label, "ready");
     assert.deepEqual(received, [
       ["count", 1],
       ["label", "ready"],
@@ -57,12 +57,12 @@ describe("customEvents", () => {
         profile: { name: string };
         tags: string[];
      }>().withState({ profile: { name: "Ada" }, tags: [] });
-      // @ts-expect-error - state properties change only through update().
-      state.count = 2;
+      // @ts-expect-error - state is readable only through the state snapshot.
+      state.count;
       // @ts-expect-error - nested state changes only through update().
-      nested.profile.name = "Grace";
+      nested.state.profile.name = "Grace";
       // @ts-expect-error - collection state changes only through update().
-      nested.tags.push("compiler");
+      nested.state.tags.push("compiler");
       nested.addEventListener("profile", (event) => {
         // @ts-expect-error - published state details are immutable.
         event.detail.name = "Grace";
@@ -77,6 +77,8 @@ describe("customEvents", () => {
       customEvents<{ events: string}>().withState({ events: "collision" });
       // @ts-expect-error - state properties cannot overwrite the state API.
       customEvents<{ update: string}>().withState({ update: "collision" });
+      // @ts-expect-error - state properties cannot overwrite the state API.
+      customEvents<{ state: string}>().withState({ state: "collision" });
       // @ts-expect-error - update addresses are scoped to event-element on().
       state.updates;
       // @ts-expect-error - state property events cannot use native DOM names.
@@ -99,8 +101,30 @@ describe("customEvents", () => {
     assert.throws(() => {
       initial.tags.push("navy");
     });
-    assert.equal(state.profile.name, "Ada");
-    assert.deepEqual(state.tags, ["compiler"]);
+    assert.equal(state.state.profile.name, "Ada");
+    assert.deepEqual(state.state.tags, ["compiler"]);
+  });
+
+  it("keeps a destructured state live through updates", () => {
+    let { view, update, events, state } = customEvents<{
+      count: number;
+      label: string;
+    }>().withState({ count: 0, label: "idle" });
+
+    assert.equal(state.count, 0);
+    assert.equal(state.label, "idle");
+
+    update((draft) => {
+      draft.count = 1;
+      draft.label = "ready";
+    });
+
+    assert.equal(state.count, 1);
+    assert.equal(state.label, "ready");
+
+    assert.throws(() => {
+      Reflect.set(state, "count", 99);
+    }, /immutable/);
   });
 
   it("derives state events from nested Immer updates", () => {
@@ -111,17 +135,17 @@ describe("customEvents", () => {
       draft: { name: "Grace", surname: "Hopper" },
       people: [{ id: 1, name: "Grace" }],
     });
-    let originalDraft = state.draft;
-    let originalPeople = state.people;
+    let originalDraft = state.state.draft;
+    let originalPeople = state.state.people;
     let received: Array<[string, unknown]> = [];
 
     state.addEventListener("draft", (event) => {
       received.push([event.type, event.detail]);
-      assert.equal(state.people[0]?.name, "Ada");
+      assert.equal(state.state.people[0]?.name, "Ada");
     });
     state.addEventListener("people", (event) => {
       received.push([event.type, event.detail]);
-      assert.equal(state.draft.name, "Ada");
+      assert.equal(state.state.draft.name, "Ada");
     });
 
     state.update((draft) => {
@@ -131,13 +155,13 @@ describe("customEvents", () => {
 
     assert.equal(originalDraft.name, "Grace");
     assert.equal(originalPeople[0]?.name, "Grace");
-    assert.equal(state.draft.name, "Ada");
-    assert.equal(state.people[0]?.name, "Ada");
+    assert.equal(state.state.draft.name, "Ada");
+    assert.equal(state.state.people[0]?.name, "Ada");
     assert.equal(received.length, 2);
-    assert.equal(received.find(([type]) => type === "draft")?.[1], state.draft);
+    assert.equal(received.find(([type]) => type === "draft")?.[1], state.state.draft);
     assert.equal(
       received.find(([type]) => type === "people")?.[1],
-      state.people,
+      state.state.people,
     );
 
     state.update((draft) => {
@@ -151,7 +175,7 @@ describe("customEvents", () => {
         throw new Error("stop");
       });
     }, /stop/);
-    assert.equal(state.draft.name, "Ada");
+    assert.equal(state.state.draft.name, "Ada");
     assert.equal(received.length, 2);
 
     if (false) {
@@ -177,16 +201,16 @@ describe("customEvents", () => {
         <state.view.output
           aria-label="name"
           on={state.events.profile.name}
-          class={(event) => event.detail.toLowerCase()}
+          class={({ detail }) => detail.toLowerCase()}
         >
-          {(event) => {
-            event.detail satisfies string;
+          {({ detail }) => {
+            detail satisfies string;
             if (false) {
-              // @ts-expect-error The update detail is a string, not a number.
-              event.detail.toFixed();
+              // @ts-expect-error - detail is the selected value, not the snapshot.
+              detail.toFixed();
             }
             renders++;
-            return event.detail;
+            return detail;
           }}
         </state.view.output>
       );
@@ -253,23 +277,23 @@ describe("customEvents", () => {
       return () => (
         <section>
           <state.view.output on={state.events.position.get("a")}>
-            {(event) => `${++calls.mapA}:${event.detail}`}
+            {({ detail }) => `${++calls.mapA}:${detail ?? ""}`}
           </state.view.output>
           <state.view.output on={state.events.position.get("b")} >
-            {(event) => `${++calls.mapB}:${event.detail}`}
+            {({ detail }) => `${++calls.mapB}:${detail ?? ""}`}
           </state.view.output>
           <state.view.output on={state.events.position}>
-            {(event) => `${++calls.mapAll}:${event.detail.size}`}
+            {({ detail }) => `${++calls.mapAll}:${detail.size}`}
           </state.view.output>
           <state.view.output
             on={state.events.selected.has("red")}
             >
-            {(event) => `${++calls.red}:${event.detail}`}
+            {({ detail }) => `${++calls.red}:${detail}`}
           </state.view.output>
           <state.view.output
             on={state.events.selected.has("blue")}
             >
-            {(event) => `${++calls.blue}:${event.detail}`}
+            {({ detail }) => `${++calls.blue}:${detail}`}
           </state.view.output>
         </section>
       );
@@ -403,7 +427,7 @@ describe("customEvents", () => {
     function RecordValue() {
       return () => (
         <state.view.output on={state.events.records.get(recordKey).value}>
-          {(event) => `${++renders}:${event.detail}`}
+          {({ detail }) => `${++renders}:${detail}`}
         </state.view.output>
       );
     }
@@ -660,7 +684,7 @@ describe("customEvents", () => {
     state.dispatchEvent(state.events.create("countDrafted", 2));
     state.dispatchEvent(state.events.create("refreshRequested"));
 
-    assert.equal(state.count, 1);
+    assert.equal(state.state.count, 1);
     assert.deepEqual(received, [
       ["count", 1],
       ["countDrafted", 2],
@@ -691,7 +715,7 @@ describe("customEvents", () => {
     function Count() {
       return () => (
         <state.view.output on={[state.events.count, state.events.countDrafted]}>
-          {(event) => `${event.detail}:${++renders}`}
+          {({ detail }) => `${detail[1] ?? detail[0]}:${++renders}`}
         </state.view.output>
       );
     }
@@ -735,8 +759,8 @@ describe("customEvents", () => {
             aria-label="listener"
             on={state.events.countDrafted}
           >
-            {(event) =>
-              event ? `${event.detail}:${++listenerRenders}` : "idle"
+            {({ detail }) =>
+              detail === undefined ? "idle" : `${detail}:${++listenerRenders}`
             }
           </state.view.output>
         </section>
@@ -771,15 +795,15 @@ describe("customEvents", () => {
     function Snapshot() {
       return () => (
         <state.view.output aria-label="snapshot">
-          {(event) => {
-            seen.push(event.detail);
+          {({ detail }) => {
+            seen.push(detail);
             if (false) {
-              event.detail satisfies
+              detail satisfies
                 number | { readonly count: number };
             }
-            return typeof event.detail === "object" && event.detail !== null
-              ? `count:${event.detail.count}`
-              : `raw:${event.detail}`;
+            return typeof detail === "object" && detail !== null
+              ? `count:${detail.count}`
+              : `raw:${detail}`;
           }}
         </state.view.output>
       );
@@ -822,8 +846,8 @@ describe("customEvents", () => {
       draft.count = 1;
     });
 
-    assert.equal(first.count, 1);
-    assert.equal(second.count, 10);
+    assert.equal(first.state.count, 1);
+    assert.equal(second.state.count, 10);
     assert.equal(firstCalls, 1);
     assert.equal(secondCalls, 0);
 

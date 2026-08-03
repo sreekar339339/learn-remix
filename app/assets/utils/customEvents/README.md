@@ -8,9 +8,10 @@ splitting every repeated element into a component with its own state and
 
 The library is organized around five concepts:
 
-- **State model** — immutable retained state mutated through Immer recipes.
+- **Store** — an `EventTarget` retaining immutable state mutated through Immer
+  recipes; `store.state` reads the current snapshot.
 - **Event source** — a typed, addressable subscription handle for one event.
-- **Evented-view** — an intrinsic element (`model.view.<tag>`) that subscribes
+- **Evented-view** — an intrinsic element (`store.view.<tag>`) that subscribes
   to sources and re-renders from matched events.
 - **Effect** — an element-owned listener run after views update.
 - **Subscription** — the runtime registration that routes events to an
@@ -42,7 +43,8 @@ Options:
 ```
 
 The descriptor is itself the source graph. The reserved names `create`,
-`dispatch`, `host`, `on`, `view`, and `withState` cannot be event names.
+`dispatch`, `host`, `on`, `view`, `state`, and `withState` cannot be event
+names.
 
 ### Event sources — `events.<name>`
 
@@ -53,11 +55,11 @@ flightEvents.kind;
 flightEvents.bookingConfirmed;
 ```
 
-On a state model the sources live under the descriptor:
+On a store the sources live under the descriptor:
 
 ```ts
-model.events.kind;
-model.events.bookingConfirmed;
+store.events.kind;
+store.events.bookingConfirmed;
 ```
 
 Property access records an **address**; it does not snapshot a selected value.
@@ -71,10 +73,9 @@ delivered to callbacks contains the current value at that address as
 Nested access and collection accessors:
 
 ```ts
-model.events.profile.name;
+store.events.profile.name;
 board.events.columns.get(columnId).cards.get(cardId).urgent;
 sheet.events.values.A0;
-selection.events.selected.has("red");
 selection.events.selected.as("green");
 circles.events.items[index].diameter;
 ```
@@ -90,23 +91,30 @@ A source also carries an element-owned effect listener:
 source.on(listener)  // MixinDescriptor; active only while mounted
 ```
 
-### Evented-views — `model.view.<tag>`
+### Evented-views — `store.view.<tag>`
 
-`model.view.<tag>` creates an intrinsic element that subscribes to sources and
-re-renders from matched events:
+`store.view.<tag>` creates an intrinsic element that subscribes to sources and
+re-renders from matched events. The `detail` delivered to the render function
+is the **value the `on` source selects**: the current value at that source's
+path for one source, a tuple index-aligned with `on` for several, and the whole
+state snapshot when `on` is omitted (the implicit root path).
 
 ```tsx
-<flight.view.output on={flight.events.kind}>
-  {(event) => event.detail}
+<flight.view.output on={flight.events.startDate}>
+  {({ detail }) => detail}
 </flight.view.output>
 ```
+
+Occurrence events (declared but not retained by `withState`) fill their tuple
+slot with the occurrence payload when that occurrence triggered the render and
+`undefined` otherwise.
 
 Evented-view props:
 
 | Prop | Meaning |
 | --- | --- |
-| `on` | A source, or an array of sources, this view subscribes to. |
-| `initial` | A defined event to render before an occurrence first matches. |
+| `on` | A source, or an array of sources, this view subscribes to. The `detail` is the selected value (one source) or a tuple aligned with `on` (several). |
+| `initial` | A defined event to render before an occurrence first matches. Store views need no `initial`. |
 | `children` | Static children, or a render function of the matched event. |
 | *reactive props* | Any native prop may be a function of the matched event. |
 | `mix` | Mixins; use `source.on(...)` for element-owned effects. |
@@ -120,12 +128,14 @@ Evented-view props:
 | `on` | `on(listener)` | Element-owned wildcard effect for every descriptor event. |
 | `host` | `host` | Mixin that makes an element the local routing boundary. |
 | `view` | `view.<tag>` | Evented-view factory. |
-| `withState` | `withState(value)` | Creates a state model (see below). |
+| `withState` | `withState(value)` | Creates a store (see below). |
 
-### State model
+### Store
 
 `withState()` creates an independent `EventTarget` and retains its initial
-properties as immutable, directly readable state:
+properties as immutable state. The instance exposes **no state properties**;
+read the current snapshot through `store.state`, and read values that must be
+atomic with a write inside an `update()` recipe:
 
 ```ts
 let flight = flightEvents.withState({
@@ -134,13 +144,29 @@ let flight = flightEvents.withState({
   returnDate: "2026-08-02",
 });
 
-flight.kind; // "one-way flight"
+flight.state.kind; // "one-way flight"
 ```
+
+The store API is safe to destructure in the setup scope. `view`, `update`,
+`events`, and `state` are all stable references, so destructuring snapshots
+none of them:
+
+```ts
+let { view, update, events, state } = flightEvents.withState({
+  kind: "one-way flight",
+  startDate: "2026-08-02",
+  returnDate: "2026-08-02",
+});
+```
+
+`state` is a live read-through binding: every property access forwards to the
+current snapshot, so a destructured `state` reflects later `update()` calls.
+Read it inside the render closure for live values.
 
 | Member | Purpose |
 | --- | --- |
-| `update(recipe)` | Mutates state through an Immer draft and dispatches change events. |
-| *property reads* | Current immutable state, e.g. `model.kind`. |
+| `update(recipe)` | Mutates state through an Immer draft and dispatches change events. Read current state from the `draft`. |
+| `state` | A live read-through binding to the current immutable snapshot (`Immutable<State>`); safe to destructure at setup. |
 | `events` | The descriptor: sources and descriptor methods. |
 | `view` | The evented-view factory. |
 | native `addEventListener` / `dispatchEvent` | Ordinary `EventTarget` consumption of state events. |
@@ -195,12 +221,28 @@ board.update((draft) => {
 
 An update recipe must be synchronous and return no value. A no-op recipe emits
 nothing. Every changed top-level state property is also dispatched as a native
-custom event on the model, so ordinary `addEventListener()` and Remix
+custom event on the store, so ordinary `addEventListener()` and Remix
 `addEventListeners()` consumers remain available.
+
+Read current state inside a recipe when the read must be atomic with the write
+(a single top-level event, one view re-render):
+
+```ts
+drawing.update((draft) => {
+  let circle = draft.circles.get(draft.editingCircleById!);
+  if (!circle) return;
+  circle.diameter = newDiameter;
+});
+```
+
+Read `store.state` at render time when the owning component needs current state
+to build structure (a list, a component subtree). A destructured `state` reads
+the same live snapshot. A source's `.on()` effect listener still receives the
+scoped value at its address, not the snapshot.
 
 ### Context typing
 
-Keep one descriptor as the type anchor and derive the model type from
+Keep one descriptor as the type anchor and derive the store type from
 `withState`:
 
 ```ts
@@ -211,14 +253,15 @@ export type AppContext = ReturnType<
 >;
 ```
 
-The same descriptor can create each provider's independent state model.
+The same descriptor can create each provider's independent store.
 
 ## Consumption patterns
 
 ### Narrow evented-views
 
-Use `model.view.<intrinsic>` and pass a source to `on`. Children and native
-properties may be functions of the matched event:
+Use `store.view.<intrinsic>` and pass a source to `on`. Children and native
+properties may be functions of the matched event; on a store the event's
+`detail` is the value that source's path selects:
 
 ```tsx
 <selection.view.button
@@ -234,14 +277,15 @@ This is especially useful inside lists. The component remains one readable,
 HTML-shaped tree while each existing row, card, circle, or cell updates only
 its affected native attributes and children.
 
-Listen to several explicit sources with an array:
+Listen to several explicit sources with an array; `detail` becomes a tuple
+index-aligned with `on`:
 
 ```tsx
 <game.view.button
   on={[game.events.position.get(index), game.events.result]}
-  disabled={() => game.result !== null}
+  disabled={({ detail }) => detail[1] !== null}
 >
-  {() => game.position.get(index)}
+  {({ detail }) => detail[0]}
 </game.view.button>
 ```
 
@@ -250,24 +294,24 @@ share a type throws.
 
 ### Whole-model default source
 
-On a `withState` model, omitting `on` subscribes the view to every event. It
+On a store, omitting `on` subscribes the view to every event. It
 re-reads the whole state snapshot on mount and re-renders whenever any state
 property changes. Occurrence events still arrive raw. The render function's
-input is a `CustomEvent`; its `detail` is the state snapshot on state events
-and the occurrence payload otherwise:
+`detail` is the state snapshot on state events and the occurrence payload
+otherwise:
 
 ```tsx
 <flight.view.output>
-  {(event) =>
-    typeof event.detail === "object"
-      ? `${event.detail.kind} from ${event.detail.startDate}`
-      : event.detail
+  {({ detail }) =>
+    typeof detail === "object"
+      ? `${detail.kind} from ${detail.startDate}`
+      : detail
   }
 </flight.view.output>
 ```
 
 The snapshot read needs no `initial` because a snapshot always exists. This
-makes the evented-view a live read-only view of the whole model — ideal for an
+makes the evented-view a live read-only view of the whole store — ideal for an
 element whose output depends on several properties at once, such as a progress
 bar ratio.
 
@@ -315,13 +359,13 @@ Use the descriptor's root `.on(listener)` for every descriptor event:
 
 ```tsx
 <section
-  mix={model.events.on(() => handle.update())}
+  mix={store.events.on(() => handle.update())}
 >
   {/* component-wide render */}
 </section>
 ```
 
-This centralizes component invalidation: DOM handlers only mutate the model,
+This centralizes component invalidation: DOM handlers only mutate the store,
 and one mounted effect calls `handle.update()`. Place it on the element that
 naturally owns the render; it does not need to be the component root.
 
@@ -388,16 +432,16 @@ native named events so normal EventTarget listeners can consume them.
 <section mix={events.host}>...</section>
 ```
 
-Element hosts belong with occurrence descriptors. A `withState` model already
-registers its own `EventTarget` as the default host, so do not wrap state
-views in an element `events.host`: `update()` dispatches on the model target
+Element hosts belong with occurrence descriptors. A `withState` store already
+registers its own `EventTarget` as the default host, so do not wrap store
+views in an element `events.host`: `update()` dispatches on the store target
 and hosted views will not receive it.
 
 Events created by one descriptor are ignored by another descriptor even when
 their raw names match. Dispatch scope follows the origin target: dispatching on
 an element keeps the event on that element (the origin element and its mounted
 subscribers, plus the subscriptions of its containing `events.host`), while
-dispatching on the model target (via `update()` or `state.dispatchEvent`)
+dispatching on the store target (via `update()` or `store.dispatchEvent`)
 broadcasts to the default host scope. Composed events may cross nested
 descriptor hosts; non-composed events do not.
 
@@ -452,12 +496,12 @@ selection.update((draft) => {
 
 A write to a top-level scalar is addressed to the losing and gaining owners by
 value: the losing owner's subscription fires first (re-rendering against the
-new value, so `detail === id` is false), the gaining owner's second, and
+new value, so the `.as()` detail is `false`), the gaining owner's second, and
 untouched siblings do not re-render. Collection (root) subscribers still
-observe the final value once. An `.as(id)` view renders whether the scalar
-currently equals `id`; an `.as(id)` effect (`mix={source.on(...)}`) receives
-the scalar value in `event.detail`, and `detail === id` identifies the gaining
-owner.
+observe the final value once. An `.as(id)` view receives the boolean whether
+the scalar currently equals `id`; an `.as(id)` effect
+(`mix={source.on(...)}`) receives the scalar value in `event.detail`, and
+`detail === id` identifies the gaining owner.
 
 Use a `Map` for per-item data or reorderable collections; use `.as()` when the
 identity lives in a single scalar.
@@ -475,8 +519,8 @@ The origin-first rule follows DOM causality: an element that dispatches an
 event observes its own updated attributes before descendant side effects such
 as `disabled`-induced `focusout` occur. Effects always see committed DOM. An
 element-dispatched event stays local to that element (and its containing
-host), so unrelated elements do not re-render; route model-scoped events
-through the model target (`update()`/`state.dispatchEvent`) when siblings or
+host), so unrelated elements do not re-render; route store-scoped events
+through the store target (`update()`/`store.dispatchEvent`) when siblings or
 other elements must observe them.
 
 ## Design guidance

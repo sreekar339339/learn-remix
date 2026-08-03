@@ -16,7 +16,7 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle) {
         ]}
       >
         <counterEvents.view.span>
-          {() => counterEvents.count}
+          {({ detail }) => detail.count}
         </counterEvents.view.span>
       </button>
       <label>
