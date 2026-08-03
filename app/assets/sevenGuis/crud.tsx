@@ -72,7 +72,7 @@ export const SevenGuisCrud = clientEntry(
             ]}
             size={7}
             aria-label="People"
-            value={({ detail }) => detail[2] ?? ""}
+            value={({ detail: [, , selectedId] }) => selectedId ?? ""}
             mix={[
               inputCss,
               on("change", ({ currentTarget }) => {
@@ -88,8 +88,8 @@ export const SevenGuisCrud = clientEntry(
               }),
             ]}
           >
-            {({ detail }) =>
-              visiblePeople(detail[0], detail[1]).map((person) => (
+            {({ detail: [people, prefix] }) =>
+              visiblePeople(people, prefix).map((person) => (
                 <option value={person.id}>
                   {person.surname}, {person.name}
                 </option>
@@ -100,13 +100,13 @@ export const SevenGuisCrud = clientEntry(
             on={[model.events.draft, model.events.selectedId]}
             mix={css({ display: "grid", gap: 8 })}
           >
-            {({ detail }) => (
+            {({ detail: [draft, selectedId] }) => (
               <>
                 <label>
                   Name{" "}
                   <input
                     aria-label="Name"
-                    value={detail[0].name}
+                    value={draft.name}
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
@@ -121,7 +121,7 @@ export const SevenGuisCrud = clientEntry(
                   Surname{" "}
                   <input
                     aria-label="Surname"
-                    value={detail[0].surname}
+                    value={draft.surname}
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
@@ -136,7 +136,7 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      !(detail[0].name.trim() && detail[0].surname.trim())
+                      !(draft.name.trim() && draft.surname.trim())
                     }
                     mix={[
                       buttonCss,
@@ -157,8 +157,8 @@ export const SevenGuisCrud = clientEntry(
                   <button
                     type="button"
                     disabled={
-                      detail[1] === null ||
-                      !(detail[0].name.trim() && detail[0].surname.trim())
+                      selectedId === null ||
+                      !(draft.name.trim() && draft.surname.trim())
                     }
                     mix={[
                       buttonCss,
@@ -177,7 +177,7 @@ export const SevenGuisCrud = clientEntry(
                   </button>
                   <button
                     type="button"
-                    disabled={detail[1] === null}
+                    disabled={selectedId === null}
                     mix={[
                       buttonCss,
                       on("click", () => {

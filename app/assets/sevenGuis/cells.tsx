@@ -131,8 +131,12 @@ export const SevenGuisCells = clientEntry(
                           return String(count);
                         }}
                         type="text"
-                        defaultValue={({ detail }) => detail[1] ?? detail[0]}
-                        value={({ detail }) => detail[1] ?? detail[0]}
+                        defaultValue={({ detail: [committed, draft] }) =>
+                          draft ?? committed
+                        }
+                        value={({ detail: [committed, draft] }) =>
+                          draft ?? committed
+                        }
                         mix={[
                           cellCss,
                           sheet.events.focusTarget

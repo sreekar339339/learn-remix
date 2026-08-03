@@ -126,7 +126,7 @@ export const TicTacToeCustomEvents = clientEntry(
               disabled={({ detail: [pos, result] }) =>
                 pos !== undefined || result !== null
               }
-              class={({ detail }) => detail[0]}
+              class={({ detail: [pos] }) => pos}
               mix={[
 
                 css({
@@ -145,7 +145,7 @@ export const TicTacToeCustomEvents = clientEntry(
                 }),
               ]}
             >
-              {({ detail }) => detail[0]}
+              {({ detail: [pos] }) => pos}
             </game.view.button>
           ))}
         </div>

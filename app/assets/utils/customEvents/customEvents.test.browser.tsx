@@ -715,7 +715,7 @@ describe("customEvents", () => {
     function Count() {
       return () => (
         <state.view.output on={[state.events.count, state.events.countDrafted]}>
-          {({ detail }) => `${detail[1] ?? detail[0]}:${++renders}`}
+          {({ detail: [count, draft] }) => `${draft ?? count}:${++renders}`}
         </state.view.output>
       );
     }

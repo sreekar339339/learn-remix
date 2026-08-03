@@ -278,19 +278,21 @@ HTML-shaped tree while each existing row, card, circle, or cell updates only
 its affected native attributes and children.
 
 Listen to several explicit sources with an array; `detail` becomes a tuple
-index-aligned with `on`:
+index-aligned with `on`. Destructure it with names in the callback for
+readable multi-source views:
 
 ```tsx
 <game.view.button
   on={[game.events.position.get(index), game.events.result]}
-  disabled={({ detail }) => detail[1] !== null}
+  disabled={({ detail: [, result] }) => result !== null}
 >
-  {({ detail }) => detail[0]}
+  {({ detail: [pos] }) => pos}
 </game.view.button>
 ```
 
-An evented-view accepts one source per event type; passing two sources that
-share a type throws.
+Elide tuple positions the callback does not read (`[, result]`). An evented-view
+accepts one source per event type; passing two sources that share a type
+throws.
 
 ### Whole-model default source
 

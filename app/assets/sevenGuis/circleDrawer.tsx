@@ -171,11 +171,11 @@ export const SevenGuisCircleDrawer = clientEntry(
               key={circle.id}
               cx={circle.x}
               cy={circle.y}
-              r={({ detail }) =>
-                (detail[0] ?? circle.diameter) / 2
+              r={({ detail: [diameter] }) =>
+                (diameter ?? circle.diameter) / 2
               }
-              fill={({ detail }) =>
-                detail[1] ? "#d4d4d8" : "none"
+              fill={({ detail: [, isEditing] }) =>
+                isEditing ? "#d4d4d8" : "none"
               }
               mix={[
                 css({
@@ -214,11 +214,10 @@ export const SevenGuisCircleDrawer = clientEntry(
               type="range"
               min={10}
               max={120}
-              defaultValue={({ detail }) => {
-                let id = detail[0];
-                return id === null
+              defaultValue={({ detail: [editingId, circles] }) => {
+                return editingId === null
                   ? 10
-                  : (detail[1].get(id)?.diameter ?? 10);
+                  : (circles.get(editingId)?.diameter ?? 10);
               }}
               mix={[
                 inputCss,
