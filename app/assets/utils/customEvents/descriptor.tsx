@@ -5,6 +5,7 @@ import {
   customEventsRuntime,
   type CustomEventsBatchRuntimeEntry,
   type CustomEventsRuntimeState,
+  type EventAddress,
 } from "./runtime.ts";
 import {
   createEventedViewFactory,
@@ -36,6 +37,11 @@ type InternalEntryOptions = CustomEventsInit & {
 type StateEventContext = {
   owner: object;
   getState(): EventDetails;
+  /** Folds a held event's value into the snapshot; absent for pure descriptors. */
+  fold?(type: string, detail: unknown): {
+    detail: unknown;
+    addresses?: readonly EventAddress[];
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,6 +85,20 @@ export function createCustomEventsDescriptor<
     options?.signal?.throwIfAborted();
     if (type === ALL_EVENTS) {
       throw new TypeError('customEvents reserves "*" for subscriptions.');
+    }
+    if (
+      options?.addresses === undefined &&
+      state?.fold &&
+      Object.hasOwn(state.getState(), type)
+    ) {
+      let folded = state.fold(type, detail);
+      return {
+        type,
+        detail: folded.detail,
+        ...(folded.addresses === undefined
+          ? {}
+          : { addresses: folded.addresses }),
+      };
     }
     let addresses = options?.addresses;
     return {
@@ -193,14 +213,14 @@ export function createCustomEventsDescriptor<
     let event = createEvent(...args);
     return customEventsRuntime.dispatch(getRuntime(), target, event);
   }) as CustomEventsDispatch<Events>;
-  let host = ref((target, signal) => {
+  let asHost = ref((target, signal) => {
     customEventsRuntime.registerHost(getRuntime(), target, signal);
   });
   let descriptorTarget = Object.assign(Object.create(null), {
     create,
     dispatch,
     on,
-    host,
+    asHost,
     view,
   });
   if (options?.host) {

@@ -5,7 +5,7 @@ import { buttonCss } from "./styles.ts";
 export const SevenGuisCounter = clientEntry(
   import.meta.url,
   function SevenGuisCounter() {
-    let counterEvents = customEvents<{ count: number }>().withState({
+    let { view, events, state } = customEvents().store({
       count: 0,
     });
     let incrementOffset = 1;
@@ -15,15 +15,13 @@ export const SevenGuisCounter = clientEntry(
           mix={[
             buttonCss,
             on("click", () => {
-              counterEvents.update((state) => {
-                state.count += incrementOffset;
+              state.update((draft) => {
+                draft.count += incrementOffset;
               });
             }),
           ]}
         >
-          <counterEvents.view.span>
-            {({ detail }) => detail.count}
-          </counterEvents.view.span>
+          <view.span>{({ detail }) => detail.count}</view.span>
         </button>
         <label>
           Increment by{" "}

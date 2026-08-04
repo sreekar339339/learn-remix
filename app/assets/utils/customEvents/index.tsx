@@ -6,6 +6,7 @@ import {
   freeze,
   type Immutable,
   type Patch,
+  produce,
   produceWithPatches,
 } from "immer";
 import type { TypedEventTarget } from "remix/ui";
@@ -18,7 +19,9 @@ import type {
   CustomEventsEventMap,
   CustomEventsOptions,
   EventDetails,
+  NativeDOMEventName,
   NormalizeCustomEventsDefinition,
+  ReservedCustomEventsName,
 } from "./types.ts";
 import { isPropertyKey } from "./eventSources.ts";
 export type { CustomEventsEventMap } from "./types.ts";
@@ -26,30 +29,34 @@ export type { CustomEventsEventMap } from "./types.ts";
 enablePatches();
 enableMapSet();
 
-type DescriptorWithState<Events extends EventDetails> =
+type DescriptorWithStore<Events extends EventDetails> =
   & CustomEventsDescriptor<Events>
   & {
-    /** Retains the supplied event-map entries as directly readable state. */
-    withState<const Value extends Partial<Events>>(
+    /**
+     * Retains the supplied state entries as directly readable state. With no
+     * declared definition the value infers the whole store; declared events
+     * add occurrence payloads and widen `null`/`[]` entries.
+     */
+    store<Value extends EventDetails>(
       value: StateInput<Events, Value>,
     ): Store<
-      Events,
-      Pick<Events, Extract<keyof Value, keyof Events>>
+      StaticStoreEvents<Events, StaticStoreState<Events, Value>>,
+      StaticStoreState<Events, Value>
     >;
   };
 
-/** Creates a typed native-event descriptor. */
-export function customEvents<Definition extends CustomEventsDefinition>(
+/** Creates a typed native-event descriptor, optionally declaring its events. */
+export function customEvents<Definition extends CustomEventsDefinition = never>(
   ...args: CustomEventsFactoryArgs<Definition>
-): DescriptorWithState<NormalizeCustomEventsDefinition<Definition>>;
+): DescriptorWithStore<NormalizeCustomEventsDefinition<Definition>>;
 export function customEvents(options?: unknown): unknown {
   let descriptorOptions = options as CustomEventsOptions | undefined;
   let descriptor = createCustomEventsDescriptor(descriptorOptions);
   return Object.assign(descriptor, {
-    withState(value: EventDetails) {
+    store(value: EventDetails) {
       if (descriptorOptions?.host) {
         throw new TypeError(
-          "customEvents withState() supplies its own EventTarget host.",
+          "customEvents store() supplies its own EventTarget host.",
         );
       }
       return createStore(value);
@@ -59,45 +66,68 @@ export function customEvents(options?: unknown): unknown {
 
 type StateInput<
   Events extends EventDetails,
-  Value extends Partial<Events>,
-  InvalidKeys extends PropertyKey =
-    | Exclude<keyof Value, keyof Events>
-    | Extract<
-      keyof Value,
-      keyof EventTarget | "events" | "update" | "view" | "state"
-    >,
+  Value extends EventDetails,
+  InvalidKeys extends PropertyKey = Extract<
+    keyof Value,
+    ReservedCustomEventsName | NativeDOMEventName
+  >,
 > = [InvalidKeys] extends [never] ? Value : Value & {
   readonly __customEventsStateError:
-    "withState() keys must be declared events and cannot overwrite its API.";
+    "store() keys cannot overwrite its API or use native DOM event names.";
   readonly invalidKeys: InvalidKeys;
 };
 
-/** An EventTarget whose supplied map entries are directly readable state. */
+/** The state map of a store, widened by declared hints where provided. */
+type StaticStoreState<
+  Definition extends CustomEventsDefinition,
+  Value extends EventDetails,
+  Normalized extends EventDetails = NormalizeCustomEventsDefinition<Definition>,
+> = {
+  [Key in keyof Value as Key extends
+    | ReservedCustomEventsName
+    | NativeDOMEventName
+    ? never
+    : Key]: Key extends keyof Normalized ? Normalized[Key] : Value[Key];
+};
+
+/** Declared occurrence payloads merged with held state keys. */
+type StaticStoreEvents<
+  Definition extends CustomEventsDefinition,
+  State extends EventDetails,
+  Normalized extends EventDetails = NormalizeCustomEventsDefinition<Definition>,
+> = Omit<Normalized, keyof State> & Immutable<State>;
+
+/** The full event map of a store: occurrences plus held state keys. */
 type StoreEvents<Events, State> = Omit<Events, keyof State> &
   Immutable<State>;
 
 /**
- * A state store: an EventTarget host, retained immutable state, and the event
- * source graph. State is readable only through `state`; `update()` writes it.
+ * A state store: the event source graph, a `state` namespace that owns the
+ * immutable snapshot and its updates, and a `host` for ordinary `EventTarget`
+ * consumption.
  */
 type Store<
   Events extends EventDetails,
   State extends EventDetails,
-> =
-  & TypedEventTarget<CustomEventsEventMap<StoreEvents<Events, State>>>
-  & {
-    readonly events: CustomEventsDescriptor<
-      StoreEvents<Events, State>,
-      Immutable<State>
-    >;
-    readonly view: CustomEventsDescriptor<
-      StoreEvents<Events, State>,
-      Immutable<State>
-    >["view"];
+> = {
+  readonly events: CustomEventsDescriptor<
+    StoreEvents<Events, State>,
+    Immutable<State>
+  >;
+  readonly view: CustomEventsDescriptor<
+    StoreEvents<Events, State>,
+    Immutable<State>
+  >["view"];
+  readonly state: {
     /** The current immutable state snapshot. */
-    readonly state: Immutable<State>;
+    readonly value: Immutable<State>;
     update(recipe: (draft: Draft<State>) => undefined): void;
   };
+  /** The store's EventTarget host for ordinary consumption. */
+  readonly host: TypedEventTarget<
+    CustomEventsEventMap<StoreEvents<Events, State>>
+  >;
+};
 
 function resolvePatchPath(
   state: EventDetails,
@@ -197,48 +227,33 @@ function ownerAddress(value: unknown): readonly unknown[] {
   return [canonicalAddressSegment(value)];
 }
 
-/**
- * A stable live read-through view of the current snapshot: each top-level key
- * is an accessor forwarding to the latest `state`, so a destructured `state`
- * stays live through updates without capturing a frozen snapshot at setup.
- */
-function createLiveState(getSnapshot: () => EventDetails): EventDetails {
-  let state: EventDetails = {};
-  for (let key of Object.keys(getSnapshot())) {
-    Object.defineProperty(state, key, {
-      enumerable: true,
-      configurable: true,
-      get() {
-        return getSnapshot()[key];
-      },
-      set() {
-        throw new TypeError(
-          "Store state is immutable; update it through update().",
-        );
-      },
-    });
-  }
-  return state;
-}
-
 function createStore(
   initialState: EventDetails,
 ) {
-  let state = freeze(initialState, true) as EventDetails;
+  let snapshot = freeze(initialState, true) as EventDetails;
   let target = new EventTarget();
+
+  function foldKey(type: string, detail: unknown) {
+    let nextSnapshot = produce(snapshot, (draft) => {
+      (draft as EventDetails)[type] = detail;
+    });
+    snapshot = nextSnapshot;
+    return {
+      detail: nextSnapshot[type],
+      addresses: [[]] as readonly (readonly unknown[])[],
+    };
+  }
+
   let events = createCustomEventsDescriptor<EventDetails, EventDetails>(
     { host: target },
-    { owner: target, getState: () => state },
+    { owner: target, getState: () => snapshot, fold: foldKey },
   );
-  Object.defineProperty(target, "state", {
-    configurable: true,
-    value: createLiveState(() => state),
-  });
-  return Object.assign(target, {
-    events,
-    view: events.view,
+  let state = {
+    get value() {
+      return snapshot;
+    },
     update(recipe: (draft: Draft<EventDetails>) => void) {
-      let [nextState, patches] = produceWithPatches(state, (draft) => {
+      let [nextSnapshot, patches] = produceWithPatches(snapshot, (draft) => {
         let result = recipe(draft);
         if (result !== undefined) {
           throw new TypeError(
@@ -256,12 +271,12 @@ function createStore(
       let entries: Array<Record<string, unknown>> = [];
       for (let [key, keyPatches] of patchesByKey) {
         let addresses = normalizePatches(
-          state,
-          nextState,
+          snapshot,
+          nextSnapshot,
           keyPatches,
         );
-        let nextValue = nextState[key];
-        let previousOwner = state[key];
+        let nextValue = nextSnapshot[key];
+        let previousOwner = snapshot[key];
 
         if (
           isPrimitive(previousOwner) &&
@@ -293,10 +308,16 @@ function createStore(
         });
       }
 
-      state = nextState;
+      snapshot = nextSnapshot;
       target.dispatchEvent(
         (events.create as (...args: unknown[]) => Event)(entries),
       );
     },
-  });
+  };
+  return {
+    events,
+    view: events.view,
+    state,
+    host: target,
+  };
 }

@@ -25,7 +25,7 @@ function visiblePeople(people: readonly Person[], prefix: string) {
 export const SevenGuisCrud = clientEntry(
   import.meta.url,
   function SevenGuisCrud() {
-    let model = customEvents<CrudModel>().withState({
+    let { view, events, state } = customEvents<CrudModel>().store({
       people: [
         { id: 1, name: "Hans", surname: "Emil" },
         { id: 2, name: "Max", surname: "Mustermann" },
@@ -43,11 +43,11 @@ export const SevenGuisCrud = clientEntry(
           Filter prefix{" "}
           <input
             aria-label="Filter prefix"
-            defaultValue={model.state.prefix}
+            defaultValue={state.value.prefix}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                model.update((draft) => {
+                state.update((draft) => {
                   draft.prefix = currentTarget.value;
                 });
               }),
@@ -64,19 +64,15 @@ export const SevenGuisCrud = clientEntry(
             }),
           ]}
         >
-          <model.view.select
-            on={[
-              model.events.people,
-              model.events.prefix,
-              model.events.selectedId,
-            ]}
+          <view.select
+            on={[events.people, events.prefix, events.selectedId]}
             size={7}
             aria-label="People"
             value={({ detail: [, , selectedId] }) => selectedId ?? ""}
             mix={[
               inputCss,
               on("change", ({ currentTarget }) => {
-                model.update((draft) => {
+                state.update((draft) => {
                   let selected = draft.people.find(
                     (person) => person.id === Number(currentTarget.value),
                   );
@@ -95,9 +91,9 @@ export const SevenGuisCrud = clientEntry(
                 </option>
               ))
             }
-          </model.view.select>
-          <model.view.div
-            on={[model.events.draft, model.events.selectedId]}
+          </view.select>
+          <view.div
+            on={[events.draft, events.selectedId]}
             mix={css({ display: "grid", gap: 8 })}
           >
             {({ detail: [draft, selectedId] }) => (
@@ -110,7 +106,7 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.update((draft) => {
+                        state.update((draft) => {
                           draft.draft.name = currentTarget.value;
                         });
                       }),
@@ -125,7 +121,7 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       inputCss,
                       on("input", ({ currentTarget }) => {
-                        model.update((draft) => {
+                        state.update((draft) => {
                           draft.draft.surname = currentTarget.value;
                         });
                       }),
@@ -141,7 +137,7 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        model.update((draft) => {
+                        state.update((draft) => {
                           let person = {
                             id: draft.nextId++,
                             ...draft.draft,
@@ -163,7 +159,7 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        model.update((draft) => {
+                        state.update((draft) => {
                           if (draft.selectedId === null) return;
                           let person = draft.people.find(
                             (person) => person.id === draft.selectedId,
@@ -181,7 +177,7 @@ export const SevenGuisCrud = clientEntry(
                     mix={[
                       buttonCss,
                       on("click", () => {
-                        model.update((draft) => {
+                        state.update((draft) => {
                           if (draft.selectedId === null) return;
                           let index = draft.people.findIndex(
                             (person) => person.id === draft.selectedId,
@@ -199,7 +195,7 @@ export const SevenGuisCrud = clientEntry(
                 </div>
               </>
             )}
-          </model.view.div>
+          </view.div>
         </div>
       </section>
     );

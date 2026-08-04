@@ -26,27 +26,27 @@ async function settleEffects() {
 }
 
 describe("customEvents", () => {
-  it("publishes withState properties as typed events", () => {
-    let state = customEvents<{ count: number; label: string}>().withState({
+  it("publishes store properties as typed events", () => {
+    let store = customEvents().store({
       count: 0,
       label: "idle",
     });
     let received: Array<[string, unknown]> = [];
 
-    state.addEventListener("count", (event) => {
+    store.host.addEventListener("count", (event) => {
       received.push([event.type, event.detail]);
     });
-    state.addEventListener("label", (event) => {
+    store.host.addEventListener("label", (event) => {
       received.push([event.type, event.detail]);
     });
 
-    state.update((draft) => {
+    store.state.update((draft) => {
       draft.count = 1;
       draft.label = "ready";
     });
 
-    assert.equal(state.state.count, 1);
-    assert.equal(state.state.label, "ready");
+    assert.equal(store.state.value.count, 1);
+    assert.equal(store.state.value.label, "ready");
     assert.deepEqual(received, [
       ["count", 1],
       ["label", "ready"],
@@ -56,35 +56,42 @@ describe("customEvents", () => {
       let nested = customEvents<{
         profile: { name: string };
         tags: string[];
-     }>().withState({ profile: { name: "Ada" }, tags: [] });
+      }>().store({ profile: { name: "Ada" }, tags: [] });
       // @ts-expect-error - state is readable only through the state snapshot.
-      state.count;
+      store.count;
       // @ts-expect-error - nested state changes only through update().
-      nested.state.profile.name = "Grace";
+      nested.state.value.profile.name = "Grace";
       // @ts-expect-error - collection state changes only through update().
-      nested.state.tags.push("compiler");
-      nested.addEventListener("profile", (event) => {
+      nested.state.value.tags.push("compiler");
+      nested.host.addEventListener("profile", (event) => {
         // @ts-expect-error - published state details are immutable.
         event.detail.name = "Grace";
       });
       // @ts-expect-error - update recipes must be synchronous.
-      state.update(async (draft) => {
+      store.state.update(async (draft) => {
         draft.count = 2;
       });
       // @ts-expect-error - update recipes return no value.
-      state.update((draft) => draft.count++);
-      // @ts-expect-error - state properties cannot overwrite the state API.
-      customEvents<{ events: string}>().withState({ events: "collision" });
-      // @ts-expect-error - state properties cannot overwrite the state API.
-      customEvents<{ update: string}>().withState({ update: "collision" });
-      // @ts-expect-error - state properties cannot overwrite the state API.
-      customEvents<{ state: string}>().withState({ state: "collision" });
+      store.state.update((draft) => draft.count++);
+      // State keys live in the state.value envelope, so store API names are
+      // usable as data keys.
+      let relaxed = customEvents().store({
+        events: "collision",
+        update: "collision",
+        value: "collision",
+        state: "collision",
+        host: "collision",
+      });
+      relaxed.state.value.update;
+      relaxed.events.update;
       // @ts-expect-error - update addresses are scoped to event-element on().
-      state.updates;
+      store.updates;
       // @ts-expect-error - state property events cannot use native DOM names.
-      customEvents<{ click: boolean}>().withState({ click: false });
-      // @ts-expect-error - initial state keys must belong to the event map.
-      customEvents<{ count: number}>().withState({ count: 0, missing: true });
+      customEvents().store({ click: false });
+      // @ts-expect-error - store() state keys cannot overwrite its API.
+      customEvents<{ count: number }>().store({ count: 0, view: true });
+      // @ts-expect-error - store is reserved as a descriptor method name.
+      customEvents<{ store: string }>();
     }
   });
 
@@ -93,7 +100,7 @@ describe("customEvents", () => {
       profile: { name: "Ada" },
       tags: ["compiler"],
     };
-    let state = customEvents<typeof initial>().withState(initial);
+    let store = customEvents<typeof initial>().store(initial);
 
     assert.throws(() => {
       initial.profile.name = "Grace";
@@ -101,85 +108,83 @@ describe("customEvents", () => {
     assert.throws(() => {
       initial.tags.push("navy");
     });
-    assert.equal(state.state.profile.name, "Ada");
-    assert.deepEqual(state.state.tags, ["compiler"]);
+    assert.equal(store.state.value.profile.name, "Ada");
+    assert.deepEqual(store.state.value.tags, ["compiler"]);
   });
 
   it("keeps a destructured state live through updates", () => {
-    let { view, update, events, state } = customEvents<{
-      count: number;
-      label: string;
-    }>().withState({ count: 0, label: "idle" });
+    let { state, view, events } = customEvents().store({
+      count: 0,
+      label: "idle",
+    });
 
-    assert.equal(state.count, 0);
-    assert.equal(state.label, "idle");
+    assert.equal(state.value.count, 0);
+    assert.equal(state.value.label, "idle");
 
-    update((draft) => {
+    state.update((draft) => {
       draft.count = 1;
       draft.label = "ready";
     });
 
-    assert.equal(state.count, 1);
-    assert.equal(state.label, "ready");
+    assert.equal(state.value.count, 1);
+    assert.equal(state.value.label, "ready");
 
     assert.throws(() => {
-      Reflect.set(state, "count", 99);
-    }, /immutable/);
+      // @ts-expect-error - the snapshot is immutable.
+      state.value.count = 99;
+    });
   });
 
   it("derives state events from nested Immer updates", () => {
-    let state = customEvents<{
-      draft: { name: string; surname: string };
-      people: Array<{ id: number; name: string}>;
-   }>().withState({
+    let store = customEvents().store({
       draft: { name: "Grace", surname: "Hopper" },
       people: [{ id: 1, name: "Grace" }],
     });
-    let originalDraft = state.state.draft;
-    let originalPeople = state.state.people;
+    let originalDraft = store.state.value.draft;
+    let originalPeople = store.state.value.people;
     let received: Array<[string, unknown]> = [];
 
-    state.addEventListener("draft", (event) => {
+    store.host.addEventListener("draft", (event) => {
       received.push([event.type, event.detail]);
-      assert.equal(state.state.people[0]?.name, "Ada");
+      assert.equal(store.state.value.people[0]?.name, "Ada");
     });
-    state.addEventListener("people", (event) => {
+    store.host.addEventListener("people", (event) => {
       received.push([event.type, event.detail]);
-      assert.equal(state.state.draft.name, "Ada");
+      assert.equal(store.state.value.draft.name, "Ada");
     });
 
-    state.update((draft) => {
+    store.state.update((draft) => {
       draft.draft.name = "Ada";
       draft.people[0]!.name = "Ada";
     });
 
     assert.equal(originalDraft.name, "Grace");
     assert.equal(originalPeople[0]?.name, "Grace");
-    assert.equal(state.state.draft.name, "Ada");
-    assert.equal(state.state.people[0]?.name, "Ada");
+    assert.equal(store.state.value.draft.name, "Ada");
+    assert.equal(store.state.value.people[0]?.name, "Ada");
     assert.equal(received.length, 2);
-    assert.equal(received.find(([type]) => type === "draft")?.[1], state.state.draft);
+    assert.equal(received.find(([type]) => type === "draft")?.[1], store.state.value.draft);
     assert.equal(
       received.find(([type]) => type === "people")?.[1],
-      state.state.people,
+      store.state.value.people,
     );
 
-    state.update((draft) => {
+    store.state.update((draft) => {
       draft.draft.name = "Ada";
     });
     assert.equal(received.length, 2);
 
     assert.throws(() => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.draft.name = "discarded";
         throw new Error("stop");
       });
     }, /stop/);
-    assert.equal(state.state.draft.name, "Ada");
+    assert.equal(store.state.value.draft.name, "Ada");
     assert.equal(received.length, 2);
 
     if (false) {
-      state.update((draft) => {
+      store.state.update((draft) => {
         // @ts-expect-error - occurrences and undeclared properties are absent.
         draft.missing = true;
       });
@@ -187,10 +192,7 @@ describe("customEvents", () => {
   });
 
   it("infers nested update details and ignores unrelated paths", async (t) => {
-    let state = customEvents<{
-      profile: { name: string; address: { city: string } };
-      status: string;
-   }>().withState({
+    let store = customEvents().store({
       profile: { name: "Ada", address: { city: "London" } },
       status: "idle",
     });
@@ -198,9 +200,9 @@ describe("customEvents", () => {
 
     function Profile() {
       return () => (
-        <state.view.output
+        <store.view.output
           aria-label="name"
-          on={state.events.profile.name}
+          on={store.events.profile.name}
           class={({ detail }) => detail.toLowerCase()}
         >
           {({ detail }) => {
@@ -212,7 +214,7 @@ describe("customEvents", () => {
             renders++;
             return detail;
           }}
-        </state.view.output>
+        </store.view.output>
       );
     }
 
@@ -221,7 +223,7 @@ describe("customEvents", () => {
     assert.equal(renders, 1);
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.status = "ready";
       });
       await settleEffects();
@@ -229,7 +231,7 @@ describe("customEvents", () => {
     assert.equal(renders, 1);
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.profile.name = "Grace";
       });
       await settleEffects();
@@ -238,7 +240,7 @@ describe("customEvents", () => {
     assert.equal(result.$('[aria-label="name"]')?.textContent, "Grace");
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.profile.address.city = "Arlington";
       });
       await settleEffects();
@@ -246,7 +248,7 @@ describe("customEvents", () => {
     assert.equal(renders, 2);
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.profile = {
           name: "Katherine",
           address: { city: "Cleveland" },
@@ -259,10 +261,7 @@ describe("customEvents", () => {
   });
 
   it("derives keyed routes from Map and primitive Set patches", async (t) => {
-    let state = customEvents<{
-      position: Map<string, string>;
-      selected: Set<string>;
-   }>().withState({
+    let store = customEvents().store({
       position: new Map([
         ["a", "X"],
         ["b", "O"],
@@ -271,30 +270,30 @@ describe("customEvents", () => {
     });
     let calls = { mapA: 0, mapB: 0, mapAll: 0, red: 0, blue: 0 };
     let positionEvents = 0;
-    state.addEventListener("position", () => positionEvents++);
+    store.host.addEventListener("position", () => positionEvents++);
 
     function Collections() {
       return () => (
         <section>
-          <state.view.output on={state.events.position.get("a")}>
+          <store.view.output on={store.events.position.get("a")}>
             {({ detail }) => `${++calls.mapA}:${detail ?? ""}`}
-          </state.view.output>
-          <state.view.output on={state.events.position.get("b")} >
+          </store.view.output>
+          <store.view.output on={store.events.position.get("b")} >
             {({ detail }) => `${++calls.mapB}:${detail ?? ""}`}
-          </state.view.output>
-          <state.view.output on={state.events.position}>
+          </store.view.output>
+          <store.view.output on={store.events.position}>
             {({ detail }) => `${++calls.mapAll}:${detail.size}`}
-          </state.view.output>
-          <state.view.output
-            on={state.events.selected.has("red")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.selected.has("red")}
             >
             {({ detail }) => `${++calls.red}:${detail}`}
-          </state.view.output>
-          <state.view.output
-            on={state.events.selected.has("blue")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.selected.has("blue")}
             >
             {({ detail }) => `${++calls.blue}:${detail}`}
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -303,7 +302,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.position.set("a", "A");
       });
       await settleEffects();
@@ -318,7 +317,7 @@ describe("customEvents", () => {
     assert.equal(positionEvents, 1);
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.position.set("a", "AA");
         draft.position.set("b", "BB");
         draft.selected.add("blue");
@@ -336,14 +335,7 @@ describe("customEvents", () => {
   });
 
   it("routes deep patches through every nested identity boundary", async (t) => {
-    let state = customEvents<{
-      columns: Map<
-        string,
-        {
-          cards: Map<string, { urgent: boolean}>;
-        }
-      >;
-   }>().withState({
+    let store = customEvents().store({
       columns: new Map([
         [
           "column:todo",
@@ -367,31 +359,31 @@ describe("customEvents", () => {
     function Board() {
       return () => (
         <section>
-          <state.view.output
-            on={state.events.columns.get("column:todo")}
+          <store.view.output
+            on={store.events.columns.get("column:todo")}
             >
             {() => String(++calls.todo)}
-          </state.view.output>
-          <state.view.output
-            on={state.events.columns.get("column:done")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.columns.get("column:done")}
             >
             {() => String(++calls.done)}
-          </state.view.output>
-          <state.view.output
-            on={state.events.columns.get("column:todo").cards.get("card:one")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.columns.get("column:todo").cards.get("card:one")}
             >
             {() => String(++calls.one)}
-          </state.view.output>
-          <state.view.output
-            on={state.events.columns.get("column:todo").cards.get("card:two")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.columns.get("column:todo").cards.get("card:two")}
             >
             {() => String(++calls.two)}
-          </state.view.output>
-          <state.view.output
-            on={state.events.columns.get("column:done").cards.get("card:three")}
+          </store.view.output>
+          <store.view.output
+            on={store.events.columns.get("column:done").cards.get("card:three")}
             >
             {() => String(++calls.three)}
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -400,7 +392,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.columns.get("column:todo")!.cards.get("card:one")!.urgent = true;
       });
       await settleEffects();
@@ -417,18 +409,18 @@ describe("customEvents", () => {
 
   it("preserves object identity in Map update addresses", async (t) => {
     let recordKey = {};
-    let state = customEvents<{
-      records: Map<object, { value: number}>;
-   }>().withState({
+    let store = customEvents<{
+      records: Map<object, { value: number }>;
+    }>().store({
       records: new Map([[recordKey, { value: 1 }]]),
     });
     let renders = 0;
 
     function RecordValue() {
       return () => (
-        <state.view.output on={state.events.records.get(recordKey).value}>
+        <store.view.output on={store.events.records.get(recordKey).value}>
           {({ detail }) => `${++renders}:${detail}`}
-        </state.view.output>
+        </store.view.output>
       );
     }
 
@@ -436,7 +428,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.records.get(recordKey)!.value = 2;
       });
       await settleEffects();
@@ -447,7 +439,7 @@ describe("customEvents", () => {
   });
 
   it("derives array index routes by default", async (t) => {
-    let state = customEvents<{ items: string[]}>().withState({
+    let store = customEvents().store({
       items: ["first", "second"],
     });
     let calls = { first: 0, second: 0, all: 0 };
@@ -455,15 +447,15 @@ describe("customEvents", () => {
     function Items() {
       return () => (
         <section>
-          <state.view.output on={state.events.items[0]}>
+          <store.view.output on={store.events.items[0]}>
             {() => String(++calls.first)}
-          </state.view.output>
-          <state.view.output on={state.events.items[1]} aria-label="1">
+          </store.view.output>
+          <store.view.output on={store.events.items[1]} aria-label="1">
             {() => String(++calls.second)}
-          </state.view.output>
-          <state.view.output on={state.events.items}>
+          </store.view.output>
+          <store.view.output on={store.events.items}>
             {() => String(++calls.all)}
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -472,7 +464,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.items[1] = "updated";
       });
       await settleEffects();
@@ -480,7 +472,7 @@ describe("customEvents", () => {
     assert.deepEqual(calls, { first: 1, second: 2, all: 2 });
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.items.splice(0, 1);
       });
       await settleEffects();
@@ -488,7 +480,7 @@ describe("customEvents", () => {
     assert.deepEqual(calls, { first: 2, second: 3, all: 3 });
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.items = ["replacement"];
       });
       await settleEffects();
@@ -498,10 +490,7 @@ describe("customEvents", () => {
 
   it("routes object arrays by index", async (t) => {
     type Circle = { id: number; diameter: number };
-    let state = customEvents<{
-      circles: Circle[];
-      values: Record<string, string>;
-   }>().withState({
+    let store = customEvents().store({
       circles: [
         { id: 7, diameter: 30 },
         { id: 8, diameter: 40 },
@@ -513,18 +502,18 @@ describe("customEvents", () => {
     function Collections() {
       return () => (
         <section>
-          <state.view.output on={state.events.circles[0]}>
+          <store.view.output on={store.events.circles[0]}>
             {() => String(++calls.circle0)}
-          </state.view.output>
-          <state.view.output on={state.events.circles[1]} aria-label="1">
+          </store.view.output>
+          <store.view.output on={store.events.circles[1]} aria-label="1">
             {() => String(++calls.circle1)}
-          </state.view.output>
-          <state.view.output on={state.events.values.A0}>
+          </store.view.output>
+          <store.view.output on={store.events.values.A0}>
             {() => String(++calls.A0)}
-          </state.view.output>
-          <state.view.output on={state.events.values.B0}>
+          </store.view.output>
+          <store.view.output on={store.events.values.B0}>
             {() => String(++calls.B0)}
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -533,7 +522,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.circles[0]!.diameter = 35;
         draft.values.A0 = "11";
       });
@@ -542,7 +531,7 @@ describe("customEvents", () => {
     assert.deepEqual(calls, { circle0: 2, circle1: 1, A0: 2, B0: 1 });
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.circles.splice(0, 1);
       });
       await settleEffects();
@@ -550,7 +539,7 @@ describe("customEvents", () => {
     assert.deepEqual(calls, { circle0: 3, circle1: 2, A0: 2, B0: 1 });
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.circles = [
           { id: 7, diameter: 50 },
           {
@@ -565,9 +554,7 @@ describe("customEvents", () => {
   });
 
   it("routes scalar identity values by value and notifies owners via as()", async (t) => {
-    let state = customEvents<{
-      selected: string | null;
-   }>().withState({
+    let store = customEvents<{ selected: string | null }>().store({
       selected: null,
     });
     let calls = { first: 0, second: 0, all: 0 };
@@ -576,12 +563,12 @@ describe("customEvents", () => {
     function Selection() {
       return () => (
         <section>
-          <state.view.button
-            on={state.events.selected.as("1")}
+          <store.view.button
+            on={store.events.selected.as("1")}
             aria-label="1"
             type="button"
             aria-pressed={({ detail }) => detail}
-            mix={state.events.selected.as("1").on(({ currentTarget, detail }) => {
+            mix={store.events.selected.as("1").on(({ currentTarget, detail }) => {
               effectOrder.push(currentTarget.getAttribute("aria-label") ?? "");
               if (detail === "1") {
                 currentTarget.focus();
@@ -589,13 +576,13 @@ describe("customEvents", () => {
             })}
           >
             {() => String(++calls.first)}
-          </state.view.button>
-          <state.view.button
-            on={state.events.selected.as("2")}
+          </store.view.button>
+          <store.view.button
+            on={store.events.selected.as("2")}
             aria-label="2"
             type="button"
             aria-pressed={({ detail }) => detail}
-            mix={state.events.selected.as("2").on(({ currentTarget, detail }) => {
+            mix={store.events.selected.as("2").on(({ currentTarget, detail }) => {
               effectOrder.push(currentTarget.getAttribute("aria-label") ?? "");
               if (detail === "2") {
                 currentTarget.focus();
@@ -603,10 +590,10 @@ describe("customEvents", () => {
             })}
           >
             {() => String(++calls.second)}
-          </state.view.button>
-          <state.view.output on={state.events.selected}>
+          </store.view.button>
+          <store.view.output on={store.events.selected}>
             {() => String(++calls.all)}
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -615,7 +602,7 @@ describe("customEvents", () => {
     t.after(() => result.cleanup());
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.selected = "1";
       });
       await settleEffects();
@@ -626,7 +613,7 @@ describe("customEvents", () => {
 
     effectOrder.length = 0;
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.selected = "2";
       });
       await settleEffects();
@@ -648,7 +635,7 @@ describe("customEvents", () => {
     );
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.selected = null;
       });
       await settleEffects();
@@ -662,61 +649,63 @@ describe("customEvents", () => {
     );
   });
 
-  it("derives occurrences from event-map entries omitted by withState", () => {
+  it("derives occurrences from event-map entries omitted by the store value", () => {
     type State = { count: number };
     type Occurrences = { refreshRequested: null; countDrafted: number };
-    let state = customEvents<State & Occurrences>().withState({ count: 0 });
+    let store = customEvents<State & Occurrences>().store({ count: 0 });
     let received: Array<[string, unknown]> = [];
 
-    state.addEventListener("count", (event) => {
+    store.host.addEventListener("count", (event) => {
       received.push([event.type, event.detail]);
     });
-    state.addEventListener("countDrafted", (event) => {
+    store.host.addEventListener("countDrafted", (event) => {
       received.push([event.type, event.detail]);
     });
-    state.addEventListener("refreshRequested", (event) => {
+    store.host.addEventListener("refreshRequested", (event) => {
       received.push([event.type, event.detail]);
     });
 
-    state.update((draft) => {
+    store.state.update((draft) => {
       draft.count = 1;
     });
-    state.dispatchEvent(state.events.create("countDrafted", 2));
-    state.dispatchEvent(state.events.create("refreshRequested"));
+    store.host.dispatchEvent(store.events.create("countDrafted", 2));
+    store.host.dispatchEvent(store.events.create("refreshRequested"));
 
-    assert.equal(state.state.count, 1);
+    assert.equal(store.state.value.count, 1);
     assert.deepEqual(received, [
       ["count", 1],
       ["countDrafted", 2],
       ["refreshRequested", null],
     ]);
 
+    store.host.dispatchEvent(store.events.create("count", 2));
+    assert.equal(store.state.value.count, 2);
+    assert.deepEqual(received[3], ["count", 2]);
+
     if (false) {
-      // @ts-expect-error - property events are produced only by update().
-      state.events.create("count", 2);
-      state.update((draft) => {
+      store.state.update((draft) => {
         // @ts-expect-error - occurrences are not state properties.
         draft.countDrafted = 2;
       });
-      // @ts-expect-error - occurrences do not become readable state.
-      state.countDrafted;
+      // @ts-expect-error - occurrences do not become readable store.
+      store.countDrafted;
       // @ts-expect-error - occurrences cannot use native DOM event names.
-      customEvents<State & { click: null}>().withState({ count: 0 });
+      customEvents<State & { click: null }>().store({ count: 0 });
     }
   });
 
   it("combines state and occurrence event sources", async (t) => {
-    let state = customEvents<{
+    let store = customEvents<{
       count: number;
       countDrafted: number;
-   }>().withState({ count: 0 });
+    }>().store({ count: 0 });
     let renders = 0;
 
     function Count() {
       return () => (
-        <state.view.output on={[state.events.count, state.events.countDrafted]}>
+        <store.view.output on={[store.events.count, store.events.countDrafted]}>
           {({ detail: [count, draft] }) => `${draft ?? count}:${++renders}`}
-        </state.view.output>
+        </store.view.output>
       );
     }
 
@@ -725,17 +714,17 @@ describe("customEvents", () => {
     assert.equal(result.$("output")?.textContent, "0:1");
 
     await result.act(async () => {
-      state.dispatchEvent(state.events.create("countDrafted", 2));
+      store.host.dispatchEvent(store.events.create("countDrafted", 2));
       await settleEffects();
     });
     assert.equal(result.$("output")?.textContent, "2:2");
   });
 
   it("keeps element-dispatched occurrences on the origin element", async (t) => {
-    let state = customEvents<{
+    let store = customEvents<{
       count: number;
       countDrafted: number;
-    }>().withState({ count: 0 });
+    }>().store({ count: 0 });
     let drafts = 0;
     let listenerRenders = 0;
 
@@ -745,24 +734,24 @@ describe("customEvents", () => {
           <button
             aria-label="source"
             mix={[
-              state.events.countDrafted.on(() => {
+              store.events.countDrafted.on(() => {
                 drafts++;
               }),
               on("click", ({ currentTarget }) => {
                 currentTarget.dispatchEvent(
-                  state.events.create("countDrafted", 1),
+                  store.events.create("countDrafted", 1),
                 );
               }),
             ]}
           />
-          <state.view.output
+          <store.view.output
             aria-label="listener"
-            on={state.events.countDrafted}
+            on={store.events.countDrafted}
           >
             {({ detail }) =>
               detail === undefined ? "idle" : `${detail}:${++listenerRenders}`
             }
-          </state.view.output>
+          </store.view.output>
         </section>
       );
     }
@@ -778,7 +767,7 @@ describe("customEvents", () => {
     assert.equal(listener.textContent, "idle");
 
     await result.act(async () => {
-      state.dispatchEvent(state.events.create("countDrafted", 2));
+      store.host.dispatchEvent(store.events.create("countDrafted", 2));
       await settleEffects();
     });
     assert.equal(listenerRenders, 1);
@@ -786,15 +775,15 @@ describe("customEvents", () => {
   });
 
   it("renders the whole state snapshot when on is omitted", async (t) => {
-    let state = customEvents<{
+    let store = customEvents<{
       count: number;
       countDrafted: number;
-    }>().withState({ count: 0 });
+    }>().store({ count: 0 });
     let seen: unknown[] = [];
 
     function Snapshot() {
       return () => (
-        <state.view.output aria-label="snapshot">
+        <store.view.output aria-label="snapshot">
           {({ detail }) => {
             seen.push(detail);
             if (false) {
@@ -805,7 +794,7 @@ describe("customEvents", () => {
               ? `count:${detail.count}`
               : `raw:${detail}`;
           }}
-        </state.view.output>
+        </store.view.output>
       );
     }
 
@@ -816,7 +805,7 @@ describe("customEvents", () => {
     assert.deepEqual(seen[0], { count: 0 });
 
     await result.act(async () => {
-      state.update((draft) => {
+      store.state.update((draft) => {
         draft.count = 1;
       });
       await settleEffects();
@@ -825,7 +814,7 @@ describe("customEvents", () => {
     assert.deepEqual(seen[seen.length - 1], { count: 1 });
 
     await result.act(async () => {
-      state.dispatchEvent(state.events.create("countDrafted", 2));
+      store.host.dispatchEvent(store.events.create("countDrafted", 2));
       await settleEffects();
     });
     assert.equal(result.$('[aria-label="snapshot"]')?.textContent, "raw:2");
@@ -833,51 +822,42 @@ describe("customEvents", () => {
   });
 
   it("creates an independent EventTarget host for each state model", () => {
-    let models = customEvents<{ count: number}>();
-    let first = models.withState({ count: 0 });
-    let second = models.withState({ count: 10 });
+    let models = customEvents<{ count: number }>();
+    let first = models.store({ count: 0 });
+    let second = models.store({ count: 10 });
     let firstCalls = 0;
     let secondCalls = 0;
 
-    first.addEventListener("count", () => firstCalls++);
-    second.addEventListener("count", () => secondCalls++);
+    first.host.addEventListener("count", () => firstCalls++);
+    second.host.addEventListener("count", () => secondCalls++);
 
-    first.update((draft) => {
+    first.state.update((draft) => {
       draft.count = 1;
     });
 
-    assert.equal(first.state.count, 1);
-    assert.equal(second.state.count, 10);
+    assert.equal(first.state.value.count, 1);
+    assert.equal(second.state.value.count, 10);
     assert.equal(firstCalls, 1);
     assert.equal(secondCalls, 0);
 
     assert.throws(
       () =>
-        customEvents<{ count: number}>({ host: new EventTarget() }).withState({
+        customEvents<{ count: number }>({ host: new EventTarget() }).store({
           count: 0,
         }),
       /supplies its own EventTarget host/,
     );
   });
 
-  it("creates typed local-name single and batch events", () => {
+  it("creates typed local-name events", () => {
     let events = createEvents();
     let otherEvents = createEvents();
     let first = events.create("submitted", { id: "first" });
     let second = events.create("submitted", { id: "second" });
     let signal = events.create("paid");
-    let batch = events.create([
-      "paid",
-      {
-        submitted: {
-          detail: { id: "batched" },
-        },
-      },
-    ]);
 
     assert.equal(first.detail.id, "first");
     assert.equal(signal.detail, null);
-    assert.equal(batch.detail, undefined);
     assert.ok(first !== second);
     assert.equal(first.type, second.type);
     assert.equal(first.type, "submitted");
@@ -916,17 +896,6 @@ describe("customEvents", () => {
       events.create("submitted");
       // @ts-expect-error - signal events do not accept detail.
       events.create("paid", "unexpected");
-      // @ts-expect-error - detailed events require configured batch detail.
-      events.create([{ submitted: {} }]);
-      // @ts-expect-error - transactions use the ordered array grammar.
-      events.create({ paid: null });
-      // @ts-expect-error - entry options route only; propagation belongs to the batch.
-      events.create([{
-        submitted: {
-          detail: { id: "invalid-options" },
-          options: { composed: true },
-        },
-      }]);
       // @ts-expect-error - `*` is reserved for subscriptions.
       events.create("*");
       // @ts-expect-error - native DOM event names are reserved.
@@ -966,7 +935,6 @@ describe("customEvents", () => {
 
     let factories = [
       () => events.create("paid", { signal: controller.signal }),
-      () => events.create(["paid"], { signal: controller.signal }),
     ];
 
     for (let createEvent of factories) {
@@ -985,7 +953,7 @@ describe("customEvents", () => {
 
     function CollidingEventNames() {
       return () => (
-        <section mix={events.host}>
+        <section mix={events.asHost}>
           <events.view.output on={events.name} aria-label="name">
             {(event) => event?.type}
           </events.view.output>
@@ -1007,8 +975,7 @@ describe("customEvents", () => {
     let section = result.$("section") as HTMLElement;
 
     await result.act(async () => {
-      section.dispatchEvent(events.create(["name", "length", "bind", "toString"]));
-      await settleEffects();
+      await events.dispatch(section, ["name", "length", "bind", "toString"]);
     });
 
     for (let type of ["name", "length", "bind", "toString"]) {
@@ -1021,7 +988,7 @@ describe("customEvents", () => {
 
     function Checkout() {
       return () => (
-        <section mix={events.host}>
+        <section mix={events.asHost}>
           <button
             aria-label="submit"
             mix={on("click", ({ currentTarget }) => {
@@ -1074,7 +1041,7 @@ describe("customEvents", () => {
 
     function Confirmation() {
       return () => (
-        <section mix={events.host} aria-label="confirmation-host">
+        <section mix={events.asHost} aria-label="confirmation-host">
           <events.view.output
             on={events.submitted}
             hidden={(event) => event === undefined}
@@ -1128,7 +1095,7 @@ describe("customEvents", () => {
           aria-label="source"
           data-action={(event) => event?.type}
           mix={[
-            events.host,
+            events.asHost,
             on("focusout", ({ currentTarget }) => {
               currentTarget.dataset.actionSeenOnFocusout =
                 currentTarget.dataset.action ?? "missing";
@@ -1165,7 +1132,7 @@ describe("customEvents", () => {
 
     function Orders() {
       return () => (
-        <section mix={events.host}>
+        <section mix={events.asHost}>
           <button
             aria-label="update"
             mix={on("click", ({ currentTarget }) => {
@@ -1211,26 +1178,24 @@ describe("customEvents", () => {
     assert.equal(second.dataset.effect, "submitted");
     assert.equal(result.$('[aria-label="all"]')?.textContent, "submitted");
 
-    await result.act(() => {
-      (result.$("section") as HTMLElement).dispatchEvent(
-        events.create(
-          [
-            {
-              submitted: {
-                detail: { id: "first-again" },
-              },
+    await result.act(async () => {
+      await events.dispatch(
+        result.$("section") as HTMLElement,
+        [
+          {
+            submitted: {
+              detail: { id: "first-again" },
             },
-            {
-              submitted: {
-                detail: { id: "second" },
-              },
+          },
+          {
+            submitted: {
+              detail: { id: "second" },
             },
-          ],
-          { composed: true },
-        ),
+          },
+        ],
+        { composed: true },
       );
     });
-    await settleEffects();
 
     assert.equal(first.textContent, "second");
     assert.equal(second.textContent, "second");
@@ -1269,7 +1234,7 @@ describe("customEvents", () => {
               })}
             />
           </section>
-          <section mix={events.host}>
+          <section mix={events.asHost}>
             <button
               aria-label="hosted-source"
               mix={on("click", ({ currentTarget }) => {
@@ -1330,13 +1295,13 @@ describe("customEvents", () => {
       return () => (
         <section
           mix={[
-            events.host,
+            events.asHost,
             events.submitted.on(({ currentTarget, detail }) => {
               currentTarget.dataset.latest = detail.id;
             }),
           ]}
         >
-          <form mix={events.host}>
+          <form mix={events.asHost}>
             <button
               aria-label="local"
               mix={on("click", ({ currentTarget }) => {
@@ -1348,15 +1313,14 @@ describe("customEvents", () => {
             <button
               aria-label="composed"
               mix={on("click", ({ currentTarget }) => {
-                currentTarget.dispatchEvent(
-                  events.create(
-                    [
-                      {
-                        submitted: { detail: { id: "composed" } },
-                      },
-                    ],
-                    { composed: true },
-                  ),
+                events.dispatch(
+                  currentTarget,
+                  [
+                    {
+                      submitted: { detail: { id: "composed" } },
+                    },
+                  ],
+                  { composed: true },
                 );
               })}
             />
@@ -1388,7 +1352,7 @@ describe("customEvents", () => {
 
     function Transaction() {
       return () => (
-        <section mix={events.host}>
+        <section mix={events.asHost}>
           <button
             aria-label="dispatch"
             mix={ref((button) => {
@@ -1454,7 +1418,7 @@ describe("customEvents", () => {
         <input
           aria-label="input"
           mix={[
-            events.host,
+            events.asHost,
             on("input", ({ currentTarget }) => {
               currentTarget.dispatchEvent(events.create("paid"));
             }),

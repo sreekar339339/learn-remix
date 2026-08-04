@@ -65,14 +65,14 @@ function getCanvasPoint(
 export const SevenGuisCircleDrawer = clientEntry(
   import.meta.url,
   function SevenGuisCircleDrawer(handle) {
-    let drawing = customEvents<DrawingModel>().withState({
+    let { view, events, state } = customEvents<DrawingModel>().store({
       circles: new Map(),
       editingCircleById: null,
       history: { snapshots: [new Map()], index: 0 },
     });
     let nextCircleId = 1;
     function closeDiameterEditor() {
-      drawing.update((draft) => {
+      state.update((draft) => {
         let id = draft.editingCircleById;
         if (id === null) return;
         let circle = draft.circles.get(id);
@@ -86,7 +86,7 @@ export const SevenGuisCircleDrawer = clientEntry(
     }
 
     function travel(direction: -1 | 1) {
-      drawing.update((draft) => {
+      state.update((draft) => {
         let index = draft.history.index + direction;
         if (index < 0 || index >= draft.history.snapshots.length) return;
         draft.circles = new Map(
@@ -105,8 +105,8 @@ export const SevenGuisCircleDrawer = clientEntry(
       <section mix={taskCss}>
         <h2>Circle Drawer</h2>
         <div mix={rowCss}>
-          <drawing.view.button
-            on={drawing.events.history}
+          <view.button
+            on={events.history}
             type="button"
             disabled={({ detail }) => detail.index === 0}
             mix={[
@@ -117,9 +117,9 @@ export const SevenGuisCircleDrawer = clientEntry(
             ]}
           >
             Undo
-          </drawing.view.button>
-          <drawing.view.button
-            on={drawing.events.history}
+          </view.button>
+          <view.button
+            on={events.history}
             type="button"
             disabled={({ detail }) =>
               detail.index === detail.snapshots.length - 1
@@ -132,7 +132,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             ]}
           >
             Redo
-          </drawing.view.button>
+          </view.button>
         </div>
         <svg
           viewBox="0 0 420 220"
@@ -147,7 +147,7 @@ export const SevenGuisCircleDrawer = clientEntry(
             on("click", ({ currentTarget, clientX, clientY }) => {
               let point = getCanvasPoint(currentTarget, clientX, clientY);
               if (!point) return;
-              drawing.update((draft) => {
+              state.update((draft) => {
                 if (draft.editingCircleById !== null) return;
                 if (hitCircle(draft.circles.values(), point.x, point.y)) return;
                 let circle = {
@@ -162,11 +162,11 @@ export const SevenGuisCircleDrawer = clientEntry(
             }),
           ]}
         >
-          {[...drawing.state.circles.values()].map((circle) => (
-            <drawing.view.circle
+          {[...state.value.circles.values()].map((circle) => (
+            <view.circle
               on={[
-                drawing.events.circles.get(circle.id).diameter,
-                drawing.events.editingCircleById.as(circle.id),
+                events.circles.get(circle.id).diameter,
+                events.editingCircleById.as(circle.id),
               ]}
               key={circle.id}
               cx={circle.x}
@@ -187,7 +187,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                 }),
                 on("contextmenu", (event) => {
                   event.preventDefault();
-                  drawing.update((draft) => {
+                  state.update((draft) => {
                     if (draft.editingCircleById !== null) return;
                     draft.editingCircleById = circle.id;
                   });
@@ -196,8 +196,8 @@ export const SevenGuisCircleDrawer = clientEntry(
             />
           ))}
         </svg>
-        <drawing.view.form
-          on={drawing.events.editingCircleById}
+        <view.form
+          on={events.editingCircleById}
           hidden={({ detail }) => detail === null}
           mix={[
             rowCss,
@@ -209,8 +209,8 @@ export const SevenGuisCircleDrawer = clientEntry(
         >
           <label>
             Diameter{" "}
-            <drawing.view.input
-              on={[drawing.events.editingCircleById, drawing.events.circles]}
+            <view.input
+              on={[events.editingCircleById, events.circles]}
               type="range"
               min={10}
               max={120}
@@ -223,7 +223,7 @@ export const SevenGuisCircleDrawer = clientEntry(
                 inputCss,
                 on("input", ({ currentTarget }) => {
                   let diameter = currentTarget.valueAsNumber;
-                  drawing.update((draft) => {
+                  state.update((draft) => {
                     let id = draft.editingCircleById;
                     if (id === null) return;
                     let circle = draft.circles.get(id);
@@ -237,7 +237,7 @@ export const SevenGuisCircleDrawer = clientEntry(
           <button type="submit" mix={buttonCss}>
             Close
           </button>
-        </drawing.view.form>
+        </view.form>
       </section>
     );
   },

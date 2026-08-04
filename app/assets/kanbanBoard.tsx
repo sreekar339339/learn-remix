@@ -90,9 +90,9 @@ function initialColumns() {
 }
 
 export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
-  let board = customEvents<{
-    columns: Map<string, Column>;
-  }>().withState({ columns: initialColumns() });
+  let { view, events, state } = customEvents().store({
+    columns: initialColumns(),
+  });
   let renderCounts = new Map<string, number>();
 
   function nextRenderCount(id: string) {
@@ -124,14 +124,14 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
           alignItems: "start",
         })}
       >
-        {board.state.columns
+        {state.value.columns
           .entries()
           .map(([columnId, column]) => (
             <section key={columnId} mix={columnCss}>
               <header>
                 <h2>{column.title}</h2>
-                <board.view.output
-                  on={board.events.columns.get(columnId)}
+                <view.output
+                  on={events.columns.get(columnId)}
                   aria-label={`${column.title} view`}
                 >
                   {({ detail }) => {
@@ -143,13 +143,13 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                       columnId,
                     )}`;
                   }}
-                </board.view.output>
+                </view.output>
               </header>
               {column.cards
                 .entries()
                 .map(([cardId, initialCard]) => (
-                  <board.view.article
-                    on={board.events.columns.get(columnId).cards.get(cardId)}
+                  <view.article
+                    on={events.columns.get(columnId).cards.get(cardId)}
                     key={cardId}
                     aria-label={initialCard.title}
                     data-urgent={({ detail }) => detail?.urgent}
@@ -171,7 +171,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                             mix={[
                               buttonCss,
                               on("click", () => {
-                                board.update((draft) => {
+                                state.update((draft) => {
                                   let card = draft.columns
                                     .get(columnId)
                                     ?.cards.get(cardId);
@@ -185,7 +185,7 @@ export const KanbanBoard = clientEntry(import.meta.url, function KanbanBoard() {
                         </>
                       );
                     }}
-                  </board.view.article>
+                  </view.article>
                 ))
                 .toArray()}
             </section>

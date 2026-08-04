@@ -82,11 +82,7 @@ export const SevenGuisCells = clientEntry(
   function SevenGuisCells() {
     let formulas: Values = { A0: "10", B0: "20", C0: "=A0+B0" };
     let renderCounts = new Map<CellId, number>();
-    let sheet = customEvents<{
-      values: Values;
-      focusTarget: CellId;
-      cellDrafted: string;
-    }>().withState({
+    let { view, events, state } = customEvents<{ cellDrafted: string }>().store({
       values: calculate(formulas),
       focusTarget: cellId("A", 0),
     });
@@ -122,8 +118,8 @@ export const SevenGuisCells = clientEntry(
                   <th>{row}</th>
                   {columns.map((column, __, _, id = cellId(column, row)) => (
                     <td key={id}>
-                      <sheet.view.input
-                        on={[sheet.events.values[id], sheet.events.cellDrafted]}
+                      <view.input
+                        on={[events.values[id], events.cellDrafted]}
                         aria-label={id}
                         data-render-count={() => {
                           let count = (renderCounts.get(id) ?? 0) + 1;
@@ -139,7 +135,7 @@ export const SevenGuisCells = clientEntry(
                         }
                         mix={[
                           cellCss,
-                          sheet.events.focusTarget
+                          events.focusTarget
                             .as(id)
                             .on(({ currentTarget }) => {
                               currentTarget.focus();
@@ -148,13 +144,13 @@ export const SevenGuisCells = clientEntry(
                             formulas[id] = currentTarget.value;
                             let values = calculate(formulas);
                             let previousValue: string | undefined;
-                            sheet.update((draft) => {
+                            state.update((draft) => {
                               previousValue = draft.values[id];
                               Object.assign(draft.values, values);
                             });
                             if (Object.is(previousValue, values[id])) {
                               currentTarget.dispatchEvent(
-                                sheet.events.create(
+                                events.create(
                                   "cellDrafted",
                                   values[id] ?? "",
                                 ),
@@ -163,7 +159,7 @@ export const SevenGuisCells = clientEntry(
                           }),
                           on("focus", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              sheet.events.create(
+                              events.create(
                                 "cellDrafted",
                                 formulas[id] ?? "",
                               ),
@@ -172,7 +168,7 @@ export const SevenGuisCells = clientEntry(
                           }),
                           on("input", ({ currentTarget }) => {
                             currentTarget.dispatchEvent(
-                              sheet.events.create(
+                              events.create(
                                 "cellDrafted",
                                 currentTarget.value,
                               ),
@@ -183,7 +179,7 @@ export const SevenGuisCells = clientEntry(
                             let nextId = adjacentCellId(column, row, event.key);
                             if (nextId === undefined) return;
                             event.preventDefault();
-                            sheet.update((draft) => {
+                            state.update((draft) => {
                               draft.focusTarget = nextId;
                             });
                           }),

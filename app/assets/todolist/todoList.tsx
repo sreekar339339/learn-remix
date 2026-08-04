@@ -25,7 +25,7 @@ export function _TodoList(handle: Handle<{ todos: Todo[] }>) {
   return () => (
     <div
       mix={[
-        events.host,
+        events.asHost,
         events.on(({ type, detail }) => console.log(type, detail)),
       ]}
     >

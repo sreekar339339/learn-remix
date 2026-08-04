@@ -18,20 +18,20 @@ async function settleEvents() {
 
 describe("AppContext", () => {
   it("updates its model and emits only the affected events", () => {
-    let context = appContextEvents.withState({
+    let context = appContextEvents.store({
       user: null,
       settings: { layout: "normal", theme: "system" },
     });
     let calls: string[] = [];
     let controller = new AbortController();
 
-    assert.equal(context.state.user, null);
-    assert.deepEqual(context.state.settings, {
+    assert.equal(context.state.value.user, null);
+    assert.deepEqual(context.state.value.settings, {
       layout: "normal",
       theme: "system",
     });
 
-    addEventListeners(context, controller.signal, {
+    addEventListeners(context.host, controller.signal, {
       user(event) {
         calls.push(`named:${event.detail?.name ?? "none"}`);
       },
@@ -39,20 +39,20 @@ describe("AppContext", () => {
         calls.push(`map:${event.detail.theme}:${event.detail.layout}`);
       },
     });
-    context.update((draft) => {
+    context.state.update((draft) => {
       draft.user = { name: "Ada", age: 37 };
     });
 
-    assert.deepEqual(context.state.user, { name: "Ada", age: 37 });
+    assert.deepEqual(context.state.value.user, { name: "Ada", age: 37 });
     assert.equal(calls.join(","), "named:Ada");
 
-    context.update((draft) => {
+    context.state.update((draft) => {
       draft.user = { name: "Grace", age: 85 };
       draft.settings = { layout: "zen", theme: "dark" };
     });
 
-    assert.deepEqual(context.state.user, { name: "Grace", age: 85 });
-    assert.deepEqual(context.state.settings, { layout: "zen", theme: "dark" });
+    assert.deepEqual(context.state.value.user, { name: "Grace", age: 85 });
+    assert.deepEqual(context.state.value.settings, { layout: "zen", theme: "dark" });
     assert.equal(
       calls.join(","),
       "named:Ada,named:Grace,map:dark:zen",
@@ -60,7 +60,7 @@ describe("AppContext", () => {
   });
 
   it("supports explicit cleanup and AbortSignal-owned subscriptions", () => {
-    let context = appContextEvents.withState({
+    let context = appContextEvents.store({
       user: null,
       settings: { layout: "normal", theme: "system" },
     });
@@ -69,18 +69,18 @@ describe("AppContext", () => {
     let cleanedCalls = 0;
     let abortedCalls = 0;
 
-    addEventListeners(context, userController.signal, {
+    addEventListeners(context.host, userController.signal, {
       user() {
         cleanedCalls++;
       },
     });
-    addEventListeners(context, settingsController.signal, {
+    addEventListeners(context.host, settingsController.signal, {
       settings() {
         abortedCalls++;
       },
     });
 
-    context.update((draft) => {
+    context.state.update((draft) => {
       draft.user = { name: "Ada", age: 37 };
       draft.settings = { layout: "zen", theme: "light" };
     });
@@ -89,7 +89,7 @@ describe("AppContext", () => {
 
     userController.abort();
     settingsController.abort();
-    context.update((draft) => {
+    context.state.update((draft) => {
       draft.user = null;
       draft.settings = { layout: "normal", theme: "system" };
     });
@@ -106,7 +106,7 @@ describe("AppContext", () => {
           <button
             data-action="user"
             mix={on("click", () => {
-              context.update((draft) => {
+              context.state.update((draft) => {
                 draft.user = { name: "Ada", age: 37 };
               });
             })}
@@ -116,7 +116,7 @@ describe("AppContext", () => {
           <button
             data-action="settings"
             mix={on("click", () => {
-              context.update((draft) => {
+              context.state.update((draft) => {
                 draft.settings = { layout: "normal", theme: "dark" };
               });
             })}

@@ -4,11 +4,7 @@ import type {
   Props,
   RemixNode,
 } from "remix/ui";
-import type {
-  EventSource,
-  EventSourceHasCurrent,
-  EventSources,
-} from "./eventSources.ts";
+import type { EventSource, EventSources } from "./eventSources.ts";
 
 export type EventDetails = Record<string, unknown>;
 
@@ -26,7 +22,7 @@ type EventDetail<Definition, Type extends string> =
     : Definition extends Type ? null
     : never;
 
-type NativeDOMEventName = Extract<
+export type NativeDOMEventName = Extract<
   | keyof GlobalEventHandlersEventMap
   | keyof HTMLElementEventMap
   | keyof SVGElementEventMap
@@ -40,13 +36,13 @@ type NativeNamesIn<Definition> = Extract<
   NativeDOMEventName
 >;
 
-type ReservedCustomEventsName =
+export type ReservedCustomEventsName =
   | "create"
   | "dispatch"
-  | "host"
   | "on"
+  | "asHost"
   | "view"
-  | "withState";
+  | "store";
 type ReservedNamesIn<Definition> = Extract<
   EventNames<Definition>,
   ReservedCustomEventsName
@@ -163,20 +159,14 @@ type CustomEventsInputProps<
 
 type SourceSelection<Source> = Source | readonly Source[];
 
-type CustomEventsSourceItem<
-  Events extends EventDetails,
-  _State extends EventDetails,
-> = EventSource<any, keyof Events & string, boolean>;
+type CustomEventsSourceItem<Events extends EventDetails> =
+  EventSource<any, keyof Events & string, any>;
 
 type CustomEventsSourceEvent<Source> = Source extends readonly (infer Item)[]
   ? CustomEventsSourceEvent<Item>
-  : Source extends EventSource<infer Value, infer Type, boolean, any>
+  : Source extends EventSource<infer Value, infer Type, any>
     ? CustomEvent<Value> & { readonly type: Type }
   : never;
-
-type SourceHasCurrent<Source> = Source extends readonly (infer Item)[]
-  ? true extends SourceHasCurrent<Item> ? true : false
-  : EventSourceHasCurrent<Source>;
 
 type CustomEventsDefaultElementProps<
   Events extends EventDetails,
@@ -193,7 +183,7 @@ type CustomEventsDefaultElementProps<
 > & { on?: never };
 
 /** The value selected by a source: its payload for occurrences, its path value for state. */
-type CustomEventsSourceValue<Source> = Source extends EventSource<infer Value, any, any, any>
+type CustomEventsSourceValue<Source> = Source extends EventSource<infer Value, any, any>
   ? Value
   : never;
 
@@ -274,9 +264,7 @@ type CustomEventsOccurrenceProps<
 > = CustomEventsElementProps<
   Source,
   | CustomEventsSourceEvent<Source>
-  | (Initialized extends true ? never
-    : SourceHasCurrent<Source> extends true ? never
-    : undefined),
+  | (Initialized extends true ? never : undefined),
   Tag
 > & (Initialized extends true ? { initial: CustomEventsSourceEvent<Source> }
   : { initial?: never });
@@ -293,12 +281,12 @@ export type CustomEventsEventedView<
   (props: [State] extends [never]
     ? CustomEventsDefaultElementProps<Events, Tag, false>
     : CustomEventsStateDefaultElementProps<Events, State, Tag>): RemixNode;
-  <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
+  <const Source extends SourceSelection<CustomEventsSourceItem<Events>>>(
     props: [State] extends [never]
       ? CustomEventsOccurrenceProps<Source, Tag, true>
       : CustomEventsStateElementProps<Events, State, Tag, Source>,
   ): RemixNode;
-  <const Source extends SourceSelection<CustomEventsSourceItem<Events, State>>>(
+  <const Source extends SourceSelection<CustomEventsSourceItem<Events>>>(
     props: [State] extends [never]
       ? CustomEventsOccurrenceProps<Source, Tag, false>
       : CustomEventsStateElementProps<Events, State, Tag, Source>,
@@ -323,19 +311,11 @@ type NullDetailEventTypes<Events extends EventDetails> = {
 }[keyof Events & string];
 
 /** Per-entry routing; propagation belongs to the shared batch carrier. */
-export type CustomEventsBatchEntryOptions = Record<string, never>;
-
 type CustomEventsBatchEntryConfiguration<Detail> = [Detail] extends [null]
-  ? {
-      detail?: null;
-      options?: CustomEventsBatchEntryOptions;
-    }
-  : {
-      detail: Detail;
-      options?: CustomEventsBatchEntryOptions;
-    };
+  ? { detail?: null }
+  : { detail: Detail };
 
-/** One independently configured entry in a shared event transaction. */
+/** One entry in a shared event transaction. */
 export type CustomEventsBatchEntry<Events extends EventDetails> = {
   [Type in keyof Events & string]: Record<
     Type,
@@ -352,30 +332,17 @@ type NonEmptyArray<Value> = readonly [Value, ...Value[]];
 
 type CustomEventsResult<
   Events extends EventDetails,
-  Type extends CustomEventsEventType<Events> | never,
+  Type extends CustomEventsEventType<Events>,
   Async extends boolean,
 > = Async extends true ? Promise<void>
-  : [Type] extends [never] ? CustomEvent<undefined>
   : CustomEventsEventMap<Events>[Type];
 
-/**
- * Shared call grammar for event creation and awaitable dispatch.
- *
- * Dispatch prepends a target and changes only the result type.
- */
-type CustomEventsOperation<
+/** Call grammar for one event: detail-less, or with a typed payload. */
+type CustomEventsSingleOperation<
   Events extends EventDetails,
   Prefix extends unknown[],
   Async extends boolean,
 > = {
-  <const Entries extends NonEmptyArray<CustomEventsBatchItem<Events>>>(
-    ...args: [
-      ...Prefix,
-      entries: Entries,
-      init?: CustomEventsInit,
-    ]
-  ): CustomEventsResult<Events, never, Async>;
-
   <Type extends NullDetailEventTypes<Events> & CustomEventsEventType<Events>>(
     ...args: [
       ...Prefix,
@@ -394,11 +361,27 @@ type CustomEventsOperation<
   ): CustomEventsResult<Events, Type, Async>;
 };
 
+/** Call grammar for an ordered transaction: one shared carrier and commit. */
+type CustomEventsBatchOperation<
+  Events extends EventDetails,
+  Prefix extends unknown[],
+  Async extends boolean,
+> = {
+  <const Entries extends NonEmptyArray<CustomEventsBatchItem<Events>>>(
+    ...args: [
+      ...Prefix,
+      entries: Entries,
+      init?: CustomEventsInit,
+    ]
+  ): CustomEventsResult<Events, never, Async>;
+};
+
 export type CustomEventsFactory<Events extends EventDetails> =
-  CustomEventsOperation<Events, [], false>;
+  CustomEventsSingleOperation<Events, [], false>;
 
 export type CustomEventsDispatch<Events extends EventDetails> =
-  CustomEventsOperation<Events, [target: EventTarget], true>;
+  CustomEventsSingleOperation<Events, [target: EventTarget], true> &
+  CustomEventsBatchOperation<Events, [target: EventTarget], true>;
 
 export type CustomEventsListenerEvent<
   Events extends EventDetails,
@@ -434,18 +417,14 @@ export type CustomEventsDescriptor<
 > =
   & EventSources<Events, State>
   & {
-    /** Creates one occurrence event or an occurrence transaction. */
-    create: CustomEventsFactory<
-      [State] extends [never] ? Events : Omit<Events, keyof State>
-    >;
+    /** Creates one fresh event. */
+    create: CustomEventsFactory<Events>;
     /** Dispatches and resolves after view updates and effects settle. */
-    dispatch: CustomEventsDispatch<
-      [State] extends [never] ? Events : Omit<Events, keyof State>
-    >;
+    dispatch: CustomEventsDispatch<Events>;
     /** Runs a mounted-element effect for every descriptor event. */
     on: CustomEventsOnFunction<Events>;
-    /** Makes an element the local boundary for this descriptor. */
-    host: MixinDescriptor<Element, any>;
+    /** Makes an element act as a host for this descriptor. */
+    asHost: MixinDescriptor<Element, any>;
     /** Event-aware intrinsic elements for this descriptor. */
     view: CustomEventsEventedViews<Events, State>;
   }

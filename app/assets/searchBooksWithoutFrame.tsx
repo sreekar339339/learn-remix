@@ -67,7 +67,7 @@ export const SearchBooksWithoutFrame = clientEntry(
     let interacted = false;
 
     return () => (
-      <div mix={events.host}>
+      <div mix={events.asHost}>
         <label>
           Search{" "}
           <events.view.input

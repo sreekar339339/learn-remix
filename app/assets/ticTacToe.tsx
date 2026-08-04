@@ -44,11 +44,7 @@ let isArrowKey = (
 export const TicTacToeCustomEvents = clientEntry(
   import.meta.url,
   function TicTacToeCustomEvents() {
-    let game = customEvents<{
-      position: Map<number, Player>;
-      result: Result | null;
-      focusTarget: number;
-    }>().withState({
+    let { view, events, state } = customEvents().store({
       position: new Map<number, Player>(),
       result: null as Result | null,
       focusTarget: NaN,
@@ -73,7 +69,7 @@ export const TicTacToeCustomEvents = clientEntry(
               let cellId = Number(target.dataset.idx);
               if (Number.isNaN(cellId)) return;
               if (cellId < 0) return;
-              game.update((draft) => {
+              state.update((draft) => {
                 if (draft.position.has(cellId) || draft.result !== null) return;
                 let nextPlayer: Player =
                   draft.position.size % 2 === 0 ? "X" : "O";
@@ -98,7 +94,7 @@ export const TicTacToeCustomEvents = clientEntry(
               if (cellId < 0) return;
               let idxIncrement = arrowKeyIdxIncrementMap[key];
               let boundIdx = idxIncrement < 0 ? 0 : 8;
-              game.update((draft) => {
+              state.update((draft) => {
                 let nextFreeCellIdx = cellId;
                 while (
                   nextFreeCellIdx === cellId ||
@@ -118,8 +114,8 @@ export const TicTacToeCustomEvents = clientEntry(
           ]}
         >
           {Array.from({ length: 9 }, (_, index) => (
-            <game.view.button
-              on={[game.events.position.get(index), game.events.result]}
+            <view.button
+              on={[events.position.get(index), events.result]}
               key={index}
               data-idx={String(index)}
               aria-label={`Cell ${index}`}
@@ -128,7 +124,6 @@ export const TicTacToeCustomEvents = clientEntry(
               }
               class={({ detail: [pos] }) => pos}
               mix={[
-
                 css({
                   aspectRatio: "1/1",
                   fontSize: 32,
@@ -140,31 +135,31 @@ export const TicTacToeCustomEvents = clientEntry(
                     color: "red",
                   },
                 }),
-                game.events.focusTarget.as(index).on(({ currentTarget }) => {
+                events.focusTarget.as(index).on(({ currentTarget }) => {
                   currentTarget.focus();
                 }),
               ]}
             >
               {({ detail: [pos] }) => pos}
-            </game.view.button>
+            </view.button>
           ))}
         </div>
         <button
           mix={[
             css({ fontSize: "18px", padding: "8px 16px" }),
-            game.events.result.on(({ currentTarget, detail }) => {
+            events.result.on(({ currentTarget, detail }) => {
               if (detail === null) return;
               currentTarget.focus();
             }),
             on("click", () => {
-              game.update((draft) => {
+              state.update((draft) => {
                 draft.position.clear();
                 draft.result = null;
                 draft.focusTarget = 0;
               });
             }),
             ref(() =>
-              game.update((draft) => {
+              state.update((draft) => {
                 draft.focusTarget = 0;
               }),
             ),
@@ -180,13 +175,13 @@ export const TicTacToeCustomEvents = clientEntry(
             }),
           ]}
         >
-          <game.view.span on={game.events.result}>
+          <view.span on={events.result}>
             {({ detail }) => {
               if (!detail) return "Game in progress";
               if (detail === "Draw") return "Game is drawn.";
               return `${detail} has won!`;
             }}
-          </game.view.span>
+          </view.span>
         </p>
       </div>
     );

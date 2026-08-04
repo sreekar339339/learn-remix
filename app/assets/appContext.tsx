@@ -11,21 +11,22 @@ export type AppContextValue = {
 
 export const appContextEvents = customEvents<AppContextValue>();
 export type AppContext = ReturnType<
-  typeof appContextEvents.withState<AppContextValue>
+  typeof appContextEvents.store<AppContextValue>
 >;
 
 export function AppProvider(
   handle: Handle<{ children?: RemixNode }, AppContext>,
 ) {
-  let appContext = appContextEvents.withState({
+  let appContext = appContextEvents.store({
     user: null,
     settings: { layout: "normal", theme: "system" },
   });
+  let { state } = appContext;
   handle.context.set(appContext);
 
   handle.queueTask(async (signal) => {
     // perform auth and other async stuff and dispatch context value
-    appContext.update((draft) => {
+    state.update((draft) => {
       draft.user = { age: 23, name: "Bob Lazar" };
       draft.settings = { layout: "zen", theme: "light" };
     });
@@ -36,34 +37,34 @@ export function AppProvider(
 
 // Components can subscribe to only the events they care about
 export function UserDisplay(handle: Handle) {
-  let appContext = handle.context.get(AppProvider);
+  let { state, host } = handle.context.get(AppProvider);
 
-  addEventListeners(appContext, handle.signal, {
+  addEventListeners(host, handle.signal, {
     user() {
       void handle.update();
     },
   });
 
-  return () => <div>{appContext.state.user?.name ?? "Not logged in"}</div>;
+  return () => <div>{state.value.user?.name ?? "Not logged in"}</div>;
 }
 
 // Event-aware elements can display context values without calling handle.update().
 export function EventUserDisplay(handle: Handle) {
-  let appContext = handle.context.get(AppProvider);
+  let { view, events } = handle.context.get(AppProvider);
 
   return () => (
     <div>
-      <appContext.view.div on={appContext.events.user.name}>
+      <view.div on={events.user.name}>
         {({ detail }) => detail ?? "Not logged in"}
-      </appContext.view.div>
+      </view.div>
     </div>
   );
 }
 
 export function SettingsDisplay(handle: Handle) {
-  let appContext = handle.context.get(AppProvider);
+  let { state, host } = handle.context.get(AppProvider);
 
-  addEventListeners(appContext, handle.signal, {
+  addEventListeners(host, handle.signal, {
     settings() {
       void handle.update();
     },
@@ -72,21 +73,21 @@ export function SettingsDisplay(handle: Handle) {
   return () => (
     <div>
       <pre>
-        Layout: {appContext.state.settings.layout}, Theme:{" "}
-        {appContext.state.settings.theme}
+        Layout: {state.value.settings.layout}, Theme:{" "}
+        {state.value.settings.theme}
       </pre>
     </div>
   );
 }
 
 export function EventSettingsDisplay(handle: Handle) {
-  let appContext = handle.context.get(AppProvider);
+  let { view, events } = handle.context.get(AppProvider);
 
   return () => (
-    <appContext.view.pre on={appContext.events.settings}>
+    <view.pre on={events.settings}>
       {({ detail }) =>
         `Layout: ${detail.layout}, Theme: ${detail.theme}`
       }
-    </appContext.view.pre>
+    </view.pre>
   );
 }

@@ -43,7 +43,7 @@ export const SevenGuisFlightBooker = clientEntry(
   import.meta.url,
   function SevenGuisFlightBooker(handle) {
     let today = new Date().toISOString().slice(0, 10);
-    let flight = customEvents<FlightEvents>().withState({
+    let { view, events, state, host } = customEvents<FlightEvents>().store({
       kind: "one-way flight",
       startDate: today,
       returnDate: today,
@@ -53,7 +53,7 @@ export const SevenGuisFlightBooker = clientEntry(
       <section
         mix={[
           taskCss,
-          flight.events.on((event) => {
+          events.on((event) => {
             if (event.type !== "bookingConfirmed") return handle.update();
           }),
         ]}
@@ -61,11 +61,11 @@ export const SevenGuisFlightBooker = clientEntry(
         <h2>Flight Booker</h2>
         <select
           aria-label="Flight type"
-          defaultValue={flight.state.kind}
+          defaultValue={state.value.kind}
           mix={[
             inputCss,
             on("change", ({ currentTarget }) => {
-              flight.update((draft) => {
+              state.update((draft) => {
                 draft.kind = currentTarget.value as FlightKind;
               });
             }),
@@ -77,12 +77,12 @@ export const SevenGuisFlightBooker = clientEntry(
         <div mix={rowCss}>
           <input
             aria-label="Start date"
-            defaultValue={flight.state.startDate}
-            aria-invalid={presentValidation(flight.state).startDateInvalid}
+            defaultValue={state.value.startDate}
+            aria-invalid={presentValidation(state.value).startDateInvalid}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.update((draft) => {
+                state.update((draft) => {
                   draft.startDate = currentTarget.value;
                 });
               }),
@@ -90,13 +90,13 @@ export const SevenGuisFlightBooker = clientEntry(
           />
           <input
             aria-label="Return date"
-            defaultValue={flight.state.returnDate}
-            disabled={presentValidation(flight.state).returnDateDisabled}
-            aria-invalid={presentValidation(flight.state).returnDateInvalid}
+            defaultValue={state.value.returnDate}
+            disabled={presentValidation(state.value).returnDateDisabled}
+            aria-invalid={presentValidation(state.value).returnDateInvalid}
             mix={[
               inputCss,
               on("input", ({ currentTarget }) => {
-                flight.update((draft) => {
+                state.update((draft) => {
                   draft.returnDate = currentTarget.value;
                 });
               }),
@@ -105,23 +105,23 @@ export const SevenGuisFlightBooker = clientEntry(
         </div>
         <button
           type="button"
-          disabled={!canBook(flight.state)}
+          disabled={!canBook(state.value)}
           mix={[
             buttonCss,
             on("click", () => {
               confirmedFlight = {
-                kind: flight.state.kind,
-                startDate: flight.state.startDate,
-                returnDate: flight.state.returnDate,
+                kind: state.value.kind,
+                startDate: state.value.startDate,
+                returnDate: state.value.returnDate,
               };
-              flight.dispatchEvent(flight.events.create("bookingConfirmed"));
+              host.dispatchEvent(events.create("bookingConfirmed"));
             }),
           ]}
         >
           Book
         </button>
-        <flight.view.output
-          on={flight.events.bookingConfirmed}
+        <view.output
+          on={events.bookingConfirmed}
           hidden={({ detail }) => detail === undefined}
         >
           {({ detail }) => {
@@ -130,7 +130,7 @@ export const SevenGuisFlightBooker = clientEntry(
               ? `You have booked a one-way flight on ${confirmedFlight.startDate}.`
               : `You have booked a return flight from ${confirmedFlight.startDate} to ${confirmedFlight.returnDate}.`;
           }}
-        </flight.view.output>
+        </view.output>
       </section>
     );
   },

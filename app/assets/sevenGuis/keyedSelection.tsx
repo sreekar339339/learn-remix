@@ -11,9 +11,9 @@ const items = [
 export const KeyedSelection = clientEntry(
   import.meta.url,
   function KeyedSelection() {
-    let selection = customEvents<{
+    let { view, events, state } = customEvents<{
       selectedId: string | null;
-    }>().withState({
+    }>().store({
       selectedId: items[0]!.id,
     });
     let renderCounts = new Map<string, number>();
@@ -27,8 +27,8 @@ export const KeyedSelection = clientEntry(
         </p>
         <div mix={rowCss}>
           {items.map((item) => (
-            <selection.view.button
-              on={selection.events.selectedId.as(item.id)}
+            <view.button
+              on={events.selectedId.as(item.id)}
               key={item.id}
               aria-label={item.label}
               type="button"
@@ -47,21 +47,21 @@ export const KeyedSelection = clientEntry(
                   },
                 }),
                 on("click", () => {
-                  selection.update((draft) => {
+                  state.update((draft) => {
                     draft.selectedId = item.id;
                   });
                 }),
               ]}
             >
               {item.label}
-            </selection.view.button>
+            </view.button>
           ))}
         </div>
         <p>
           Selected:{" "}
-          <selection.view.output on={selection.events.selectedId}>
+          <view.output on={events.selectedId}>
             {({ detail }) => detail ?? ""}
-          </selection.view.output>
+          </view.output>
         </p>
       </section>
     );

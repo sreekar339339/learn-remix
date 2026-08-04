@@ -141,7 +141,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolist.todos.action.href()}
-            mix={events.host}
+            mix={events.asHost}
           >
             <events.view.button
               mix={[todoActionButtonCss, deleteTodoButtonCss]}
@@ -159,7 +159,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <events.view.form
             data-action={(event) => event?.type}
             mix={[
-              events.host,
+              events.asHost,
               events.actionErrored.on(({ currentTarget }) => {
                 currentTarget.reset();
               }),
@@ -186,7 +186,7 @@ export function TodoItems(handle: Handle<{ todos: Todo[] }>) {
           <form
             method="POST"
             action={routes.todolist.todos.action.href()}
-            mix={events.host}
+            mix={events.asHost}
           >
             <input hidden name="completed" value={String(!completed)} />
             <input hidden name="id" value={id} />

@@ -14,10 +14,10 @@ function formatTemperature(value: number) {
 export const SevenGuisTemperatureConverter = clientEntry(
   import.meta.url,
   function SevenGuisTemperatureConverter() {
-    let { view, update, events, state } = customEvents<{
-      celsius: string;
-      fahrenheit: string;
-    }>().withState({ celsius: "", fahrenheit: "" });
+    let { view, events, state } = customEvents().store({
+      celsius: "",
+      fahrenheit: "",
+    });
 
     return () => (
       <section mix={taskCss}>
@@ -33,7 +33,7 @@ export const SevenGuisTemperatureConverter = clientEntry(
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                update((draft) => {
+                state.update((draft) => {
                   draft.celsius = value;
                   draft.fahrenheit = formatTemperature(number * (9 / 5) + 32);
                 });
@@ -51,7 +51,7 @@ export const SevenGuisTemperatureConverter = clientEntry(
                 let value = currentTarget.value;
                 let number = parseTemperature(value);
                 if (number === undefined) return;
-                update((draft) => {
+                state.update((draft) => {
                   draft.celsius = formatTemperature((number - 32) * (5 / 9));
                   draft.fahrenheit = value;
                 });

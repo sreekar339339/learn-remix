@@ -2,7 +2,6 @@ import type { MixinDescriptor } from "remix/ui";
 import { canonicalAddressSegment } from "./runtime.ts";
 
 const eventSourceMetadata: unique symbol = Symbol("eventSource");
-const currentEventSource: unique symbol = Symbol("currentEventSource");
 
 export type EventSourceMetadata<
   Value = unknown,
@@ -24,18 +23,13 @@ type EventSourceListener<Value, Type extends string, Host extends Element> = (
 export type EventSource<
   Value,
   Type extends string,
-  Current extends boolean = false,
   Detail = Value,
 > = {
   readonly [eventSourceMetadata]: EventSourceMetadata<Value, Type>;
-  readonly [currentEventSource]: Current;
   on<Host extends Element = Element>(
     listener: EventSourceListener<Detail, Type, Host>,
   ): MixinDescriptor<Host, any>;
 };
-
-export type EventSourceHasCurrent<Source> =
-  Source extends { readonly [currentEventSource]: true } ? true : false;
 
 type Defined<Value> = Exclude<Value, null | undefined>;
 type PreserveMissing<Parent, Value> = Extract<Parent, null | undefined> extends never
@@ -47,7 +41,7 @@ export type StateEventSource<
   Type extends string,
   Detail = Value,
 > =
-  & EventSource<Value, Type, true, Detail>
+  & EventSource<Value, Type, Detail>
   & (Defined<Value> extends ReadonlyMap<infer Key, infer Item>
     ? { get(key: Key): StateEventSource<Item | undefined, Type> }
     : Defined<Value> extends ReadonlySet<infer Item>
@@ -143,7 +137,6 @@ export function createEventSource(
   return new Proxy(Object.create(null), {
     get(_, property) {
       if (property === eventSourceMetadata) return metadata;
-      if (property === currentEventSource) return readRoot !== undefined;
       if (property === "on") {
         return (listener: (event: Event) => void | Promise<unknown>) =>
           createEffect(metadata, listener);
